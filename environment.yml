@@ -1,0 +1,15 @@
+name: unified
+
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python=3.8.*
+  - numpy=1.21.*
+  - cpuonly
+  - pytorch=1.10.*
+  - torchaudio=0.10.*
+  - torchvision=0.11.*
+  - tqdm=4.62.*
