@@ -1,0 +1,10 @@
+# Python 3.8
+
+numpy==1.21
+tqdm==4.62
+matplotlib==3.5
+
+-f https://download.pytorch.org/whl/cpu/torch_stable.html
+torch==1.10.2+cpu
+
+nuscenes-devkit==1.1.9

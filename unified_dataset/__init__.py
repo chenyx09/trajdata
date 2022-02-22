@@ -1,2 +1,2 @@
-from .core import UnifiedDataset
-from .batch_item import unified_collate
+from .dataset import UnifiedDataset
+from .data_structures import unified_collate, UnifiedBatch
