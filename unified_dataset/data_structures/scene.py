@@ -14,6 +14,7 @@ class SceneMetadata:
                  length_timesteps: int,
                  data_access_info: Any) -> None:
         self.env_metadata = env_metadata
+        self.env_name = env_metadata.name
         self.name = name
         self.location = location
         self.data_split = data_split
@@ -25,7 +26,7 @@ class SceneMetadata:
         return self.length_timesteps * self.dt
 
     def __repr__(self) -> str:
-        return '/'.join([self.env_metadata.name, self.name])
+        return '/'.join([self.env_name, self.name])
 
 
 class Scene:

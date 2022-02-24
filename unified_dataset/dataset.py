@@ -52,11 +52,19 @@ for env in [nusc_env, nusc_mini_env, lyft_sample_env]:
     all_components += env.components
 
 class UnifiedDataset(Dataset):
-    def __init__(self, datasets: Optional[List[str]] = None, centric: str = "node") -> None:
+    def __init__(self, 
+                 datasets: Optional[List[str]] = None, 
+                 centric: str = "node",
+                 history_sec_between: Tuple[int, int] = (0.5, 1),
+                 future_sec_between: Tuple[int, int] = (0.5, 3)) -> None:
+        
         cache_dir = Path(cache_location)
         if not cache_dir.is_dir():
             cache_dir.mkdir()
 
+        self.history_sec_between = history_sec_between
+        self.future_sec_between = future_sec_between
+        
         matching_datasets: List[Tuple[str]] = self.get_matching_datasets(datasets)
         print('Loading data for matched datasets:', string_utils.pretty_string_tuples(matching_datasets), flush=True)
 
@@ -89,7 +97,6 @@ class UnifiedDataset(Dataset):
 
         self.scene_index: List[SceneMetadata] = self.load_scene_metadata(matching_datasets)
         print(self.scene_index)
-        raise
         
         if centric == "scene":
             self.data_index = self.create_scene_timestep_metadata(self.scene_index)
@@ -137,7 +144,16 @@ class UnifiedDataset(Dataset):
         return scenes_list
 
     def create_scene_timestep_metadata(self, scenes: List[SceneMetadata]) -> List[SceneTimeMetadata]:
-        pass
+        print(f"Checking cache [{cache_location}] for existing data...", flush=True)
+        
+        scene: SceneMetadata
+        for scene in scenes:
+            if scene.env_name == 'nusc_mini':
+                for frame in nusc_utils.frame_generator(self.nusc_mini_obj, scene.data_access_info['first_sample_token']):
+                    print(frame)
+                    raise
+                    # for agent in nusc_utils.agent_generator(self.nusc_mini_obj, frame):
+
 
     def create_scene_timestep_node_metadata(self, scenes: List[SceneMetadata]) -> List[SceneTimeNodeMetadata]:
         pass
