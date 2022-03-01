@@ -4,6 +4,7 @@ from tqdm import tqdm
 from pathlib import Path
 from typing import List, Optional, Tuple, Dict
 from torch.utils.data import Dataset
+from multiprocessing import Manager
 
 from unified_dataset.data_structures import UnifiedBatchElement, SceneMetadata, SceneTimeMetadata, SceneTimeNodeMetadata, EnvMetadata, Agent
 from unified_dataset.utils import string_utils, nusc_utils
@@ -106,6 +107,9 @@ class UnifiedDataset(Dataset):
         elif centric == "node":
             self.data_index = self.create_scene_timestep_node_metadata(self.scene_index)
 
+        manager = Manager()
+        self.data_index = manager.list(self.data_index)
+
         self.data_len: int = len(self.data_index)
 
     def get_matching_datasets(self, queries: Optional[List[str]]) -> List[Tuple[str]]:
@@ -160,7 +164,7 @@ class UnifiedDataset(Dataset):
 
             scene_file: Path = cache_scene_dir / "scene_metadata.dill"
             if scene_file.is_file() and not self.rebuild_cache:
-                return
+                continue
 
             if scene_info.env_name == 'nusc_mini':
                 agent_presence = nusc_utils.create_scene_timestep_metadata(scene_info=scene_info,
@@ -181,4 +185,5 @@ class UnifiedDataset(Dataset):
         return self.data_len
 
     def __getitem__(self, idx) -> UnifiedBatchElement:
+        print(self.data_index[idx])
         return UnifiedBatchElement(idx)
