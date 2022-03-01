@@ -3,7 +3,7 @@ from unified_dataset import UnifiedDataset, unified_collate, UnifiedBatch
 from torch.utils.data import DataLoader
 
 def main():
-    dataset = UnifiedDataset(datasets=['nusc_mini', 'lyft_sample'],
+    dataset = UnifiedDataset(datasets=['nusc_mini'],
                              centric='scene',
                              history_sec_between=(1, 2), # Both inclusive
                              future_sec_between=(3, 3))  # Both inclusive

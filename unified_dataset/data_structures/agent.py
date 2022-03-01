@@ -1,3 +1,16 @@
+import numpy as np
+import pandas as pd
+from enum import Enum
+
+
+class AgentType(Enum):
+    UNKNOWN = -1
+    VEHICLE = 0
+    PEDESTRIAN = 1
+    BICYCLE = 2
+    MOTORCYCLE = 3
+
+
 class AgentMetadata:
     """Holds node metadata, e.g., name, type, but without the memory footprint of all the actual underlying scene data.
     """
@@ -10,7 +23,8 @@ class AgentMetadata:
 class Agent:
     """Holds the data for a particular node.
     """
-    def __init__(self, metadata: AgentMetadata) -> None:
+    def __init__(self, metadata: AgentMetadata, data: pd.DataFrame) -> None:
         self.name = metadata.name
         self.type = metadata.type
         self.metadata = metadata
+        self.data = data

@@ -126,7 +126,7 @@ class UnifiedDataset(Dataset):
         scenes_list: List[SceneMetadata] = list()
         for dataset_tuple in tqdm(datasets, desc='Loading Scene Metadata'):
             if 'nusc_mini' in dataset_tuple:
-                for scene_record in tqdm(self.nusc_mini_obj.scene):
+                for scene_record in self.nusc_mini_obj.scene:
                     scene_name: str = scene_record['name']
                     scene_location: str = self.nusc_mini_obj.get('log', scene_record['log_token'])['location']
                     scene_split: str = self.nusc_mini_scene_split_map[scene_name]
@@ -151,30 +151,26 @@ class UnifiedDataset(Dataset):
         cache = Path(cache_location)
 
         scene_info: SceneMetadata
-        for scene_info in scenes:
+        for scene_info in tqdm(scenes, desc='Preparing Scene Indices'):
+            scene_time_index += [(scene_info.env_name, scene_info.name, i) for i in range(scene_info.length_timesteps)]
+
+            cache_scene_dir: Path = cache / scene_info.env_name / scene_info.name
+            if not cache_scene_dir.is_dir():
+                cache_scene_dir.mkdir(parents=True)
+
+            scene_file: Path = cache_scene_dir / "scene_metadata.dill"
+            if scene_file.is_file() and not self.rebuild_cache:
+                return
+
             if scene_info.env_name == 'nusc_mini':
-                cache_scene_dir: Path = cache / scene_info.env_name / scene_info.name
-                if not cache_scene_dir.is_dir():
-                    cache_scene_dir.mkdir(parents=True)
+                agent_presence = nusc_utils.create_scene_timestep_metadata(scene_info=scene_info,
+                                                                           nusc_obj=self.nusc_mini_obj,
+                                                                           cache_scene_dir=cache_scene_dir,
+                                                                           rebuild_cache=self.rebuild_cache)
 
-                agent_presence: Dict[int, List[str]] = dict()
-                for frame_idx, frame_info in enumerate(nusc_utils.frame_iterator(self.nusc_mini_obj, scene_info)):
-                    
-                    # TODO: Finish this all
-                    ego_pose = nusc_utils.get_ego_pose(self.nusc_mini_obj, frame_info)
-
-                    agent_presence[frame_idx] = list()
-                    for agent_info in nusc_utils.agent_iterator(self.nusc_mini_obj, frame_info):
-                        agent_id: str = agent_info['instance_token']
-                        agent_file: Path = cache_scene_dir / f"{agent_id}.dill"
-                        agent_presence[frame_idx].append(agent_id)
-                        if agent_file.is_file() and not self.rebuild_cache:
-                            continue
-                        
-                        agent: Agent = nusc_utils.agg_agent_data(self.nusc_mini_obj, agent_info, frame_idx)
-                        dill.dump(agent, agent_file)
-
-                scene_time_index += [(scene_info, i) for i in range(scene_info.length_timesteps)]
+            scene_info.update_agent_presence(agent_presence)
+            with open(scene_file, 'wb') as f:
+                dill.dump(scene_info, f)
 
         return scene_time_index
 

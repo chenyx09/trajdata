@@ -4,7 +4,7 @@ from .unified_batch_element import UnifiedBatchElement, UnifiedBatchElementMetad
 from .scene_time_node import SceneTimeNode, SceneTimeNodeMetadata
 from .scene_time import SceneTime, SceneTimeMetadata
 from .scene import Scene, SceneMetadata
-from .agent import Agent, AgentMetadata
+from .agent import Agent, AgentMetadata, AgentType
 from .environment import EnvMetadata
 
 from .scene import SceneMetadata
