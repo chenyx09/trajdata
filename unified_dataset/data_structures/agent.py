@@ -1,6 +1,7 @@
-import numpy as np
 import pandas as pd
 from enum import Enum
+from typing import Optional
+from collections import namedtuple
 
 
 class AgentType(Enum):
@@ -9,6 +10,9 @@ class AgentType(Enum):
     PEDESTRIAN = 1
     BICYCLE = 2
     MOTORCYCLE = 3
+
+
+FixedSize = namedtuple('FixedSize', ['length', 'width', 'height'])
 
 
 class AgentMetadata:
@@ -23,8 +27,9 @@ class AgentMetadata:
 class Agent:
     """Holds the data for a particular node.
     """
-    def __init__(self, metadata: AgentMetadata, data: pd.DataFrame) -> None:
+    def __init__(self, metadata: AgentMetadata, data: pd.DataFrame, fixed_size: Optional[FixedSize] = None) -> None:
         self.name = metadata.name
         self.type = metadata.type
         self.metadata = metadata
         self.data = data
+        self.fixed_size = fixed_size

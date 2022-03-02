@@ -3,11 +3,11 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any, Dict, List, Union, Tuple
 from nuscenes.nuscenes import NuScenes
 from pyquaternion import Quaternion
 
-from unified_dataset.data_structures import Agent, AgentType, AgentMetadata, SceneMetadata
+from unified_dataset.data_structures import FixedSize, Agent, AgentType, AgentMetadata, SceneMetadata, EnvMetadata
 
 
 def frame_iterator(nusc_obj: NuScenes, scene_metadata: SceneMetadata) -> Dict[str, Union[str, int]]:
@@ -32,6 +32,21 @@ def agent_iterator(nusc_obj: NuScenes, frame_info: Dict[str, Any]) -> Dict[str, 
         agent_category: str = ann_record['category_name']
         if agent_category.startswith('vehicle') or agent_category.startswith('human'):
             yield ann_record
+
+
+def get_matching_scenes(nusc_obj: NuScenes, env_info: EnvMetadata, dataset_tuple: Tuple[str, ...]) -> List[SceneMetadata]:
+    scenes_list: List[SceneMetadata] = list()
+    for scene_record in nusc_obj.scene:
+        scene_name: str = scene_record['name']
+        scene_location: str = nusc_obj.get('log', scene_record['log_token'])['location']
+        scene_split: str = env_info.scene_split_map[scene_name]
+        scene_length: int = scene_record['nbr_samples']
+        
+        if scene_location.split('-')[0] in dataset_tuple and scene_split in dataset_tuple:
+            scene_metadata = SceneMetadata(env_info, scene_name, scene_location, scene_split, scene_length, scene_record)
+            scenes_list.append(scene_metadata)
+        
+    return scenes_list
 
 
 def get_ego_pose(nusc_obj: NuScenes, frame_info: Dict[str, Any]) -> Dict[str, Any]:
@@ -87,29 +102,25 @@ def nusc_type_to_unified_type(nusc_type: str) -> AgentType:
 
 def agg_ego_data(nusc_obj: NuScenes, scene_metadata: SceneMetadata) -> Agent:
     translation_list = list()
-    size_list = list()
     yaw_list = list()
     for frame_info in frame_iterator(nusc_obj, scene_metadata):
         ego_pose = get_ego_pose(nusc_obj, frame_info)
         yaw_list.append(Quaternion(ego_pose['rotation']).yaw_pitch_roll[0])
         translation_list.append(ego_pose['translation'])
-        size_list.append(np.array([4.084, 1.730, 1.562]))
 
     translations_np = np.stack(translation_list, axis=0)
-    sizes_np = np.stack(size_list, axis=0)
     yaws_np = np.expand_dims(np.stack(yaw_list, axis=0), axis=1)
 
-    ego_data_np = np.concatenate([translations_np, yaws_np, sizes_np], axis=1)
-    ego_data_df = pd.DataFrame(ego_data_np, columns=['x', 'y', 'z', 'heading', 'length', 'width', 'height'])
+    ego_data_np = np.concatenate([translations_np, yaws_np], axis=1)
+    ego_data_df = pd.DataFrame(ego_data_np, columns=['x', 'y', 'z', 'heading'])
     
     ego_metadata = AgentMetadata(name='ego', agent_type=AgentType.VEHICLE, first_timestep=0)
-    return Agent(ego_metadata, ego_data_df)
+    return Agent(ego_metadata, ego_data_df, fixed_size=FixedSize(length=4.084, width=1.730, height=1.562))
 
 
 def calc_agent_presence(scene_info: SceneMetadata, nusc_obj: NuScenes, cache_scene_dir: Path, rebuild_cache: bool) -> List[List[str]]:
-    agent_presence: List[List[str]] = [[] for _ in range(scene_info.length_timesteps)]
+    agent_presence: List[List[str]] = [['ego'] for _ in range(scene_info.length_timesteps)]
     for frame_idx, frame_info in enumerate(frame_iterator(nusc_obj, scene_info)):
-        agent_presence[frame_idx] = ['ego']
         for agent_info in agent_iterator(nusc_obj, frame_info):
             agent_id: str = agent_info['instance_token']
             agent_file: Path = cache_scene_dir / f"{agent_id}.dill"

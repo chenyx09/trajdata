@@ -7,51 +7,15 @@ from torch.utils.data import Dataset
 from multiprocessing import Manager
 
 from unified_dataset.data_structures import UnifiedBatchElement, SceneMetadata, SceneTimeMetadata, SceneTimeNodeMetadata, EnvMetadata, Agent
-from unified_dataset.utils import string_utils, nusc_utils, lyft_utils
+from unified_dataset.utils import string_utils, nusc_utils, lyft_utils, env_utils
 
 # NuScenes
 from nuscenes.nuscenes import NuScenes
 from nuscenes.map_expansion.map_api import NuScenesMap
-from nuscenes.utils.splits import create_splits_scenes
 
 # Lyft Level 5
 from l5kit.data import ChunkedDataset
 
-
-cache_location = '/home/bivanovic/.unified_data_cache'
-
-nusc_env = EnvMetadata(
-    name='nusc',
-    data_dir='/home/bivanovic/datasets/nuScenes',
-    dt=0.5,
-    parts=[ # nuScenes possibilities are the Cartesian product of these
-        ('train', 'val', 'test'),
-        ('boston', 'singapore')
-    ]
-)
-
-nusc_mini_env = EnvMetadata(
-    name='nusc_mini',
-    data_dir='/home/bivanovic/datasets/nuScenes',
-    dt=0.5,
-    parts=[ # nuScenes mini possibilities are the Cartesian product of these
-        ('train', 'val'),
-        ('boston', 'singapore')
-    ]
-)
-
-lyft_sample_env = EnvMetadata(
-    name='lyft_sample',
-    data_dir='/home/bivanovic/datasets/lyft/scenes/sample.zarr',
-    dt=0.1,
-    parts=[ # Lyft Level 5 Sample dataset possibilities are the Cartesian product of these
-        ('palo_alto', )
-    ]
-)
-
-all_components = list()
-for env in [nusc_env, nusc_mini_env, lyft_sample_env]:
-    all_components += env.components
 
 class UnifiedDataset(Dataset):
     def __init__(self, 
@@ -59,45 +23,40 @@ class UnifiedDataset(Dataset):
                  centric: str = "agent",
                  history_sec_between: Tuple[int, int] = (0.5, 1),
                  future_sec_between: Tuple[int, int] = (0.5, 3),
+                 data_dirs: Dict[str, str] = {'nusc': '~/datasets/nuScenes',
+                                              'nusc_mini': '~/datasets/nuScenes',
+                                              'lyft_sample': '~/datasets/lyft/scenes/sample.zarr'},
+                 cache_location: str = '~/.unified_data_cache',
                  rebuild_cache: bool = False) -> None:
         
         self.rebuild_cache = rebuild_cache
-        self.cache_dir = Path(cache_location)
+        self.cache_dir = Path(cache_location).expanduser().resolve()
         if not self.cache_dir.is_dir():
             self.cache_dir.mkdir()
 
         self.history_sec_between = history_sec_between
         self.future_sec_between = future_sec_between
+
+        self.envs_dict: Dict[str, EnvMetadata] = env_utils.get_env_metadata(data_dirs)
+
+        self.all_components = list()
+        for env in self.envs_dict.values():
+            self.all_components += env.components
         
-        matching_datasets: List[Tuple[str]] = self.get_matching_datasets(datasets)
+        matching_datasets: List[Tuple[str, ...]] = self.get_matching_datasets(datasets)
         print('Loading data for matched datasets:', string_utils.pretty_string_tuples(matching_datasets), flush=True)
 
         if any('nusc' in dataset_tuple for dataset_tuple in matching_datasets):
             print('Loading nuScenes dataset...', flush=True)
-            all_scene_splits: Dict[str, List[str]] = create_splits_scenes()
-            nusc_scene_splits: Dict[str, List[str]] = {k: all_scene_splits[k] for k in ['train', 'val', 'test']}
-
-            # Inverting the dict from above, associating every scene with its data split.
-            self.nusc_scene_split_map = {v_elem: k for k, v in nusc_scene_splits.items() for v_elem in v}
-            self.nusc_obj: NuScenes = NuScenes(version='v1.0-trainval', dataroot=nusc_env.data_dir)
+            self.nusc_obj: NuScenes = NuScenes(version='v1.0-trainval', dataroot=self.envs_dict['nusc'].data_dir)
 
         if any('nusc_mini' in dataset_tuple for dataset_tuple in matching_datasets):
             print('Loading nuScenes mini dataset...', flush=True)
-            all_scene_splits: Dict[str, List[str]] = create_splits_scenes()
-            nusc_mini_scene_splits: Dict[str, List[str]] = {k: all_scene_splits[k] for k in ['mini_train', 'mini_val']}
-
-            # Renaming keys
-            nusc_mini_scene_splits['train'] = nusc_mini_scene_splits.pop('mini_train')
-            nusc_mini_scene_splits['val'] = nusc_mini_scene_splits.pop('mini_val')
-
-            # Inverting the dict from above, associating every scene with its data split.
-            self.nusc_mini_scene_split_map: Dict[str, str] = {v_elem: k for k, v in nusc_mini_scene_splits.items() for v_elem in v}
-            self.nusc_mini_obj: NuScenes = NuScenes(version='v1.0-mini', dataroot=nusc_mini_env.data_dir)
+            self.nusc_mini_obj: NuScenes = NuScenes(version='v1.0-mini', dataroot=self.envs_dict['nusc_mini'].data_dir)
 
         if any('lyft_sample' in dataset_tuple for dataset_tuple in matching_datasets):
             print('Loading lyft sample dataset...', flush=True)
-
-            self.lyft_sample_obj: ChunkedDataset = ChunkedDataset(lyft_sample_env.data_dir).open()
+            self.lyft_sample_obj: ChunkedDataset = ChunkedDataset(str(self.envs_dict['lyft_sample'].data_dir)).open()
 
         self.scene_index: List[SceneMetadata] = self.create_scene_metadata(matching_datasets)
         print(self.scene_index)
@@ -115,41 +74,28 @@ class UnifiedDataset(Dataset):
         self.data_index = manager.list(self.data_index)
         self.data_len: int = len(self.data_index)
 
-    def get_matching_datasets(self, queries: Optional[List[str]]) -> List[Tuple[str]]:
+    def get_matching_datasets(self, queries: Optional[List[str]]) -> List[Tuple[str, ...]]:
         if queries is None:
-            return all_components
+            return self.all_components
 
         dataset_tuples = [set(data.split('-')) for data in queries]
 
         matching_datasets = list()
         for dataset_tuple in dataset_tuples:
-            for dataset_component in all_components:
+            for dataset_component in self.all_components:
                 if dataset_tuple.issubset(dataset_component):
                     matching_datasets.append(dataset_component)
 
         return matching_datasets
 
-    def create_scene_metadata(self, datasets: List[Tuple[str]]) -> List[SceneMetadata]:
+    def create_scene_metadata(self, datasets: List[Tuple[str, ...]]) -> List[SceneMetadata]:
         scenes_list: List[SceneMetadata] = list()
         for dataset_tuple in tqdm(datasets, desc='Loading Scene Metadata'):
             if 'nusc_mini' in dataset_tuple:
-                for scene_record in self.nusc_mini_obj.scene:
-                    scene_name: str = scene_record['name']
-                    scene_location: str = self.nusc_mini_obj.get('log', scene_record['log_token'])['location']
-                    scene_split: str = self.nusc_mini_scene_split_map[scene_name]
-                    scene_length: int = scene_record['nbr_samples']
-                    
-                    if scene_location.split('-')[0] in dataset_tuple and scene_split in dataset_tuple:
-                        scene_metadata = SceneMetadata(nusc_mini_env, scene_name, scene_location, scene_split, scene_length, scene_record)
-                        scenes_list.append(scene_metadata)
+                scenes_list += nusc_utils.get_matching_scenes(self.nusc_mini_obj, self.envs_dict['nusc_mini'], dataset_tuple)
 
             if 'lyft_sample' in dataset_tuple:
-                all_scene_frames = self.lyft_sample_obj.scenes['frame_index_interval']
-                
-                for idx in range(all_scene_frames.shape[0]):
-                    scene_length: int = (all_scene_frames[idx, 1] - all_scene_frames[idx, 0]).item() # Doing .item() otherwise it'll be a numpy.int64
-                    scene_metadata = SceneMetadata(lyft_sample_env, f'scene-{idx:04d}', 'palo_alto', '', scene_length, all_scene_frames[idx])
-                    scenes_list.append(scene_metadata)
+                scenes_list += lyft_utils.get_matching_scenes(self.lyft_sample_obj, self.envs_dict['lyft_sample'], dataset_tuple)
 
         self.calculate_agent_presence(scenes_list)
         return scenes_list
@@ -176,11 +122,12 @@ class UnifiedDataset(Dataset):
                                                                 rebuild_cache=self.rebuild_cache)
             elif scene_info.env_name == 'lyft_sample':
                 agent_presence = lyft_utils.calc_agent_presence(scene_info=scene_info,
-                                                                nusc_obj=self.lyft_sample_obj,
+                                                                lyft_obj=self.lyft_sample_obj,
                                                                 cache_scene_dir=cache_scene_dir,
                                                                 rebuild_cache=self.rebuild_cache)
 
             scene_info.update_agent_presence(agent_presence)
+            
             with open(scene_file, 'wb') as f:
                 dill.dump(scene_info, f)
 
@@ -188,5 +135,5 @@ class UnifiedDataset(Dataset):
         return self.data_len
 
     def __getitem__(self, idx) -> UnifiedBatchElement:
-        print(self.data_index[idx])
+        # print(self.data_index[idx])
         return UnifiedBatchElement(idx)
