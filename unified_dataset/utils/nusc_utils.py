@@ -106,7 +106,7 @@ def agg_ego_data(nusc_obj: NuScenes, scene_metadata: SceneMetadata) -> Agent:
     return Agent(ego_metadata, ego_data_df)
 
 
-def create_scene_timestep_metadata(scene_info: SceneMetadata, nusc_obj: NuScenes, cache_scene_dir: Path, rebuild_cache: bool) -> List[List[str]]:
+def calc_agent_presence(scene_info: SceneMetadata, nusc_obj: NuScenes, cache_scene_dir: Path, rebuild_cache: bool) -> List[List[str]]:
     agent_presence: List[List[str]] = [[] for _ in range(scene_info.length_timesteps)]
     for frame_idx, frame_info in enumerate(frame_iterator(nusc_obj, scene_info)):
         agent_presence[frame_idx] = ['ego']

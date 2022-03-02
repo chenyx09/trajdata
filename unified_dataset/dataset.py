@@ -7,7 +7,7 @@ from torch.utils.data import Dataset
 from multiprocessing import Manager
 
 from unified_dataset.data_structures import UnifiedBatchElement, SceneMetadata, SceneTimeMetadata, SceneTimeNodeMetadata, EnvMetadata, Agent
-from unified_dataset.utils import string_utils, nusc_utils
+from unified_dataset.utils import string_utils, nusc_utils, lyft_utils
 
 # NuScenes
 from nuscenes.nuscenes import NuScenes
@@ -56,15 +56,15 @@ for env in [nusc_env, nusc_mini_env, lyft_sample_env]:
 class UnifiedDataset(Dataset):
     def __init__(self, 
                  datasets: Optional[List[str]] = None, 
-                 centric: str = "node",
+                 centric: str = "agent",
                  history_sec_between: Tuple[int, int] = (0.5, 1),
                  future_sec_between: Tuple[int, int] = (0.5, 3),
                  rebuild_cache: bool = False) -> None:
         
         self.rebuild_cache = rebuild_cache
-        cache_dir = Path(cache_location)
-        if not cache_dir.is_dir():
-            cache_dir.mkdir()
+        self.cache_dir = Path(cache_location)
+        if not self.cache_dir.is_dir():
+            self.cache_dir.mkdir()
 
         self.history_sec_between = history_sec_between
         self.future_sec_between = future_sec_between
@@ -99,17 +99,20 @@ class UnifiedDataset(Dataset):
 
             self.lyft_sample_obj: ChunkedDataset = ChunkedDataset(lyft_sample_env.data_dir).open()
 
-        self.scene_index: List[SceneMetadata] = self.load_scene_metadata(matching_datasets)
+        self.scene_index: List[SceneMetadata] = self.create_scene_metadata(matching_datasets)
         print(self.scene_index)
         
+        self.data_index = list()
         if centric == "scene":
-            self.data_index = self.create_scene_timestep_metadata(self.scene_index)
-        elif centric == "node":
-            self.data_index = self.create_scene_timestep_node_metadata(self.scene_index)
+            for scene_info in self.scene_index:
+                self.data_index += [(scene_info.env_name, scene_info.name, ts) for ts in range(scene_info.length_timesteps)]
+        elif centric == "agent":
+            for scene_info in self.scene_index:
+                for ts in range(scene_info.length_timesteps):
+                    self.data_index += [(scene_info.env_name, scene_info.name, ts, agent_id) for agent_id in scene_info.agent_presence[ts]]
 
         manager = Manager()
         self.data_index = manager.list(self.data_index)
-
         self.data_len: int = len(self.data_index)
 
     def get_matching_datasets(self, queries: Optional[List[str]]) -> List[Tuple[str]]:
@@ -126,7 +129,7 @@ class UnifiedDataset(Dataset):
 
         return matching_datasets
 
-    def load_scene_metadata(self, datasets: List[Tuple[str]]) -> List[SceneMetadata]:
+    def create_scene_metadata(self, datasets: List[Tuple[str]]) -> List[SceneMetadata]:
         scenes_list: List[SceneMetadata] = list()
         for dataset_tuple in tqdm(datasets, desc='Loading Scene Metadata'):
             if 'nusc_mini' in dataset_tuple:
@@ -148,38 +151,38 @@ class UnifiedDataset(Dataset):
                     scene_metadata = SceneMetadata(lyft_sample_env, f'scene-{idx:04d}', 'palo_alto', '', scene_length, all_scene_frames[idx])
                     scenes_list.append(scene_metadata)
 
+        self.calculate_agent_presence(scenes_list)
         return scenes_list
 
-    def create_scene_timestep_metadata(self, scenes: List[SceneMetadata]) -> List[SceneTimeMetadata]:
-        scene_time_index = list()
-        cache = Path(cache_location)
-
+    def calculate_agent_presence(self, scenes: List[SceneMetadata]) -> None:
         scene_info: SceneMetadata
-        for scene_info in tqdm(scenes, desc='Preparing Scene Indices'):
-            scene_time_index += [(scene_info.env_name, scene_info.name, i) for i in range(scene_info.length_timesteps)]
-
-            cache_scene_dir: Path = cache / scene_info.env_name / scene_info.name
+        for scene_info in tqdm(scenes, desc='Calculating Agent Presence'):
+            cache_scene_dir: Path = self.cache_dir / scene_info.env_name / scene_info.name
             if not cache_scene_dir.is_dir():
                 cache_scene_dir.mkdir(parents=True)
 
             scene_file: Path = cache_scene_dir / "scene_metadata.dill"
             if scene_file.is_file() and not self.rebuild_cache:
+                with open(scene_file, 'rb') as f:
+                    cached_scene_info: SceneMetadata = dill.load(f)
+                
+                scene_info.update_agent_presence(cached_scene_info.agent_presence)
                 continue
 
             if scene_info.env_name == 'nusc_mini':
-                agent_presence = nusc_utils.create_scene_timestep_metadata(scene_info=scene_info,
-                                                                           nusc_obj=self.nusc_mini_obj,
-                                                                           cache_scene_dir=cache_scene_dir,
-                                                                           rebuild_cache=self.rebuild_cache)
+                agent_presence = nusc_utils.calc_agent_presence(scene_info=scene_info,
+                                                                nusc_obj=self.nusc_mini_obj,
+                                                                cache_scene_dir=cache_scene_dir,
+                                                                rebuild_cache=self.rebuild_cache)
+            elif scene_info.env_name == 'lyft_sample':
+                agent_presence = lyft_utils.calc_agent_presence(scene_info=scene_info,
+                                                                nusc_obj=self.lyft_sample_obj,
+                                                                cache_scene_dir=cache_scene_dir,
+                                                                rebuild_cache=self.rebuild_cache)
 
             scene_info.update_agent_presence(agent_presence)
             with open(scene_file, 'wb') as f:
                 dill.dump(scene_info, f)
-
-        return scene_time_index
-
-    def create_scene_timestep_node_metadata(self, scenes: List[SceneMetadata]) -> List[SceneTimeNodeMetadata]:
-        pass
 
     def __len__(self) -> int:
         return self.data_len
