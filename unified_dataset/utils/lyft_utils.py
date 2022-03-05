@@ -35,7 +35,7 @@ def agg_ego_data(lyft_obj: ChunkedDataset, scene_metadata: SceneMetadata) -> Age
     ego_data_df = pd.DataFrame(ego_data_np, columns=['x', 'y', 'z', 'heading'])
     ego_data_df.index.name = "scene_ts"
 
-    ego_metadata = AgentMetadata(name='ego', agent_type=AgentType.VEHICLE, first_timestep=0)
+    ego_metadata = AgentMetadata(name='ego', agent_type=AgentType.VEHICLE, first_timestep=0, last_timestep=ego_data_np.shape[0]-1)
     return Agent(ego_metadata, ego_data_df, fixed_size=FixedSize(length=4.869, width=1.852, height=1.476))
 
 
@@ -54,7 +54,7 @@ def lyft_type_to_unified_type(lyft_type: int) -> AgentType:
 
 
 def calc_agent_presence(scene_info: SceneMetadata, lyft_obj: ChunkedDataset, cache_scene_dir: Path, rebuild_cache: bool) -> List[List[AgentMetadata]]:
-    agent_presence: List[List[AgentMetadata]] = [[AgentMetadata(name='ego', agent_type=AgentType.VEHICLE, first_timestep=0)] 
+    agent_presence: List[List[AgentMetadata]] = [[AgentMetadata(name='ego', agent_type=AgentType.VEHICLE, first_timestep=0, last_timestep=scene_info.length_timesteps-1)] 
                                                     for _ in range(scene_info.length_timesteps)]
     
     ego_file: Path = cache_scene_dir / "ego.dill"
@@ -94,15 +94,18 @@ def calc_agent_presence(scene_info: SceneMetadata, lyft_obj: ChunkedDataset, cac
     for agent_id in np.unique(agent_ids):
         agent_data_df: pd.DataFrame = all_agent_data_df.xs(agent_id)
         start_frame: int = agent_data_df.index[0].item()
+        last_frame: int = agent_data_df.index[-1].item()
         mode_type: int = mode(np.argmax(agent_data_df[label_cols].values, axis=1))[0].item()
         agent_type: AgentType = lyft_type_to_unified_type(mode_type)
-        agent_metadata = AgentMetadata(name=str(agent_id), agent_type=agent_type, first_timestep=start_frame)
+        agent_metadata = AgentMetadata(name=str(agent_id), agent_type=agent_type, first_timestep=start_frame, last_timestep=last_frame)
 
         for frame in agent_data_df.index:
             agent_presence[frame].append(agent_metadata)
 
         agent_file: Path = cache_scene_dir / f"{agent_metadata.name}.dill"
         if agent_file.is_file() and not rebuild_cache:
+            # This could happen if caching is stopped before the scene
+            # metadata is saved.
             continue
         
         # For now only saving non-prob columns since Lyft is effectively one-hot (see https://arxiv.org/abs/2104.12446)

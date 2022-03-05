@@ -1,12 +1,14 @@
 import dill
-from math import ceil
+import numpy as np
+from math import ceil, floor
 from tqdm import tqdm
 from pathlib import Path
-from typing import List, Optional, Tuple, Dict
+from typing import List, Optional, Tuple, Dict, Set
 from torch.utils.data import Dataset
 from multiprocessing import Manager
 
 from unified_dataset.data_structures import AgentType, AgentBatch, AgentBatchElement, SceneBatch, SceneBatchElement, SceneMetadata, SceneTime, EnvMetadata
+from unified_dataset.data_structures.agent import AgentMetadata
 from unified_dataset.utils import string_utils, nusc_utils, lyft_utils, env_utils
 
 # NuScenes
@@ -21,9 +23,10 @@ class UnifiedDataset(Dataset):
     def __init__(self, 
                  datasets: Optional[List[str]] = None, 
                  centric: str = "agent",
-                 history_sec_at_most: float = 1.0,
-                 future_sec_at_most: float = 3.0,
+                 history_sec: Tuple[Optional[float], Optional[float]] = (None, None), # Both inclusive
+                 future_sec: Tuple[Optional[float], Optional[float]] = (None, None), # Both inclusive
                  only_types: Optional[List[AgentType]] = None,
+                 no_types: Optional[List[AgentType]] = None,
                  data_dirs: Dict[str, str] = {'nusc': '~/datasets/nuScenes',
                                               'nusc_mini': '~/datasets/nuScenes',
                                               'lyft_sample': '~/datasets/lyft/scenes/sample.zarr'},
@@ -41,9 +44,10 @@ class UnifiedDataset(Dataset):
         if not self.cache_dir.is_dir():
             self.cache_dir.mkdir()
 
-        self.history_sec_at_most = history_sec_at_most
-        self.future_sec_at_most = future_sec_at_most
+        self.history_sec = history_sec
+        self.future_sec = future_sec
         self.only_types = None if only_types is None else set(only_types)
+        self.no_types = None if no_types is None else set(no_types)
 
         self.envs_dict: Dict[str, EnvMetadata] = env_utils.get_env_metadata(data_dirs)
 
@@ -72,11 +76,34 @@ class UnifiedDataset(Dataset):
         self.data_index = list()
         if self.centric == "scene":
             for scene_info in self.scene_index:
-                self.data_index += [(scene_info.env_name, scene_info.name, ts) for ts in range(scene_info.length_timesteps)]
+                for ts in range(scene_info.length_timesteps):
+                    # This is where we remove scene timesteps that would have no remaining agents after filtering.
+                    if self.no_types is not None and all(agent_info.type in self.no_types for agent_info in scene_info.agent_presence[ts]):
+                        continue
+                    elif self.only_types is not None and all(agent_info.type not in self.only_types for agent_info in scene_info.agent_presence[ts]):
+                        continue
+
+                    if all(not self.satisfies_times(agent_info, ts, scene_info) for agent_info in scene_info.agent_presence[ts]):
+                        # Ignore this datum if no agent in the scene satisfies our time requirements.
+                        continue
+
+                    self.data_index.append((scene_info.env_name, scene_info.name, ts))
+
         elif self.centric == "agent":
             for scene_info in self.scene_index:
                 for ts in range(scene_info.length_timesteps):
-                    self.data_index += [(scene_info.env_name, scene_info.name, ts, agent_metadata.name) for agent_metadata in scene_info.agent_presence[ts]]
+                    for agent_info in scene_info.agent_presence[ts]:
+                        # Ignore this datum if the agent does not satisfy our time requirements.
+                        if not self.satisfies_times(agent_info, ts, scene_info):
+                            continue
+
+                        # This is where we remove agents that do not match our filters.
+                        if self.no_types is not None and agent_info.type in self.no_types:
+                            continue
+                        elif self.only_types is not None and agent_info.type not in self.only_types:
+                            continue
+
+                        self.data_index.append((scene_info.env_name, scene_info.name, ts, agent_info.name))
 
         manager = Manager()
         self.data_index = manager.list(self.data_index)
@@ -139,6 +166,23 @@ class UnifiedDataset(Dataset):
             with open(scene_file, 'wb') as f:
                 dill.dump(scene_info, f)
 
+    def satisfies_times(self, agent_info: AgentMetadata, ts: int, scene_info: SceneMetadata) -> bool:
+        dt = scene_info.dt
+
+        if self.history_sec[0] is not None:
+            min_history = ceil(self.history_sec[0] / dt)
+            agent_history_satisfies = ts - agent_info.first_timestep >= min_history
+        else:
+            agent_history_satisfies = True
+
+        if self.future_sec[0] is not None:
+            min_future = ceil(self.future_sec[0] / dt)
+            agent_future_satisfies = agent_info.last_timestep - ts >= min_future
+        else:
+            agent_future_satisfies = True
+
+        return agent_history_satisfies and agent_future_satisfies
+
     def __len__(self) -> int:
         return self.data_len
 
@@ -151,11 +195,11 @@ class UnifiedDataset(Dataset):
         scene_cache_dir: Path = self.cache_dir / env_name / scene_name
         scene_file: Path = scene_cache_dir / "scene_metadata.dill"
         with open(scene_file, 'rb') as f:
-            scene_metadata: SceneMetadata = dill.load(f)
+            scene_info: SceneMetadata = dill.load(f)
 
-        scene_time: SceneTime = SceneTime.from_cache(scene_metadata, ts, scene_cache_dir, only_types=self.only_types)
+        scene_time: SceneTime = SceneTime.from_cache(scene_info, ts, scene_cache_dir, only_types=self.only_types, no_types=self.no_types)
 
         if self.centric == "scene":
-            return SceneBatchElement(scene_time, self.history_sec_at_most, self.future_sec_at_most)
+            return SceneBatchElement(scene_time, self.history_sec, self.future_sec)
         elif self.centric == "agent":
-            return AgentBatchElement(scene_time, agent_id, self.history_sec_at_most, self.future_sec_at_most)
+            return AgentBatchElement(scene_time, agent_id, self.history_sec, self.future_sec)

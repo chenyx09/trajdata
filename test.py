@@ -6,9 +6,9 @@ from torch.utils.data import DataLoader
 def main():
     dataset = UnifiedDataset(datasets=['nusc_mini', 'lyft_sample'],
                              centric='agent',
-                             history_sec_at_most=2.7,
-                             future_sec_at_most=3.4,
-                             only_types=None)
+                             history_sec=(0.1, None),
+                             future_sec=(0.1, None),
+                             no_types=[AgentType.UNKNOWN])
     print(len(dataset))
     dataloader = DataLoader(dataset, batch_size=64, shuffle=True, collate_fn=dataset.collate_fn, num_workers=0)
 

@@ -80,13 +80,14 @@ def agg_agent_data(nusc_obj: NuScenes, agent_data: Dict[str, Any], curr_scene_in
     yaws_np = np.expand_dims(np.stack(yaw_list, axis=0), axis=1)
 
     agent_data_np = np.concatenate([translations_np, yaws_np, sizes_np], axis=1)
+    last_timestep = curr_scene_index + agent_data_np.shape[0] - 1
     agent_data_df = pd.DataFrame(agent_data_np, 
                                  columns=['x', 'y', 'z', 'heading', 'length', 'width', 'height'],
-                                 index=list(range(curr_scene_index, curr_scene_index + agent_data_np.shape[0])))
+                                 index=list(range(curr_scene_index, last_timestep + 1)))
     agent_data_df.index.name = "scene_ts"
 
     agent_type = nusc_type_to_unified_type(agent_data['category_name'])
-    agent_metadata = AgentMetadata(name=agent_data['instance_token'], agent_type=agent_type, first_timestep=curr_scene_index)
+    agent_metadata = AgentMetadata(name=agent_data['instance_token'], agent_type=agent_type, first_timestep=curr_scene_index, last_timestep=last_timestep)
     return Agent(agent_metadata, agent_data_df)
 
 
@@ -118,25 +119,32 @@ def agg_ego_data(nusc_obj: NuScenes, scene_metadata: SceneMetadata) -> Agent:
     ego_data_df = pd.DataFrame(ego_data_np, columns=['x', 'y', 'z', 'heading'])
     ego_data_df.index.name = "scene_ts"
     
-    ego_metadata = AgentMetadata(name='ego', agent_type=AgentType.VEHICLE, first_timestep=0)
+    ego_metadata = AgentMetadata(name='ego', agent_type=AgentType.VEHICLE, first_timestep=0, last_timestep=ego_data_np.shape[0]-1)
     return Agent(ego_metadata, ego_data_df, fixed_size=FixedSize(length=4.084, width=1.730, height=1.562))
 
 
 def calc_agent_presence(scene_info: SceneMetadata, nusc_obj: NuScenes, cache_scene_dir: Path, rebuild_cache: bool) -> List[List[AgentMetadata]]:
-    agent_presence: List[List[AgentMetadata]] = [[AgentMetadata(name='ego', agent_type=AgentType.VEHICLE, first_timestep=0)] 
+    agent_presence: List[List[AgentMetadata]] = [[AgentMetadata(name='ego', agent_type=AgentType.VEHICLE, first_timestep=0, last_timestep=scene_info.length_timesteps-1)] 
                                                     for _ in range(scene_info.length_timesteps)]
+    
+    existing_agents: Dict[str, AgentMetadata] = dict()
     for frame_idx, frame_info in enumerate(frame_iterator(nusc_obj, scene_info)):
         for agent_info in agent_iterator(nusc_obj, frame_info):
-            agent_id: str = agent_info['instance_token']
-            agent_file: Path = cache_scene_dir / f"{agent_id}.dill"
-            agent_type: AgentType = nusc_type_to_unified_type(agent_info['category_name'])
-            agent_metadata: AgentMetadata = AgentMetadata(name=agent_id, agent_type=agent_type, first_timestep=frame_idx)
+            if agent_info['instance_token'] in existing_agents:
+                agent_presence[frame_idx].append(existing_agents[agent_info['instance_token']])
+                continue
+
+            agent: Agent = agg_agent_data(nusc_obj, agent_info, frame_idx)
             
-            agent_presence[frame_idx].append(agent_metadata)
+            agent_presence[frame_idx].append(agent.metadata)
+            existing_agents[agent.name] = agent.metadata
+            
+            agent_file: Path = cache_scene_dir / f"{agent.name}.dill"
             if agent_file.is_file() and not rebuild_cache:
+                # This could happen if caching is stopped before the scene
+                # metadata is saved.
                 continue
             
-            agent: Agent = agg_agent_data(nusc_obj, agent_info, frame_idx)
             with open(agent_file, 'wb') as f:
                 dill.dump(agent, f)
 

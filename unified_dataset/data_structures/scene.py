@@ -16,7 +16,7 @@ class SceneMetadata:
                  data_split: str, 
                  length_timesteps: int,
                  data_access_info: Any,
-                 agent_presence: Optional[List[List[str]]] = None) -> None:
+                 agent_presence: Optional[List[List[AgentMetadata]]] = None) -> None:
         self.env_metadata = env_metadata
         self.env_name = env_metadata.name
         self.name = name
@@ -57,11 +57,15 @@ class SceneTime:
                    scene_info: SceneMetadata,
                    scene_ts: int,
                    scene_cache_dir: Path,
-                   only_types: Optional[Set[AgentType]] = None):
+                   only_types: Optional[Set[AgentType]] = None,
+                   no_types: Optional[Set[AgentType]] = None):
         agents_present: List[AgentMetadata] = scene_info.agent_presence[scene_ts]
 
         agents: List[Agent] = list()
         for agent_info in agents_present:
+            if no_types is not None and agent_info.type in no_types:
+                continue
+
             if only_types is None or agent_info.type in only_types:
                 agent_file = scene_cache_dir / f"{agent_info.name}.dill"
                 with open(agent_file, 'rb') as f:
