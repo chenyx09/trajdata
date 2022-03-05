@@ -33,6 +33,7 @@ def agg_ego_data(lyft_obj: ChunkedDataset, scene_metadata: SceneMetadata) -> Age
 
     ego_data_np = np.concatenate([ego_translations, np.expand_dims(ego_yaws, axis=1)], axis=1)
     ego_data_df = pd.DataFrame(ego_data_np, columns=['x', 'y', 'z', 'heading'])
+    ego_data_df.index.name = "scene_ts"
 
     ego_metadata = AgentMetadata(name='ego', agent_type=AgentType.VEHICLE, first_timestep=0)
     return Agent(ego_metadata, ego_data_df, fixed_size=FixedSize(length=4.869, width=1.852, height=1.476))
@@ -52,8 +53,9 @@ def lyft_type_to_unified_type(lyft_type: int) -> AgentType:
         return AgentType.PEDESTRIAN
 
 
-def calc_agent_presence(scene_info: SceneMetadata, lyft_obj: ChunkedDataset, cache_scene_dir: Path, rebuild_cache: bool) -> List[List[str]]:
-    agent_presence: List[List[str]] = [['ego'] for _ in range(scene_info.length_timesteps)]
+def calc_agent_presence(scene_info: SceneMetadata, lyft_obj: ChunkedDataset, cache_scene_dir: Path, rebuild_cache: bool) -> List[List[AgentMetadata]]:
+    agent_presence: List[List[AgentMetadata]] = [[AgentMetadata(name='ego', agent_type=AgentType.VEHICLE, first_timestep=0)] 
+                                                    for _ in range(scene_info.length_timesteps)]
     
     ego_file: Path = cache_scene_dir / "ego.dill"
     if not ego_file.is_file() or rebuild_cache:
@@ -74,7 +76,6 @@ def calc_agent_presence(scene_info: SceneMetadata, lyft_obj: ChunkedDataset, cac
     # This is so we later know what is the first scene timestep that an agent appears in the scene.
     num_agents_per_ts = agent_indices[:, 1] - agent_indices[:, 0]
     agent_frame_ids = np.repeat(np.arange(scene_info.length_timesteps), num_agents_per_ts)
-    agent_frames_series = pd.Series(agent_frame_ids, index=[agent_ids])
 
     agent_translations = lyft_agents['centroid']
     agent_sizes = lyft_agents['extent']
@@ -87,26 +88,23 @@ def calc_agent_presence(scene_info: SceneMetadata, lyft_obj: ChunkedDataset, cac
     label_cols = ['prob' + label[class_start:] for label in labels.PERCEPTION_LABELS[:-1]]
     
     all_agent_data = np.concatenate([agent_translations, np.expand_dims(agent_yaws, axis=1), agent_sizes, agent_velocities, agent_probs[:, :-1]], axis=1)
-    all_agent_data_df = pd.DataFrame(all_agent_data, columns=normal_cols + label_cols, index=[agent_ids])
+    all_agent_data_df = pd.DataFrame(all_agent_data, columns=normal_cols + label_cols, index=[agent_ids, agent_frame_ids])
+    all_agent_data_df.index.names = ["agent_id", "scene_ts"]
 
     for agent_id in np.unique(agent_ids):
-        agent_name: str = str(agent_id)
-        scene_frames = agent_frames_series.loc[agent_id]
+        agent_data_df: pd.DataFrame = all_agent_data_df.xs(agent_id)
+        start_frame: int = agent_data_df.index[0].item()
+        mode_type: int = mode(np.argmax(agent_data_df[label_cols].values, axis=1))[0].item()
+        agent_type: AgentType = lyft_type_to_unified_type(mode_type)
+        agent_metadata = AgentMetadata(name=str(agent_id), agent_type=agent_type, first_timestep=start_frame)
 
-        for frame in scene_frames:
-            agent_presence[frame].append(agent_name)
+        for frame in agent_data_df.index:
+            agent_presence[frame].append(agent_metadata)
 
-        agent_file: Path = cache_scene_dir / f"{agent_name}.dill"
+        agent_file: Path = cache_scene_dir / f"{agent_metadata.name}.dill"
         if agent_file.is_file() and not rebuild_cache:
             continue
         
-        agent_data_df: pd.DataFrame = all_agent_data_df.loc[agent_id].reset_index(drop=True)
-        start_frame = scene_frames.iloc[0]
-        mode_type = mode(np.argmax(agent_data_df[label_cols].values, axis=1))[0].item()
-        agent_type = lyft_type_to_unified_type(mode_type)
-        
-        agent_metadata = AgentMetadata(name=agent_name, agent_type=agent_type, first_timestep=start_frame.item())
-
         # For now only saving non-prob columns since Lyft is effectively one-hot (see https://arxiv.org/abs/2104.12446)
         agent = Agent(agent_metadata, agent_data_df[normal_cols])
         with open(agent_file, 'wb') as f:

@@ -53,7 +53,7 @@ def get_ego_pose(nusc_obj: NuScenes, frame_info: Dict[str, Any]) -> Dict[str, An
     cam_front_data = nusc_obj.get('sample_data', frame_info['data']['CAM_FRONT'])
     ego_pose = nusc_obj.get('ego_pose', cam_front_data['ego_pose_token'])
     return ego_pose
-    
+
 
 def agg_agent_data(nusc_obj: NuScenes, agent_data: Dict[str, Any], curr_scene_index: int) -> Agent:
     """Loops through all annotations of a specific agent in a scene and aggregates their data into an Agent object.
@@ -80,7 +80,10 @@ def agg_agent_data(nusc_obj: NuScenes, agent_data: Dict[str, Any], curr_scene_in
     yaws_np = np.expand_dims(np.stack(yaw_list, axis=0), axis=1)
 
     agent_data_np = np.concatenate([translations_np, yaws_np, sizes_np], axis=1)
-    agent_data_df = pd.DataFrame(agent_data_np, columns=['x', 'y', 'z', 'heading', 'length', 'width', 'height'])
+    agent_data_df = pd.DataFrame(agent_data_np, 
+                                 columns=['x', 'y', 'z', 'heading', 'length', 'width', 'height'],
+                                 index=list(range(curr_scene_index, curr_scene_index + agent_data_np.shape[0])))
+    agent_data_df.index.name = "scene_ts"
 
     agent_type = nusc_type_to_unified_type(agent_data['category_name'])
     agent_metadata = AgentMetadata(name=agent_data['instance_token'], agent_type=agent_type, first_timestep=curr_scene_index)
@@ -113,18 +116,23 @@ def agg_ego_data(nusc_obj: NuScenes, scene_metadata: SceneMetadata) -> Agent:
 
     ego_data_np = np.concatenate([translations_np, yaws_np], axis=1)
     ego_data_df = pd.DataFrame(ego_data_np, columns=['x', 'y', 'z', 'heading'])
+    ego_data_df.index.name = "scene_ts"
     
     ego_metadata = AgentMetadata(name='ego', agent_type=AgentType.VEHICLE, first_timestep=0)
     return Agent(ego_metadata, ego_data_df, fixed_size=FixedSize(length=4.084, width=1.730, height=1.562))
 
 
-def calc_agent_presence(scene_info: SceneMetadata, nusc_obj: NuScenes, cache_scene_dir: Path, rebuild_cache: bool) -> List[List[str]]:
-    agent_presence: List[List[str]] = [['ego'] for _ in range(scene_info.length_timesteps)]
+def calc_agent_presence(scene_info: SceneMetadata, nusc_obj: NuScenes, cache_scene_dir: Path, rebuild_cache: bool) -> List[List[AgentMetadata]]:
+    agent_presence: List[List[AgentMetadata]] = [[AgentMetadata(name='ego', agent_type=AgentType.VEHICLE, first_timestep=0)] 
+                                                    for _ in range(scene_info.length_timesteps)]
     for frame_idx, frame_info in enumerate(frame_iterator(nusc_obj, scene_info)):
         for agent_info in agent_iterator(nusc_obj, frame_info):
             agent_id: str = agent_info['instance_token']
             agent_file: Path = cache_scene_dir / f"{agent_id}.dill"
-            agent_presence[frame_idx].append(agent_id)
+            agent_type: AgentType = nusc_type_to_unified_type(agent_info['category_name'])
+            agent_metadata: AgentMetadata = AgentMetadata(name=agent_id, agent_type=agent_type, first_timestep=frame_idx)
+            
+            agent_presence[frame_idx].append(agent_metadata)
             if agent_file.is_file() and not rebuild_cache:
                 continue
             

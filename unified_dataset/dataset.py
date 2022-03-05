@@ -6,7 +6,7 @@ from typing import List, Optional, Tuple, Dict
 from torch.utils.data import Dataset
 from multiprocessing import Manager
 
-from unified_dataset.data_structures import UnifiedBatchElement, SceneMetadata, SceneTimeMetadata, SceneTimeNodeMetadata, EnvMetadata, Agent
+from unified_dataset.data_structures import AgentType, AgentBatch, AgentBatchElement, SceneBatch, SceneBatchElement, SceneMetadata, SceneTime, EnvMetadata
 from unified_dataset.utils import string_utils, nusc_utils, lyft_utils, env_utils
 
 # NuScenes
@@ -21,21 +21,29 @@ class UnifiedDataset(Dataset):
     def __init__(self, 
                  datasets: Optional[List[str]] = None, 
                  centric: str = "agent",
-                 history_sec_between: Tuple[int, int] = (0.5, 1),
-                 future_sec_between: Tuple[int, int] = (0.5, 3),
+                 history_sec_at_most: float = 1.0,
+                 future_sec_at_most: float = 3.0,
+                 only_types: Optional[List[AgentType]] = None,
                  data_dirs: Dict[str, str] = {'nusc': '~/datasets/nuScenes',
                                               'nusc_mini': '~/datasets/nuScenes',
                                               'lyft_sample': '~/datasets/lyft/scenes/sample.zarr'},
                  cache_location: str = '~/.unified_data_cache',
                  rebuild_cache: bool = False) -> None:
-        
+        self.centric = centric
+
+        if self.centric == "agent":
+            self.collate_fn = AgentBatch.collate_fn
+        elif self.centric == "scene":
+            self.collate_fn = SceneBatch.collate_fn
+
         self.rebuild_cache = rebuild_cache
         self.cache_dir = Path(cache_location).expanduser().resolve()
         if not self.cache_dir.is_dir():
             self.cache_dir.mkdir()
 
-        self.history_sec_between = history_sec_between
-        self.future_sec_between = future_sec_between
+        self.history_sec_at_most = history_sec_at_most
+        self.future_sec_at_most = future_sec_at_most
+        self.only_types = None if only_types is None else set(only_types)
 
         self.envs_dict: Dict[str, EnvMetadata] = env_utils.get_env_metadata(data_dirs)
 
@@ -62,13 +70,13 @@ class UnifiedDataset(Dataset):
         print(self.scene_index)
         
         self.data_index = list()
-        if centric == "scene":
+        if self.centric == "scene":
             for scene_info in self.scene_index:
                 self.data_index += [(scene_info.env_name, scene_info.name, ts) for ts in range(scene_info.length_timesteps)]
-        elif centric == "agent":
+        elif self.centric == "agent":
             for scene_info in self.scene_index:
                 for ts in range(scene_info.length_timesteps):
-                    self.data_index += [(scene_info.env_name, scene_info.name, ts, agent_id) for agent_id in scene_info.agent_presence[ts]]
+                    self.data_index += [(scene_info.env_name, scene_info.name, ts, agent_metadata.name) for agent_metadata in scene_info.agent_presence[ts]]
 
         manager = Manager()
         self.data_index = manager.list(self.data_index)
@@ -134,6 +142,20 @@ class UnifiedDataset(Dataset):
     def __len__(self) -> int:
         return self.data_len
 
-    def __getitem__(self, idx) -> UnifiedBatchElement:
-        # print(self.data_index[idx])
-        return UnifiedBatchElement(idx)
+    def __getitem__(self, idx) -> AgentBatchElement:
+        if self.centric == "scene":
+            env_name, scene_name, ts = self.data_index[idx]
+        elif self.centric == "agent":
+            env_name, scene_name, ts, agent_id = self.data_index[idx]
+
+        scene_cache_dir: Path = self.cache_dir / env_name / scene_name
+        scene_file: Path = scene_cache_dir / "scene_metadata.dill"
+        with open(scene_file, 'rb') as f:
+            scene_metadata: SceneMetadata = dill.load(f)
+
+        scene_time: SceneTime = SceneTime.from_cache(scene_metadata, ts, scene_cache_dir, only_types=self.only_types)
+
+        if self.centric == "scene":
+            return SceneBatchElement(scene_time, self.history_sec_at_most, self.future_sec_at_most)
+        elif self.centric == "agent":
+            return AgentBatchElement(scene_time, agent_id, self.history_sec_at_most, self.future_sec_at_most)
