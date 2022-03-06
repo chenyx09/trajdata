@@ -1,10 +1,10 @@
 import pandas as pd
-from enum import Enum
+from enum import IntEnum
 from typing import Optional
 from collections import namedtuple
 
 
-class AgentType(Enum):
+class AgentType(IntEnum):
     UNKNOWN = -1
     VEHICLE = 0
     PEDESTRIAN = 1
@@ -18,7 +18,7 @@ FixedSize = namedtuple('FixedSize', ['length', 'width', 'height'])
 class AgentMetadata:
     """Holds node metadata, e.g., name, type, but without the memory footprint of all the actual underlying scene data.
     """
-    def __init__(self, name: str, agent_type: str, first_timestep: int, last_timestep: int) -> None:
+    def __init__(self, name: str, agent_type: AgentType, first_timestep: int, last_timestep: int) -> None:
         self.name = name
         self.type = agent_type
         self.first_timestep = first_timestep

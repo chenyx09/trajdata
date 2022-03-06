@@ -1,4 +1,5 @@
 import dill
+import numpy as np
 from pathlib import Path
 from typing import Any, Optional, List, Set
 
@@ -74,3 +75,9 @@ class SceneTime:
                 agents.append(agent)
 
         return cls(scene_info, scene_ts, agents)
+
+    def get_agent_distances_to(self, agent: Agent) -> np.ndarray:
+        agent_pos = np.array([[agent.data.at[self.ts, 'x'], agent.data.at[self.ts, 'y']]])
+        curr_poses = np.stack([a.data.loc[self.ts, ['x', 'y']] for a in self.agents])
+
+        return np.linalg.norm(curr_poses - agent_pos, axis=1)

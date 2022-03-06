@@ -186,7 +186,7 @@ class UnifiedDataset(Dataset):
     def __len__(self) -> int:
         return self.data_len
 
-    def __getitem__(self, idx) -> AgentBatchElement:
+    def __getitem__(self, idx: int) -> AgentBatchElement:
         if self.centric == "scene":
             env_name, scene_name, ts = self.data_index[idx]
         elif self.centric == "agent":

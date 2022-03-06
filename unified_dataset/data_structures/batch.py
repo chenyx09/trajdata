@@ -14,7 +14,7 @@ class AgentBatch:
 
     @classmethod
     def collate_fn(cls, batch_elems: List[AgentBatchElement]):
-        return cls(nums=default_collate([batch_elem.history_sec_at_most for batch_elem in batch_elems]))
+        return cls(nums=[7])
 
 
 class SceneBatch:
