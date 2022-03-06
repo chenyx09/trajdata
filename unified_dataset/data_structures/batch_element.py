@@ -15,20 +15,33 @@ class AgentBatchElement:
                  scene_time: SceneTime,
                  agent_name: str, 
                  history_sec: Tuple[Optional[float], Optional[float]],
-                 future_sec: Tuple[Optional[float], Optional[float]]) -> None:
+                 future_sec: Tuple[Optional[float], Optional[float]],
+                 encode_robot_future: bool = False,
+                 encode_map: bool = False) -> None:
         self.dt: float = scene_time.metadata.dt
         self.scene_ts: int = scene_time.ts
 
         agent: Agent = next((a for a in scene_time.agents if a.name == agent_name), None)
 
         ### AGENT-SPECIFIC DATA ###
-        curr_agent_pos_np, agent_history_np = self.get_agent_history_data(scene_time, agent, history_sec)
-        agent_future_np: np.ndarray = self.get_agent_future_data(scene_time, agent, future_sec)
+        self.curr_agent_pos_np, self.agent_history_np = self.get_agent_history(agent, history_sec)
+        self.agent_future_np: np.ndarray = self.get_agent_future(agent, future_sec)
 
         ### NEIGHBOR-SPECIFIC DATA ###
-        neighbor_history_np: np.ndarray = self.get_neighbor_history_data(scene_time, agent, history_sec)
+        self.neighbor_history_np: np.ndarray = self.get_neighbor_history(scene_time, agent, history_sec)
 
-    def get_agent_history_data(self, scene_time: SceneTime, agent: Agent, history_sec: Tuple[Optional[float], Optional[float]]) -> Tuple[np.ndarray, np.ndarray]:
+        ### ROBOT DATA ###
+        self.robot_future_np: Optional[np.ndarray] = None
+        if encode_robot_future:
+            robot: Agent = next((a for a in scene_time.agents if a.name == 'ego'), None)
+            self.robot_future_np: np.ndarray = self.get_robot_future(robot, future_sec) - self.curr_agent_pos_np
+
+        ### MAP ###
+        self.map_np: Optional[np.ndarray] = None
+        if encode_map:
+            self.map_np = self.get_map(scene_time, agent)
+
+    def get_agent_history(self, agent: Agent, history_sec: Tuple[Optional[float], Optional[float]]) -> Tuple[np.ndarray, np.ndarray]:
         dt: float = self.dt
         scene_ts: int = self.scene_ts
 
@@ -42,14 +55,15 @@ class AgentBatchElement:
 
         curr_agent_pos_np: np.ndarray = np.array([agent_history_df.at[scene_ts, 'x'], agent_history_df.at[scene_ts, 'y']])
         agent_history_df.loc[:, ['x', 'y']] -= curr_agent_pos_np
-            
+        
         agent_history_df['sin_heading'] = np.sin(agent_history_df['heading'])
         agent_history_df['cos_heading'] = np.cos(agent_history_df['heading'])
 
-        agent_history_np: np.ndarray = agent_history_df.loc[:, ['x', 'y', 'vx', 'vy', 'ax', 'ay', 'sin_heading', 'cos_heading']].values
-        return curr_agent_pos_np, agent_history_np
+        del agent_history_df['heading']
 
-    def get_agent_future_data(self, scene_time: SceneTime, agent: Agent, future_sec: Tuple[Optional[float], Optional[float]]):
+        return curr_agent_pos_np, agent_history_df.values
+
+    def get_agent_future(self, agent: Agent, future_sec: Tuple[Optional[float], Optional[float]]) -> np.ndarray:
         dt: float = self.dt
         scene_ts: int = self.scene_ts
 
@@ -61,20 +75,39 @@ class AgentBatchElement:
         else:
             agent_future_df = agent.data.loc[scene_ts + 1 : , ['x', 'y']]
 
-        agent_future_np: np.ndarray = agent_future_df.values
-        return agent_future_np
+        return agent_future_df.values
 
-    def get_neighbor_history_data(self, scene_time: SceneTime, agent: Agent, history_sec: Tuple[Optional[float], Optional[float]]) -> np.ndarray:
+    def get_neighbor_history(self, scene_time: SceneTime, agent: Agent, history_sec: Tuple[Optional[float], Optional[float]],
+                                  distance_limit: float = np.inf) -> np.ndarray:
         # The indices of the returned ndarray match the scene_time agents list (including the index of the central agent,
         # which would have a distance of 0 to itself).
         distance_matrix: np.ndarray = scene_time.get_agent_distances_to(agent)
         agent_idx = scene_time.agents.index(agent)
+
+        nearby_agents: np.ndarray = distance_matrix <= distance_limit
+        nearby_agents[agent_idx] = False
+        nearby_idxs = nearby_agents.nonzero()
 
         # TODO(bivanovic): Implement distance limits based on edge (agent-agent) type.
 
         agent_types: np.ndarray = np.array([a.type.value for a in scene_time.agents])
 
         neighbor_histories = None
+
+    def get_robot_future(self, robot: Agent, future_sec: Tuple[Optional[float], Optional[float]]) -> np.ndarray:
+        dt: float = self.dt
+        scene_ts: int = self.scene_ts
+
+        if future_sec[1] is not None:
+            max_future = floor(future_sec[1] / dt)
+            robot_future_np = robot.data.loc[scene_ts + 1 : min(scene_ts + max_future, robot.metadata.last_timestep), ['x', 'y']].values
+        else:
+            robot_future_np = robot.data.loc[scene_ts + 1 : , ['x', 'y']].values
+
+        return robot_future_np
+
+    def get_map(self, scene_time: SceneTime, agent: Agent):
+        pass
 
 
 class SceneBatchElement:
