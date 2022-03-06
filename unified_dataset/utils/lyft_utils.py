@@ -11,6 +11,9 @@ from l5kit.data import ChunkedDataset, labels
 from l5kit.geometry import rotation33_as_yaw
 
 
+LYFT_DT = 0.1
+
+
 def get_matching_scenes(lyft_obj: ChunkedDataset, env_info: EnvMetadata, dataset_tuple: Tuple[str, ...]):
     scenes_list: List[SceneMetadata] = list()
     all_scene_frames = lyft_obj.scenes['frame_index_interval']
@@ -27,16 +30,30 @@ def agg_ego_data(lyft_obj: ChunkedDataset, scene_metadata: SceneMetadata) -> Age
     scene_frame_start = scene_metadata.data_access_info[0]
     scene_frame_end = scene_metadata.data_access_info[1]
 
-    ego_translations = lyft_obj.frames[scene_frame_start : scene_frame_end]['ego_translation']
+    ego_translations = lyft_obj.frames[scene_frame_start : scene_frame_end]['ego_translation'][:, :2]
+
+    # Doing this prepending so that the first velocity isn't zero (rather it's just the first actual velocity duplicated)
+    prepend_pos = ego_translations[0] - (ego_translations[1] - ego_translations[0])
+    ego_velocities = np.diff(ego_translations, axis=0, prepend=np.expand_dims(prepend_pos, axis=0)) / LYFT_DT
+
+    # Doing this prepending so that the first acceleration isn't zero (rather it's just the first actual acceleration duplicated)
+    prepend_vel = ego_velocities[0] - (ego_velocities[1] - ego_velocities[0])
+    ego_accelerations = np.diff(ego_velocities, axis=0, prepend=np.expand_dims(prepend_vel, axis=0)) / LYFT_DT
+
     ego_rotations = lyft_obj.frames[scene_frame_start : scene_frame_end]['ego_rotation']
     ego_yaws = np.array([rotation33_as_yaw(ego_rotations[i]) for i in range(scene_metadata.length_timesteps)])
 
-    ego_data_np = np.concatenate([ego_translations, np.expand_dims(ego_yaws, axis=1)], axis=1)
-    ego_data_df = pd.DataFrame(ego_data_np, columns=['x', 'y', 'z', 'heading'])
+    ego_data_np = np.concatenate([ego_translations, ego_velocities, ego_accelerations, np.expand_dims(ego_yaws, axis=1)], axis=1)
+    ego_data_df = pd.DataFrame(ego_data_np, columns=['x', 'y', 'vx', 'vy', 'ax', 'ay', 'heading'])
     ego_data_df.index.name = "scene_ts"
 
-    ego_metadata = AgentMetadata(name='ego', agent_type=AgentType.VEHICLE, first_timestep=0, last_timestep=ego_data_np.shape[0]-1)
-    return Agent(ego_metadata, ego_data_df, fixed_size=FixedSize(length=4.869, width=1.852, height=1.476))
+    ego_metadata = AgentMetadata(name='ego', 
+                                 agent_type=AgentType.VEHICLE, 
+                                 first_timestep=0, 
+                                 last_timestep=ego_data_np.shape[0]-1)
+    return Agent(metadata=ego_metadata, 
+                 data=ego_data_df, 
+                 fixed_size=FixedSize(length=4.869, width=1.852, height=1.476))
 
 
 def lyft_type_to_unified_type(lyft_type: int) -> AgentType:
@@ -78,26 +95,41 @@ def calc_agent_presence(scene_info: SceneMetadata, lyft_obj: ChunkedDataset, cac
     agent_frame_ids = np.repeat(np.arange(scene_info.length_timesteps), num_agents_per_ts)
 
     agent_translations = lyft_agents['centroid']
-    agent_sizes = lyft_agents['extent']
-    agent_yaws = lyft_agents['yaw']
     agent_velocities = lyft_agents['velocity']
+    # agent_sizes = lyft_agents['extent']
+    agent_yaws = lyft_agents['yaw']
     agent_probs = lyft_agents['label_probabilities']
 
-    normal_cols = ['x', 'y', 'heading', 'length', 'width', 'height', 'vx', 'vy']
+    current_cols = ['x', 'y', 'vx', 'vy', 'heading']
+    final_cols = ['x', 'y', 'vx', 'vy', 'ax', 'ay', 'heading'] # Accelerations we have to do later per agent
     class_start = len('PERCEPTION_LABEL')
     label_cols = ['prob' + label[class_start:] for label in labels.PERCEPTION_LABELS[:-1]]
     
-    all_agent_data = np.concatenate([agent_translations, np.expand_dims(agent_yaws, axis=1), agent_sizes, agent_velocities, agent_probs[:, :-1]], axis=1)
-    all_agent_data_df = pd.DataFrame(all_agent_data, columns=normal_cols + label_cols, index=[agent_ids, agent_frame_ids])
+    all_agent_data = np.concatenate([agent_translations, agent_velocities, np.expand_dims(agent_yaws, axis=1), agent_probs[:, :-1]], axis=1)
+    all_agent_data_df = pd.DataFrame(all_agent_data, columns=current_cols + label_cols, index=[agent_ids, agent_frame_ids])
     all_agent_data_df.index.names = ["agent_id", "scene_ts"]
 
     for agent_id in np.unique(agent_ids):
-        agent_data_df: pd.DataFrame = all_agent_data_df.xs(agent_id)
+        agent_data_df: pd.DataFrame = all_agent_data_df.loc[agent_id].copy()
+
+        if len(agent_data_df) <= 1:
+            # There are some agents with only a single detection to them, we don't care about these.
+            continue
+
         start_frame: int = agent_data_df.index[0].item()
         last_frame: int = agent_data_df.index[-1].item()
         mode_type: int = mode(np.argmax(agent_data_df[label_cols].values, axis=1))[0].item()
         agent_type: AgentType = lyft_type_to_unified_type(mode_type)
-        agent_metadata = AgentMetadata(name=str(agent_id), agent_type=agent_type, first_timestep=start_frame, last_timestep=last_frame)
+
+        # Doing this prepending so that the first acceleration isn't zero (rather it's just the first actual acceleration duplicated)
+        prepend_vx = agent_data_df.at[start_frame, 'vx'] - (agent_data_df.at[start_frame + 1, 'vx'] - agent_data_df.at[start_frame, 'vx'])
+        prepend_vy = agent_data_df.at[start_frame, 'vy'] - (agent_data_df.at[start_frame + 1, 'vy'] - agent_data_df.at[start_frame, 'vy'])
+        agent_data_df[['ax', 'ay']] = np.diff(agent_data_df[['vx', 'vy']], axis=0, prepend=np.array([[prepend_vx, prepend_vy]])) / LYFT_DT
+
+        agent_metadata = AgentMetadata(name=str(agent_id), 
+                                       agent_type=agent_type, 
+                                       first_timestep=start_frame, 
+                                       last_timestep=last_frame)
 
         for frame in agent_data_df.index:
             agent_presence[frame].append(agent_metadata)
@@ -109,7 +141,7 @@ def calc_agent_presence(scene_info: SceneMetadata, lyft_obj: ChunkedDataset, cac
             continue
         
         # For now only saving non-prob columns since Lyft is effectively one-hot (see https://arxiv.org/abs/2104.12446)
-        agent = Agent(agent_metadata, agent_data_df[normal_cols])
+        agent = Agent(agent_metadata, agent_data_df[final_cols])
         with open(agent_file, 'wb') as f:
             dill.dump(agent, f)
 

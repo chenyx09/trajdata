@@ -2,6 +2,8 @@ from typing import Dict, List
 from collections import defaultdict
 
 from unified_dataset.data_structures import EnvMetadata
+from unified_dataset.utils.nusc_utils import NUSC_DT
+from unified_dataset.utils.lyft_utils import LYFT_DT
 
 from nuscenes.utils.splits import create_splits_scenes
 
@@ -19,7 +21,7 @@ def get_env_metadata(data_dirs: Dict[str, str]) -> Dict[str, EnvMetadata]:
         nusc_env = EnvMetadata(
             name='nusc',
             data_dir=data_dirs['nusc'],
-            dt=0.5,
+            dt=NUSC_DT,
             parts=[ # nuScenes possibilities are the Cartesian product of these
                 ('train', 'val', 'test'),
                 ('boston', 'singapore')
@@ -42,7 +44,7 @@ def get_env_metadata(data_dirs: Dict[str, str]) -> Dict[str, EnvMetadata]:
         nusc_mini_env = EnvMetadata(
             name='nusc_mini',
             data_dir=data_dirs['nusc_mini'],
-            dt=0.5,
+            dt=NUSC_DT,
             parts=[ # nuScenes mini possibilities are the Cartesian product of these
                 ('train', 'val'),
                 ('boston', 'singapore')
@@ -55,7 +57,7 @@ def get_env_metadata(data_dirs: Dict[str, str]) -> Dict[str, EnvMetadata]:
         lyft_sample_env = EnvMetadata(
             name='lyft_sample',
             data_dir=data_dirs['lyft_sample'],
-            dt=0.1,
+            dt=LYFT_DT,
             parts=[ # Lyft Level 5 Sample dataset possibilities are the Cartesian product of these
                 ('palo_alto', )
             ],

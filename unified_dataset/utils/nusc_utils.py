@@ -10,6 +10,9 @@ from pyquaternion import Quaternion
 from unified_dataset.data_structures import FixedSize, Agent, AgentType, AgentMetadata, SceneMetadata, EnvMetadata
 
 
+NUSC_DT = 0.5
+
+
 def frame_iterator(nusc_obj: NuScenes, scene_metadata: SceneMetadata) -> Dict[str, Union[str, int]]:
     """Loops through all frames in a scene and yields them for the caller to deal with the information.
     """
@@ -62,7 +65,7 @@ def agg_agent_data(nusc_obj: NuScenes, agent_data: Dict[str, Any], curr_scene_in
         print('WARN: This is not the first frame of this agent!')
 
     translation_list = [agent_data['translation']]
-    size_list = [agent_data['size']]
+    agent_size = agent_data['size']
     yaw_list = [Quaternion(agent_data['rotation']).yaw_pitch_roll[0]]
     
     curr_sample_ann_token: str = agent_data['next']
@@ -70,25 +73,39 @@ def agg_agent_data(nusc_obj: NuScenes, agent_data: Dict[str, Any], curr_scene_in
         agent_data = nusc_obj.get('sample_annotation', curr_sample_ann_token)
 
         translation_list.append(agent_data['translation'])
-        size_list.append(agent_data['size'])
+        # size_list.append(agent_data['size'])
         yaw_list.append(Quaternion(agent_data['rotation']).yaw_pitch_roll[0])
 
         curr_sample_ann_token = agent_data['next']
 
-    translations_np = np.stack(translation_list, axis=0)
-    sizes_np = np.stack(size_list, axis=0)
-    yaws_np = np.expand_dims(np.stack(yaw_list, axis=0), axis=1)
+    translations_np = np.stack(translation_list, axis=0)[:, :2]
+    
+    # Doing this prepending so that the first velocity isn't zero (rather it's just the first actual velocity duplicated)
+    prepend_pos = translations_np[0] - (translations_np[1] - translations_np[0])
+    velocities_np = np.diff(translations_np, axis=0, prepend=np.expand_dims(prepend_pos, axis=0)) / NUSC_DT
 
-    agent_data_np = np.concatenate([translations_np, yaws_np, sizes_np], axis=1)
+    # Doing this prepending so that the first acceleration isn't zero (rather it's just the first actual acceleration duplicated)
+    prepend_vel = velocities_np[0] - (velocities_np[1] - velocities_np[0])
+    accelerations_np = np.diff(velocities_np, axis=0, prepend=np.expand_dims(prepend_vel, axis=0)) / NUSC_DT
+
+    yaws_np = np.expand_dims(np.stack(yaw_list, axis=0), axis=1)
+    # sizes_np = np.stack(size_list, axis=0)
+
+    agent_data_np = np.concatenate([translations_np, velocities_np, accelerations_np, yaws_np], axis=1)
     last_timestep = curr_scene_index + agent_data_np.shape[0] - 1
     agent_data_df = pd.DataFrame(agent_data_np, 
-                                 columns=['x', 'y', 'z', 'heading', 'length', 'width', 'height'],
+                                 columns=['x', 'y', 'vx', 'vy', 'ax', 'ay', 'heading'],
                                  index=list(range(curr_scene_index, last_timestep + 1)))
     agent_data_df.index.name = "scene_ts"
 
     agent_type = nusc_type_to_unified_type(agent_data['category_name'])
-    agent_metadata = AgentMetadata(name=agent_data['instance_token'], agent_type=agent_type, first_timestep=curr_scene_index, last_timestep=last_timestep)
-    return Agent(agent_metadata, agent_data_df)
+    agent_metadata = AgentMetadata(name=agent_data['instance_token'],
+                                   agent_type=agent_type,
+                                   first_timestep=curr_scene_index,
+                                   last_timestep=last_timestep)
+    return Agent(metadata=agent_metadata,
+                 data=agent_data_df,
+                 fixed_size=FixedSize(length=agent_size[0], width=agent_size[1], height=agent_size[2]))
 
 
 def nusc_type_to_unified_type(nusc_type: str) -> AgentType:
@@ -110,21 +127,38 @@ def agg_ego_data(nusc_obj: NuScenes, scene_metadata: SceneMetadata) -> Agent:
     for frame_info in frame_iterator(nusc_obj, scene_metadata):
         ego_pose = get_ego_pose(nusc_obj, frame_info)
         yaw_list.append(Quaternion(ego_pose['rotation']).yaw_pitch_roll[0])
-        translation_list.append(ego_pose['translation'])
+        translation_list.append(ego_pose['translation'][:2])
 
     translations_np = np.stack(translation_list, axis=0)
+
+    # Doing this prepending so that the first velocity isn't zero (rather it's just the first actual velocity duplicated)
+    prepend_pos = translations_np[0] - (translations_np[1] - translations_np[0])
+    velocities_np = np.diff(translations_np, axis=0, prepend=np.expand_dims(prepend_pos, axis=0)) / NUSC_DT
+
+    # Doing this prepending so that the first acceleration isn't zero (rather it's just the first actual acceleration duplicated)
+    prepend_vel = velocities_np[0] - (velocities_np[1] - velocities_np[0])
+    accelerations_np = np.diff(velocities_np, axis=0, prepend=np.expand_dims(prepend_vel, axis=0)) / NUSC_DT
+
     yaws_np = np.expand_dims(np.stack(yaw_list, axis=0), axis=1)
 
-    ego_data_np = np.concatenate([translations_np, yaws_np], axis=1)
-    ego_data_df = pd.DataFrame(ego_data_np, columns=['x', 'y', 'z', 'heading'])
+    ego_data_np = np.concatenate([translations_np, velocities_np, accelerations_np, yaws_np], axis=1)
+    ego_data_df = pd.DataFrame(ego_data_np, columns=['x', 'y', 'vx', 'vy', 'ax', 'ay', 'heading'])
     ego_data_df.index.name = "scene_ts"
     
-    ego_metadata = AgentMetadata(name='ego', agent_type=AgentType.VEHICLE, first_timestep=0, last_timestep=ego_data_np.shape[0]-1)
-    return Agent(ego_metadata, ego_data_df, fixed_size=FixedSize(length=4.084, width=1.730, height=1.562))
+    ego_metadata = AgentMetadata(name='ego',
+                                 agent_type=AgentType.VEHICLE, 
+                                 first_timestep=0, 
+                                 last_timestep=ego_data_np.shape[0]-1)
+    return Agent(metadata=ego_metadata, 
+                 data=ego_data_df, 
+                 fixed_size=FixedSize(length=4.084, width=1.730, height=1.562))
 
 
 def calc_agent_presence(scene_info: SceneMetadata, nusc_obj: NuScenes, cache_scene_dir: Path, rebuild_cache: bool) -> List[List[AgentMetadata]]:
-    agent_presence: List[List[AgentMetadata]] = [[AgentMetadata(name='ego', agent_type=AgentType.VEHICLE, first_timestep=0, last_timestep=scene_info.length_timesteps-1)] 
+    agent_presence: List[List[AgentMetadata]] = [[AgentMetadata(name='ego', 
+                                                                agent_type=AgentType.VEHICLE,
+                                                                first_timestep=0,
+                                                                last_timestep=scene_info.length_timesteps-1)]
                                                     for _ in range(scene_info.length_timesteps)]
     
     existing_agents: Dict[str, AgentMetadata] = dict()
@@ -132,6 +166,10 @@ def calc_agent_presence(scene_info: SceneMetadata, nusc_obj: NuScenes, cache_sce
         for agent_info in agent_iterator(nusc_obj, frame_info):
             if agent_info['instance_token'] in existing_agents:
                 agent_presence[frame_idx].append(existing_agents[agent_info['instance_token']])
+                continue
+
+            if not agent_info['next']:
+                # There are some agents with only a single detection to them, we don't care about these.
                 continue
 
             agent: Agent = agg_agent_data(nusc_obj, agent_info, frame_idx)

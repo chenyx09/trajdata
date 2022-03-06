@@ -41,24 +41,10 @@ class AgentBatchElement:
             agent_history_df: pd.DataFrame = agent.data.loc[ : scene_ts].copy()
 
         curr_agent_pos_np: np.ndarray = np.array([agent_history_df.at[scene_ts, 'x'], agent_history_df.at[scene_ts, 'y']])
-        agent_history_df.loc[:, ('x', 'y')] -= curr_agent_pos_np
-
-        if 'vx' not in agent_history_df.columns:
-            agent_history_df['vx'] = np.gradient(agent_history_df['x'], dt)
-        if 'vy' not in agent_history_df.columns:
-            agent_history_df['vy'] = np.gradient(agent_history_df['y'], dt)
-
-        # We're going to opt to get heading from velocity if it's not already present.
-        if 'heading' not in agent_history_df.columns:
-            agent_history_df['heading'] = np.arctan2(agent_history_df['vy'], agent_history_df['vx'])
+        agent_history_df.loc[:, ['x', 'y']] -= curr_agent_pos_np
             
         agent_history_df['sin_heading'] = np.sin(agent_history_df['heading'])
         agent_history_df['cos_heading'] = np.cos(agent_history_df['heading'])
-
-        if 'ax' not in agent_history_df.columns:
-            agent_history_df['ax'] = np.gradient(agent_history_df['vx'], dt)
-        if 'ay' not in agent_history_df.columns:
-            agent_history_df['ay'] = np.gradient(agent_history_df['vy'], dt)
 
         agent_history_np: np.ndarray = agent_history_df.loc[:, ['x', 'y', 'vx', 'vy', 'ax', 'ay', 'sin_heading', 'cos_heading']].values
         return curr_agent_pos_np, agent_history_np
@@ -71,11 +57,11 @@ class AgentBatchElement:
         # took care of it.
         if future_sec[1] is not None:
             max_future = floor(future_sec[1] / dt)
-            agent_future_df = agent.data.loc[scene_ts + 1 : min(scene_ts + max_future, agent.metadata.last_timestep)]
+            agent_future_df = agent.data.loc[scene_ts + 1 : min(scene_ts + max_future, agent.metadata.last_timestep), ['x', 'y']]
         else:
-            agent_future_df = agent.data.loc[scene_ts + 1 : ]
+            agent_future_df = agent.data.loc[scene_ts + 1 : , ['x', 'y']]
 
-        agent_future_np: np.ndarray = agent_future_df.loc[:, ['x', 'y']].values
+        agent_future_np: np.ndarray = agent_future_df.values
         return agent_future_np
 
     def get_neighbor_history_data(self, scene_time: SceneTime, agent: Agent, history_sec: Tuple[Optional[float], Optional[float]]) -> np.ndarray:
