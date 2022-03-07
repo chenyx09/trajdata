@@ -4,11 +4,11 @@ from math import ceil, floor
 from tqdm import tqdm
 from pathlib import Path
 from typing import List, Optional, Tuple, Dict, Set
+from collections import defaultdict
 from torch.utils.data import Dataset
 from multiprocessing import Manager
 
-from unified_dataset.data_structures import AgentType, AgentBatch, AgentBatchElement, SceneBatch, SceneBatchElement, SceneMetadata, SceneTime, EnvMetadata
-from unified_dataset.data_structures.agent import AgentMetadata
+from unified_dataset.data_structures import AgentType, AgentMetadata, agent_collate_fn, AgentBatchElement, scene_collate_fn, SceneBatchElement, SceneMetadata, SceneTime, EnvMetadata
 from unified_dataset.utils import string_utils, nusc_utils, lyft_utils, env_utils
 
 # NuScenes
@@ -25,6 +25,9 @@ class UnifiedDataset(Dataset):
                  centric: str = "agent",
                  history_sec: Tuple[Optional[float], Optional[float]] = (None, None), # Both inclusive
                  future_sec: Tuple[Optional[float], Optional[float]] = (None, None), # Both inclusive
+                 agent_interaction_distances: Dict[Tuple[AgentType, AgentType], float] = defaultdict(lambda: np.inf),
+                 incl_robot_future: bool = False,
+                 incl_map: bool = False,
                  only_types: Optional[List[AgentType]] = None,
                  no_types: Optional[List[AgentType]] = None,
                  data_dirs: Dict[str, str] = {'nusc': '~/datasets/nuScenes',
@@ -35,9 +38,9 @@ class UnifiedDataset(Dataset):
         self.centric = centric
 
         if self.centric == "agent":
-            self.collate_fn = AgentBatch.collate_fn
+            self.collate_fn = agent_collate_fn
         elif self.centric == "scene":
-            self.collate_fn = SceneBatch.collate_fn
+            self.collate_fn = scene_collate_fn
 
         self.rebuild_cache = rebuild_cache
         self.cache_dir = Path(cache_location).expanduser().resolve()
@@ -46,6 +49,9 @@ class UnifiedDataset(Dataset):
 
         self.history_sec = history_sec
         self.future_sec = future_sec
+        self.agent_interaction_distances = agent_interaction_distances
+        self.incl_robot_future = incl_robot_future
+        self.incl_map = incl_map
         self.only_types = None if only_types is None else set(only_types)
         self.no_types = None if no_types is None else set(no_types)
 
@@ -202,4 +208,11 @@ class UnifiedDataset(Dataset):
         if self.centric == "scene":
             return SceneBatchElement(scene_time, self.history_sec, self.future_sec)
         elif self.centric == "agent":
-            return AgentBatchElement(scene_time, agent_id, self.history_sec, self.future_sec)
+            return AgentBatchElement(idx, 
+                                     scene_time, 
+                                     agent_id, 
+                                     self.history_sec, 
+                                     self.future_sec, 
+                                     self.agent_interaction_distances,
+                                     self.incl_robot_future,
+                                     self.incl_map)
