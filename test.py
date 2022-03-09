@@ -15,7 +15,6 @@ def main():
 
     batch: AgentBatch
     for batch in tqdm(dataloader):
-        # print(batch.nums)
         pass
 
 

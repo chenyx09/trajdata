@@ -30,7 +30,10 @@ class AgentBatchElement:
 
         ### AGENT-SPECIFIC DATA ###
         self.curr_agent_state_np, self.agent_history_np = self.get_agent_history(agent, history_sec)
+        self.agent_history_len: int = self.agent_history_np.shape[0]
+
         self.agent_future_np: np.ndarray = self.get_agent_future(agent, future_sec)
+        self.agent_future_len: int = self.agent_future_np.shape[0]
 
         ### NEIGHBOR-SPECIFIC DATA ###
         def distance_limit(agent_types: np.ndarray, target_type: int) -> np.ndarray:
@@ -39,13 +42,14 @@ class AgentBatchElement:
         (self.num_neighbors, 
          self.neighbor_types_np,
          self.neighbor_histories,
-         self.neighbor_lens_np) = self.get_neighbor_history(scene_time, agent, history_sec, distance_limit)
+         self.neighbor_history_lens_np) = self.get_neighbor_history(scene_time, agent, history_sec, distance_limit)
 
         ### ROBOT DATA ###
         self.robot_future_np: Optional[np.ndarray] = None
         if incl_robot_future:
             robot: Agent = next((a for a in scene_time.agents if a.name == 'ego'), None)
             self.robot_future_np: np.ndarray = self.get_robot_future(robot, future_sec)
+            self.robot_future_len: int = self.robot_future_np.shape[0]
 
         ### MAP ###
         self.map_np: Optional[np.ndarray] = None
@@ -99,14 +103,16 @@ class AgentBatchElement:
         agent_distances: np.ndarray = scene_time.get_agent_distances_to(agent)
         agent_idx: int = scene_time.agents.index(agent)
 
-        neighbor_types_np: np.ndarray = np.array([a.type.value for a in scene_time.agents])
-        nearby_mask: np.ndarray = agent_distances <= distance_limit(neighbor_types_np, agent.type)
+        neighbor_types: np.ndarray = np.array([a.type.value for a in scene_time.agents])
+        nearby_mask: np.ndarray = agent_distances <= distance_limit(neighbor_types, agent.type)
         nearby_mask[agent_idx] = False
+        
         nearby_agents: List[Agent] = [agent for (idx, agent) in enumerate(scene_time.agents) if nearby_mask[idx]]
+        neighbor_types_np: np.ndarray = neighbor_types[nearby_mask]
 
         max_history: int = floor(history_sec[1] / dt)
         num_neighbors: int = len(nearby_agents)
-        neighbor_lens_np: np.ndarray = np.zeros((num_neighbors, ), dtype=int)
+        neighbor_history_lens_np: np.ndarray = np.zeros((num_neighbors, ), dtype=int)
         neighbor_histories: List[np.ndarray] = list()
         for idx, neighbor in enumerate(nearby_agents):
             if history_sec[1] is not None:
@@ -119,10 +125,10 @@ class AgentBatchElement:
             neighbor_history_df['cos_heading'] = np.cos(neighbor_history_df['heading'])
             del neighbor_history_df['heading']
 
-            neighbor_lens_np[idx] = len(neighbor_history_df)
+            neighbor_history_lens_np[idx] = len(neighbor_history_df)
             neighbor_histories.append(neighbor_history_df.values)
 
-        return num_neighbors, neighbor_types_np, neighbor_histories, neighbor_lens_np
+        return num_neighbors, neighbor_types_np, neighbor_histories, neighbor_history_lens_np
 
     def get_robot_future(self, robot: Agent, future_sec: Tuple[Optional[float], Optional[float]]) -> np.ndarray:
         dt: float = self.dt
