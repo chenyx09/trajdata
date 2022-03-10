@@ -5,8 +5,8 @@ from typing import Callable, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from unified_dataset.data_structures.agent import Agent, AgentType
-from unified_dataset.data_structures.scene import SceneTime
+from avdata.data_structures.agent import Agent, AgentType
+from avdata.data_structures.scene import SceneTime
 
 
 class AgentBatchElement:

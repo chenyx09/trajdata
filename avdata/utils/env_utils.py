@@ -3,9 +3,9 @@ from typing import Dict, List
 
 from nuscenes.utils.splits import create_splits_scenes
 
-from unified_dataset.data_structures import EnvMetadata
-from unified_dataset.utils.lyft_utils import LYFT_DT
-from unified_dataset.utils.nusc_utils import NUSC_DT
+from avdata.data_structures import EnvMetadata
+from avdata.utils.lyft_utils import LYFT_DT
+from avdata.utils.nusc_utils import NUSC_DT
 
 
 def get_env_metadata(data_dirs: Dict[str, str]) -> Dict[str, EnvMetadata]:

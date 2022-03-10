@@ -16,7 +16,7 @@ from nuscenes.nuscenes import NuScenes
 from torch.utils.data import Dataset
 from tqdm import tqdm
 
-from unified_dataset.data_structures import (
+from avdata.data_structures import (
     AgentBatchElement,
     AgentMetadata,
     AgentType,
@@ -27,7 +27,7 @@ from unified_dataset.data_structures import (
     agent_collate_fn,
     scene_collate_fn,
 )
-from unified_dataset.utils import env_utils, lyft_utils, nusc_utils, string_utils
+from avdata.utils import env_utils, lyft_utils, nusc_utils, string_utils
 
 
 class UnifiedDataset(Dataset):

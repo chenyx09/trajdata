@@ -4,8 +4,8 @@ from typing import Any, List, Optional, Set
 import dill
 import numpy as np
 
-from unified_dataset.data_structures.agent import Agent, AgentMetadata, AgentType
-from unified_dataset.data_structures.environment import EnvMetadata
+from avdata.data_structures.agent import Agent, AgentMetadata, AgentType
+from avdata.data_structures.environment import EnvMetadata
 
 
 class SceneMetadata:

@@ -8,7 +8,7 @@ from l5kit.data import ChunkedDataset, labels
 from l5kit.geometry import rotation33_as_yaw
 from scipy.stats import mode
 
-from unified_dataset.data_structures import (
+from avdata.data_structures import (
     Agent,
     AgentMetadata,
     AgentType,

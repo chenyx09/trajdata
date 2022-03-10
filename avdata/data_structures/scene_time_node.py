@@ -1,5 +1,5 @@
-from unified_dataset.data_structures.agent import AgentMetadata
-from unified_dataset.data_structures.scene import SceneMetadata
+from avdata.data_structures.agent import AgentMetadata
+from avdata.data_structures.scene import SceneMetadata
 
 
 class SceneTimeNodeMetadata:

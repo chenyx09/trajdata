@@ -7,7 +7,7 @@ import pandas as pd
 from nuscenes.nuscenes import NuScenes
 from pyquaternion import Quaternion
 
-from unified_dataset.data_structures import (
+from avdata.data_structures import (
     Agent,
     AgentMetadata,
     AgentType,
