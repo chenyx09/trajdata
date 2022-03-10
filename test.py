@@ -16,7 +16,7 @@ def main():
     )
 
     print(len(dataset))
-    
+
     dataloader = DataLoader(
         dataset,
         batch_size=4,
