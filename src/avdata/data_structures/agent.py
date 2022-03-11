@@ -1,5 +1,9 @@
+import contextlib
+import sqlite3
 from collections import namedtuple
 from enum import IntEnum
+from pathlib import Path
+from sqlite3 import Connection
 from typing import Optional
 
 import pandas as pd
@@ -20,12 +24,18 @@ class AgentMetadata:
     """Holds node metadata, e.g., name, type, but without the memory footprint of all the actual underlying scene data."""
 
     def __init__(
-        self, name: str, agent_type: AgentType, first_timestep: int, last_timestep: int
+        self,
+        name: str,
+        agent_type: AgentType,
+        first_timestep: int,
+        last_timestep: int,
+        fixed_size: Optional[FixedSize] = None,
     ) -> None:
         self.name = name
         self.type = agent_type
         self.first_timestep = first_timestep
         self.last_timestep = last_timestep
+        self.fixed_size = fixed_size
 
 
 class Agent:
@@ -35,10 +45,24 @@ class Agent:
         self,
         metadata: AgentMetadata,
         data: pd.DataFrame,
-        fixed_size: Optional[FixedSize] = None,
     ) -> None:
         self.name = metadata.name
         self.type = metadata.type
         self.metadata = metadata
         self.data = data
-        self.fixed_size = fixed_size
+
+    @classmethod
+    def from_cache(cls, metadata: AgentMetadata, scene_cache_dir: Path):
+        with contextlib.closing(
+            sqlite3.connect(scene_cache_dir / "agent_data.db")
+        ) as conn:
+            data_df = pd.read_sql_query(
+                "SELECT * FROM agent_data WHERE agent_id=?",
+                conn,
+                params=(metadata.name,),
+                index_col="scene_ts",
+            )
+
+        del data_df["agent_id"]
+
+        return cls(metadata, data_df)

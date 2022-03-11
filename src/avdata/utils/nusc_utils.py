@@ -1,7 +1,9 @@
+import contextlib
+import sqlite3
 from pathlib import Path
+from sqlite3 import Cursor
 from typing import Any, Dict, List, Tuple, Union
 
-import dill
 import numpy as np
 import pandas as pd
 from nuscenes.nuscenes import NuScenes
@@ -17,6 +19,17 @@ from avdata.data_structures import (
 )
 
 NUSC_DT = 0.5
+NUSC_DB_SCHEMA = """
+agent_id TEXT NOT NULL,
+scene_ts INTEGER NOT NULL,
+x REAL NOT NULL,
+y REAL NOT NULL,
+vx REAL NOT NULL,
+vy REAL NOT NULL,
+ax REAL NOT NULL,
+ay REAL NOT NULL,
+heading REAL NOT NULL
+"""
 
 
 def frame_iterator(
@@ -126,6 +139,7 @@ def agg_agent_data(
         index=list(range(curr_scene_index, last_timestep + 1)),
     )
     agent_data_df.index.name = "scene_ts"
+    agent_data_df["agent_id"] = agent_data["instance_token"]
 
     agent_type = nusc_type_to_unified_type(agent_data["category_name"])
     agent_metadata = AgentMetadata(
@@ -133,13 +147,13 @@ def agg_agent_data(
         agent_type=agent_type,
         first_timestep=curr_scene_index,
         last_timestep=last_timestep,
+        fixed_size=FixedSize(
+            length=agent_size[0], width=agent_size[1], height=agent_size[2]
+        ),
     )
     return Agent(
         metadata=agent_metadata,
         data=agent_data_df,
-        fixed_size=FixedSize(
-            length=agent_size[0], width=agent_size[1], height=agent_size[2]
-        ),
     )
 
 
@@ -189,20 +203,29 @@ def agg_ego_data(nusc_obj: NuScenes, scene_metadata: SceneMetadata) -> Agent:
         ego_data_np, columns=["x", "y", "vx", "vy", "ax", "ay", "heading"]
     )
     ego_data_df.index.name = "scene_ts"
+    ego_data_df["agent_id"] = "ego"
 
     ego_metadata = AgentMetadata(
         name="ego",
         agent_type=AgentType.VEHICLE,
         first_timestep=0,
         last_timestep=ego_data_np.shape[0] - 1,
+        fixed_size=FixedSize(length=4.084, width=1.730, height=1.562),
     )
     return Agent(
         metadata=ego_metadata,
         data=ego_data_df,
-        fixed_size=FixedSize(length=4.084, width=1.730, height=1.562),
     )
 
 
+def agent_exists(cursor: Cursor, agent_id: str):
+    cursor.execute(
+        "SELECT EXISTS(SELECT 1 FROM agent_data WHERE agent_id=?)", (agent_id,)
+    )
+    return bool(cursor.fetchone()[0])
+
+
+# @profile
 def calc_agent_presence(
     scene_info: SceneMetadata,
     nusc_obj: NuScenes,
@@ -216,11 +239,13 @@ def calc_agent_presence(
                 agent_type=AgentType.VEHICLE,
                 first_timestep=0,
                 last_timestep=scene_info.length_timesteps - 1,
+                fixed_size=FixedSize(length=4.084, width=1.730, height=1.562),
             )
         ]
         for _ in range(scene_info.length_timesteps)
     ]
 
+    agent_data_list: List[pd.DataFrame] = list()
     existing_agents: Dict[str, AgentMetadata] = dict()
     for frame_idx, frame_info in enumerate(frame_iterator(nusc_obj, scene_info)):
         for agent_info in agent_iterator(nusc_obj, frame_info):
@@ -239,19 +264,22 @@ def calc_agent_presence(
             agent_presence[frame_idx].append(agent.metadata)
             existing_agents[agent.name] = agent.metadata
 
-            agent_file: Path = cache_scene_dir / f"{agent.name}.dill"
-            if agent_file.is_file() and not rebuild_cache:
-                # This could happen if caching is stopped before the scene
-                # metadata is saved.
-                continue
+            agent_data_list.append(agent.data)
 
-            with open(agent_file, "wb") as f:
-                dill.dump(agent, f)
+    ego_agent: Agent = agg_ego_data(nusc_obj, scene_info)
+    agent_data_list.append(ego_agent.data)
 
-    ego_file: Path = cache_scene_dir / "ego.dill"
-    if not ego_file.is_file() or rebuild_cache:
-        ego_agent: Agent = agg_ego_data(nusc_obj, scene_info)
-        with open(ego_file, "wb") as f:
-            dill.dump(ego_agent, f)
+    with contextlib.closing(
+        sqlite3.connect(cache_scene_dir / "agent_data.db")
+    ) as connection:
+        cursor = connection.cursor()
+        cursor.execute(f"CREATE TABLE IF NOT EXISTS agent_data ({NUSC_DB_SCHEMA})")
+        pd.concat(agent_data_list).to_sql(
+            name="agent_data",
+            con=connection,
+            if_exists="replace",
+            index=True,
+            index_label="scene_ts",
+        )
 
     return agent_presence

@@ -1,8 +1,10 @@
+import contextlib
+import sqlite3
 from pathlib import Path
 from typing import Any, List, Optional, Set
 
-import dill
 import numpy as np
+import pandas as pd
 
 from avdata.data_structures.agent import Agent, AgentMetadata, AgentType
 from avdata.data_structures.environment import EnvMetadata
@@ -54,11 +56,16 @@ class SceneTime:
     """Holds the data for a particular scene at a particular timestep."""
 
     def __init__(
-        self, metadata: SceneMetadata, scene_ts: int, agents: List[Agent]
+        self,
+        metadata: SceneMetadata,
+        scene_ts: int,
+        agents: List[Agent],
+        scene_cache_dir: Path,
     ) -> None:
         self.metadata = metadata
         self.ts = scene_ts
         self.agents = agents
+        self.scene_cache_dir = scene_cache_dir
 
     @classmethod
     def from_cache(
@@ -77,18 +84,26 @@ class SceneTime:
                 continue
 
             if only_types is None or agent_info.type in only_types:
-                agent_file = scene_cache_dir / f"{agent_info.name}.dill"
-                with open(agent_file, "rb") as f:
-                    agent: Agent = dill.load(f)
+                agents.append(Agent.from_cache(agent_info, scene_cache_dir))
 
-                agents.append(agent)
+        return cls(scene_info, scene_ts, agents, scene_cache_dir)
 
-        return cls(scene_info, scene_ts, agents)
-
+    # @profile
     def get_agent_distances_to(self, agent: Agent) -> np.ndarray:
         agent_pos = np.array(
             [[agent.data.at[self.ts, "x"], agent.data.at[self.ts, "y"]]]
         )
-        curr_poses = np.stack([a.data.loc[self.ts, ["x", "y"]] for a in self.agents])
 
+        with contextlib.closing(
+            sqlite3.connect(self.scene_cache_dir / "agent_data.db")
+        ) as connection:
+            data_df = pd.read_sql_query(
+                "SELECT agent_id,x,y FROM agent_data WHERE scene_ts=?",
+                connection,
+                params=(self.ts,),
+                index_col="agent_id",
+            )
+
+        agent_ids = [a.name for a in self.agents]
+        curr_poses = data_df.loc[agent_ids, ["x", "y"]].values
         return np.linalg.norm(curr_poses - agent_pos, axis=1)

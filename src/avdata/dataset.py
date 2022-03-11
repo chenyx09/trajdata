@@ -31,6 +31,7 @@ from avdata.utils import env_utils, lyft_utils, nusc_utils, string_utils
 
 
 class UnifiedDataset(Dataset):
+    # @profile
     def __init__(
         self,
         datasets: Optional[List[str]] = None,
@@ -288,6 +289,7 @@ class UnifiedDataset(Dataset):
     def __len__(self) -> int:
         return self.data_len
 
+    # @profile
     def __getitem__(self, idx: int) -> AgentBatchElement:
         if self.centric == "scene":
             env_name, scene_name, ts = self.data_index[idx]

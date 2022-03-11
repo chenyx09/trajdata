@@ -12,6 +12,7 @@ from avdata.data_structures.scene import SceneTime
 class AgentBatchElement:
     """A single element of an agent-centric batch."""
 
+    # @profile
     def __init__(
         self,
         data_index: int,
@@ -114,6 +115,7 @@ class AgentBatchElement:
 
         return agent_future_df.values
 
+    @profile
     def get_neighbor_history(
         self,
         scene_time: SceneTime,
