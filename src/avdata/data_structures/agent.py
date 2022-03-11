@@ -2,7 +2,6 @@ import contextlib
 import sqlite3
 from collections import namedtuple
 from enum import IntEnum
-from pathlib import Path
 from sqlite3 import Connection
 from typing import Optional
 
@@ -52,16 +51,13 @@ class Agent:
         self.data = data
 
     @classmethod
-    def from_cache(cls, metadata: AgentMetadata, scene_cache_dir: Path):
-        with contextlib.closing(
-            sqlite3.connect(scene_cache_dir / "agent_data.db")
-        ) as conn:
-            data_df = pd.read_sql_query(
-                "SELECT * FROM agent_data WHERE agent_id=?",
-                conn,
-                params=(metadata.name,),
-                index_col="scene_ts",
-            )
+    def from_cache(cls, metadata: AgentMetadata, db_connection: Connection):
+        data_df = pd.read_sql_query(
+            "SELECT * FROM agent_data WHERE agent_id=?",
+            db_connection,
+            params=(metadata.name,),
+            index_col="scene_ts",
+        )
 
         del data_df["agent_id"]
 

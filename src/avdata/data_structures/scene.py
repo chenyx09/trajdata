@@ -78,13 +78,16 @@ class SceneTime:
     ):
         agents_present: List[AgentMetadata] = scene_info.agent_presence[scene_ts]
 
-        agents: List[Agent] = list()
-        for agent_info in agents_present:
-            if no_types is not None and agent_info.type in no_types:
-                continue
+        with contextlib.closing(
+            sqlite3.connect(scene_cache_dir / "agent_data.db")
+        ) as conn:
+            agents: List[Agent] = list()
+            for agent_info in agents_present:
+                if no_types is not None and agent_info.type in no_types:
+                    continue
 
-            if only_types is None or agent_info.type in only_types:
-                agents.append(Agent.from_cache(agent_info, scene_cache_dir))
+                if only_types is None or agent_info.type in only_types:
+                    agents.append(Agent.from_cache(agent_info, conn))
 
         return cls(scene_info, scene_ts, agents, scene_cache_dir)
 
