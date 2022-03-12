@@ -1,12 +1,15 @@
+import contextlib
+import sqlite3
 from collections import defaultdict
 from math import floor
+from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 
-from avdata.data_structures.agent import Agent, AgentType
-from avdata.data_structures.scene import SceneTime
+from avdata.data_structures.agent import Agent, AgentMetadata, AgentType
+from avdata.data_structures.scene import SceneTime, SceneTimeAgent
 
 
 class AgentBatchElement:
@@ -15,9 +18,9 @@ class AgentBatchElement:
     # @profile
     def __init__(
         self,
+        scene_cache_dir: Path,
         data_index: int,
-        scene_time: SceneTime,
-        agent_name: str,
+        scene_time_agent: SceneTimeAgent,
         history_sec: Tuple[Optional[float], Optional[float]],
         future_sec: Tuple[Optional[float], Optional[float]],
         agent_interaction_distances: Dict[
@@ -26,13 +29,12 @@ class AgentBatchElement:
         incl_robot_future: bool = False,
         incl_map: bool = False,
     ) -> None:
+        self.scene_cache_dir: Path = scene_cache_dir
         self.data_index: int = data_index
-        self.dt: float = scene_time.metadata.dt
-        self.scene_ts: int = scene_time.ts
+        self.dt: float = scene_time_agent.metadata.dt
+        self.scene_ts: int = scene_time_agent.ts
 
-        agent: Agent = next(
-            (a for a in scene_time.agents if a.name == agent_name), None
-        )
+        agent: Agent = scene_time_agent.agent
         self.agent_type: AgentType = agent.type
 
         ### AGENT-SPECIFIC DATA ###
@@ -58,19 +60,22 @@ class AgentBatchElement:
             self.neighbor_types_np,
             self.neighbor_histories,
             self.neighbor_history_lens_np,
-        ) = self.get_neighbor_history(scene_time, agent, history_sec, distance_limit)
+        ) = self.get_neighbor_history(
+            scene_time_agent, agent, history_sec, distance_limit
+        )
 
         ### ROBOT DATA ###
         self.robot_future_np: Optional[np.ndarray] = None
         if incl_robot_future:
-            robot: Agent = next((a for a in scene_time.agents if a.name == "ego"), None)
-            self.robot_future_np: np.ndarray = self.get_robot_future(robot, future_sec)
+            self.robot_future_np: np.ndarray = self.get_robot_future(
+                scene_time_agent.robot, future_sec
+            )
             self.robot_future_len: int = self.robot_future_np.shape[0]
 
         ### MAP ###
         self.map_np: Optional[np.ndarray] = None
         if incl_map:
-            self.map_np = self.get_map(scene_time, agent)
+            self.map_np = self.get_map(scene_time_agent, agent)
 
     def get_agent_history(
         self, agent: Agent, history_sec: Tuple[Optional[float], Optional[float]]
@@ -115,10 +120,10 @@ class AgentBatchElement:
 
         return agent_future_df.values
 
-    @profile
+    # @profile
     def get_neighbor_history(
         self,
-        scene_time: SceneTime,
+        scene_time: SceneTimeAgent,
         agent: Agent,
         history_sec: Tuple[Optional[float], Optional[float]],
         distance_limit: Callable[[np.ndarray, int], np.ndarray],
@@ -129,7 +134,7 @@ class AgentBatchElement:
         # The indices of the returned ndarray match the scene_time agents list (including the index of the central agent,
         # which would have a distance of 0 to itself).
         agent_distances: np.ndarray = scene_time.get_agent_distances_to(agent)
-        agent_idx: int = scene_time.agents.index(agent)
+        agent_idx: int = scene_time.agents.index(agent.metadata)
 
         neighbor_types: np.ndarray = np.array([a.type.value for a in scene_time.agents])
         nearby_mask: np.ndarray = agent_distances <= distance_limit(
@@ -137,32 +142,47 @@ class AgentBatchElement:
         )
         nearby_mask[agent_idx] = False
 
-        nearby_agents: List[Agent] = [
+        nearby_agents: List[AgentMetadata] = [
             agent for (idx, agent) in enumerate(scene_time.agents) if nearby_mask[idx]
         ]
         neighbor_types_np: np.ndarray = neighbor_types[nearby_mask]
 
-        max_history: int = floor(history_sec[1] / dt)
+        if history_sec[1] is not None:
+            max_history: int = floor(history_sec[1] / dt)
+        else:
+            max_history: int = scene_ts
+
         num_neighbors: int = len(nearby_agents)
+        agent_indices: Dict[str, int] = {
+            a.name: idx for idx, a in enumerate(nearby_agents)
+        }
         neighbor_history_lens_np: np.ndarray = np.zeros((num_neighbors,), dtype=int)
-        neighbor_histories: List[np.ndarray] = list()
-        for idx, neighbor in enumerate(nearby_agents):
-            if history_sec[1] is not None:
-                neighbor_history_df: pd.DataFrame = neighbor.data.loc[
-                    max(
-                        scene_ts - max_history, neighbor.metadata.first_timestep
-                    ) : scene_ts
-                ].copy()
-            else:
-                neighbor_history_df: pd.DataFrame = neighbor.data.loc[:scene_ts].copy()
 
-            neighbor_history_df -= self.curr_agent_state_np
-            neighbor_history_df["sin_heading"] = np.sin(neighbor_history_df["heading"])
-            neighbor_history_df["cos_heading"] = np.cos(neighbor_history_df["heading"])
-            del neighbor_history_df["heading"]
+        with contextlib.closing(
+            sqlite3.connect(self.scene_cache_dir / "agent_data.db")
+        ) as conn:
+            all_agents_df = pd.read_sql_query(
+                "SELECT * FROM agent_data WHERE scene_ts BETWEEN ? AND ?",
+                conn,
+                params=(scene_ts - max_history, scene_ts),
+                index_col=["agent_id", "scene_ts"],
+            )
 
-            neighbor_history_lens_np[idx] = len(neighbor_history_df)
-            neighbor_histories.append(neighbor_history_df.values)
+        all_agents_df -= self.curr_agent_state_np
+        all_agents_df["sin_heading"] = np.sin(all_agents_df["heading"])
+        all_agents_df["cos_heading"] = np.cos(all_agents_df["heading"])
+        del all_agents_df["heading"]
+
+        all_agents_grouped = all_agents_df.groupby(level=0, sort=False)
+
+        neighbor_histories: List[np.ndarray] = [None for _ in range(num_neighbors)]
+        for group_name, neighbor_history_df in all_agents_grouped:
+            if group_name in agent_indices:
+                idx = agent_indices[group_name]
+                neighbor_history_lens_np[idx] = len(
+                    neighbor_history_df
+                )
+                neighbor_histories[idx] = neighbor_history_df.values
 
         return (
             num_neighbors,

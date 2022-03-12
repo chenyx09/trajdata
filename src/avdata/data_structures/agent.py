@@ -49,16 +49,3 @@ class Agent:
         self.type = metadata.type
         self.metadata = metadata
         self.data = data
-
-    @classmethod
-    def from_cache(cls, metadata: AgentMetadata, db_connection: Connection):
-        data_df = pd.read_sql_query(
-            "SELECT * FROM agent_data WHERE agent_id=?",
-            db_connection,
-            params=(metadata.name,),
-            index_col="scene_ts",
-        )
-
-        del data_df["agent_id"]
-
-        return cls(metadata, data_df)

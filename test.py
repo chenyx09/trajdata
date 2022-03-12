@@ -19,7 +19,7 @@ def main():
 
     dataloader = DataLoader(
         dataset,
-        batch_size=4,
+        batch_size=64,
         shuffle=True,
         collate_fn=dataset.collate_fn,
         num_workers=0,

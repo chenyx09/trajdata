@@ -24,6 +24,7 @@ from avdata.data_structures import (
     SceneBatchElement,
     SceneMetadata,
     SceneTime,
+    SceneTimeAgent,
     agent_collate_fn,
     scene_collate_fn,
 )
@@ -175,6 +176,9 @@ class UnifiedDataset(Dataset):
                             and agent_info.type not in self.only_types
                         ):
                             continue
+                        elif self.incl_robot_future and agent_info.name == "ego":
+                            # Don't want to predict the ego if we're going to be giving its future!
+                            continue
 
                         self.data_index.append(
                             (scene_info.env_name, scene_info.name, ts, agent_info.name)
@@ -301,21 +305,31 @@ class UnifiedDataset(Dataset):
         with open(scene_file, "rb") as f:
             scene_info: SceneMetadata = dill.load(f)
 
-        scene_time: SceneTime = SceneTime.from_cache(
-            scene_info,
-            ts,
-            scene_cache_dir,
-            only_types=self.only_types,
-            no_types=self.no_types,
-        )
-
         if self.centric == "scene":
+            scene_time: SceneTime = SceneTime.from_cache(
+                scene_info,
+                ts,
+                scene_cache_dir,
+                only_types=self.only_types,
+                no_types=self.no_types,
+            )
+
             return SceneBatchElement(scene_time, self.history_sec, self.future_sec)
         elif self.centric == "agent":
-            return AgentBatchElement(
-                idx,
-                scene_time,
+            scene_time_agent: SceneTimeAgent = SceneTimeAgent.from_cache(
+                scene_info,
+                ts,
                 agent_id,
+                scene_cache_dir,
+                only_types=self.only_types,
+                no_types=self.no_types,
+                incl_robot_future=self.incl_robot_future,
+            )
+
+            return AgentBatchElement(
+                scene_cache_dir,
+                idx,
+                scene_time_agent,
                 self.history_sec,
                 self.future_sec,
                 self.agent_interaction_distances,
