@@ -2,8 +2,9 @@ import contextlib
 import sqlite3
 from pathlib import Path
 from sqlite3 import Cursor
-from typing import Any, Dict, List, Tuple, Union
+from typing import Any, Dict, List, NamedTuple, Tuple, Union
 
+import dill
 import numpy as np
 import pandas as pd
 from nuscenes.nuscenes import NuScenes
@@ -32,6 +33,12 @@ heading REAL NOT NULL
 """
 
 
+class NuscSceneRecord(NamedTuple):
+    name: str
+    location: str
+    length: str
+
+
 def frame_iterator(
     nusc_obj: NuScenes, scene_metadata: SceneMetadata
 ) -> Dict[str, Union[str, int]]:
@@ -56,15 +63,25 @@ def agent_iterator(nusc_obj: NuScenes, frame_info: Dict[str, Any]) -> Dict[str, 
             yield ann_record
 
 
-def get_matching_scenes(
-    nusc_obj: NuScenes, env_info: EnvMetadata, dataset_tuple: Tuple[str, ...]
+def _get_matching_scenes_from_obj(
+    nusc_obj: NuScenes,
+    env_info: EnvMetadata,
+    dataset_tuple: Tuple[str, ...],
+    env_cache_dir: Path,
 ) -> List[SceneMetadata]:
+    all_scenes_list: List[NuscSceneRecord] = list()
+
     scenes_list: List[SceneMetadata] = list()
     for scene_record in nusc_obj.scene:
         scene_name: str = scene_record["name"]
         scene_location: str = nusc_obj.get("log", scene_record["log_token"])["location"]
         scene_split: str = env_info.scene_split_map[scene_name]
         scene_length: int = scene_record["nbr_samples"]
+
+        # Saving all scene records for later caching.
+        all_scenes_list.append(
+            NuscSceneRecord(scene_name, scene_location, scene_length)
+        )
 
         if (
             scene_location.split("-")[0] in dataset_tuple
@@ -80,7 +97,54 @@ def get_matching_scenes(
             )
             scenes_list.append(scene_metadata)
 
+    env_cache_dir.mkdir(parents=True, exist_ok=True)
+    with open(env_cache_dir / "scenes_list.dill", "wb") as f:
+        dill.dump(all_scenes_list, f)
+
     return scenes_list
+
+
+def _get_matching_scenes_from_cache(
+    env_info: EnvMetadata, dataset_tuple: Tuple[str, ...], env_cache_dir: Path
+) -> List[SceneMetadata]:
+    with open(env_cache_dir / "scenes_list.dill", "rb") as f:
+        all_scenes_list: List[NuscSceneRecord] = dill.load(f)
+
+    scenes_list: List[SceneMetadata] = list()
+    for scene_record in all_scenes_list:
+        scene_name, scene_location, scene_length = scene_record
+        scene_split: str = env_info.scene_split_map[scene_name]
+
+        if (
+            scene_location.split("-")[0] in dataset_tuple
+            and scene_split in dataset_tuple
+        ):
+            scene_metadata = SceneMetadata(
+                env_info,
+                scene_name,
+                scene_location,
+                scene_split,
+                scene_length,
+                None,  # This isn't used if everything is already cached.
+            )
+            scenes_list.append(scene_metadata)
+
+    return scenes_list
+
+
+def get_matching_scenes(
+    nusc_obj: NuScenes,
+    env_info: EnvMetadata,
+    dataset_tuple: Tuple[str, ...],
+    env_cache_dir: Path,
+    rebuild_cache: bool = False,
+) -> List[SceneMetadata]:
+    if nusc_obj is None and not rebuild_cache:
+        return _get_matching_scenes_from_cache(env_info, dataset_tuple, env_cache_dir)
+    else:
+        return _get_matching_scenes_from_obj(
+            nusc_obj, env_info, dataset_tuple, env_cache_dir
+        )
 
 
 def get_ego_pose(nusc_obj: NuScenes, frame_info: Dict[str, Any]) -> Dict[str, Any]:

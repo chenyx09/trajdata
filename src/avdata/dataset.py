@@ -93,41 +93,62 @@ class UnifiedDataset(Dataset):
             flush=True,
         )
 
-        if any("nusc_mini" in dataset_tuple for dataset_tuple in matching_datasets):
+        self.nusc_mini_obj: Optional[NuScenes] = None
+        self.nusc_obj: Optional[NuScenes] = None
+        self.lyft_sample_obj: Optional[ChunkedDataset] = None
+        self.lyft_obj: Optional[ChunkedDataset] = None
+
+        # Loading the nuScenes object in case we don't have
+        # its data already cached.
+        if (self.rebuild_cache or not (self.cache_dir / "nusc_mini").is_dir()) and any(
+            "nusc_mini" in dataset_tuple for dataset_tuple in matching_datasets
+        ):
             print("Loading nuScenes mini dataset...", flush=True)
-            self.nusc_mini_obj: NuScenes = NuScenes(
+            self.nusc_mini_obj = NuScenes(
                 version="v1.0-mini", dataroot=self.envs_dict["nusc_mini"].data_dir
             )
 
-        if any("nusc" in dataset_tuple for dataset_tuple in matching_datasets):
+        # Loading the nuScenes object in case we don't have
+        # its data already cached.
+        if (self.rebuild_cache or not (self.cache_dir / "nusc").is_dir()) and any(
+            "nusc" in dataset_tuple for dataset_tuple in matching_datasets
+        ):
             if hasattr(self, "nusc_mini_obj"):
                 raise ValueError(
                     "nusc_mini is a subset of nusc and we do not de-duplicate scenes!"
                 )
 
             print("Loading nuScenes dataset...", flush=True)
-            self.nusc_obj: NuScenes = NuScenes(
+            self.nusc_obj = NuScenes(
                 version="v1.0-trainval", dataroot=self.envs_dict["nusc"].data_dir
             )
 
-        if any("lyft_sample" in dataset_tuple for dataset_tuple in matching_datasets):
+        # Loading the Lyft object in case we don't have
+        # its data already cached.
+        if (
+            self.rebuild_cache or not (self.cache_dir / "lyft_sample").is_dir()
+        ) and any(
+            "lyft_sample" in dataset_tuple for dataset_tuple in matching_datasets
+        ):
             print("Loading lyft sample dataset...", flush=True)
-            self.lyft_sample_obj: ChunkedDataset = ChunkedDataset(
+            self.lyft_sample_obj = ChunkedDataset(
                 str(self.envs_dict["lyft_sample"].data_dir)
             ).open()
 
-        if any("lyft" in dataset_tuple for dataset_tuple in matching_datasets):
+        # Loading the Lyft object in case we don't have
+        # its data already cached.
+        if (self.rebuild_cache or not (self.cache_dir / "lyft").is_dir()) and any(
+            "lyft" in dataset_tuple for dataset_tuple in matching_datasets
+        ):
             if hasattr(self, "lyft_sample_obj"):
                 raise ValueError(
                     "lyft_sample is a subset of lyft and we do not de-duplicate scenes!"
                 )
 
             print("Loading lyft dataset...", flush=True)
-            self.lyft_obj: ChunkedDataset = ChunkedDataset(
-                str(self.envs_dict["lyft"].data_dir)
-            ).open()
+            self.lyft_obj = ChunkedDataset(str(self.envs_dict["lyft"].data_dir)).open()
 
-        self.scene_index: List[SceneMetadata] = self.create_scene_metadata(
+        self.scene_index: List[SceneMetadata] = self.preprocess_scene_metadata(
             matching_datasets
         )
         print(self.scene_index)
@@ -204,24 +225,49 @@ class UnifiedDataset(Dataset):
 
         return matching_datasets
 
-    def create_scene_metadata(
+    def preprocess_scene_metadata(
         self, datasets: List[Tuple[str, ...]]
     ) -> List[SceneMetadata]:
         scenes_list: List[SceneMetadata] = list()
         for dataset_tuple in tqdm(datasets, desc="Loading Scene Metadata"):
             if "nusc_mini" in dataset_tuple:
+                env_cache_dir: Path = self.cache_dir / "nusc_mini"
                 scenes_list += nusc_utils.get_matching_scenes(
-                    self.nusc_mini_obj, self.envs_dict["nusc_mini"], dataset_tuple
+                    self.nusc_mini_obj,
+                    self.envs_dict["nusc_mini"],
+                    dataset_tuple,
+                    env_cache_dir,
+                    self.rebuild_cache,
                 )
 
             if "nusc" in dataset_tuple:
+                env_cache_dir: Path = self.cache_dir / "nusc"
                 scenes_list += nusc_utils.get_matching_scenes(
-                    self.nusc_obj, self.envs_dict["nusc"], dataset_tuple
+                    self.nusc_obj,
+                    self.envs_dict["nusc"],
+                    dataset_tuple,
+                    env_cache_dir,
+                    self.rebuild_cache,
                 )
 
             if "lyft_sample" in dataset_tuple:
+                env_cache_dir: Path = self.cache_dir / "lyft_sample"
                 scenes_list += lyft_utils.get_matching_scenes(
-                    self.lyft_sample_obj, self.envs_dict["lyft_sample"], dataset_tuple
+                    self.lyft_sample_obj,
+                    self.envs_dict["lyft_sample"],
+                    dataset_tuple,
+                    env_cache_dir,
+                    self.rebuild_cache,
+                )
+
+            if "lyft" in dataset_tuple:
+                env_cache_dir: Path = self.cache_dir / "lyft"
+                scenes_list += lyft_utils.get_matching_scenes(
+                    self.lyft_obj,
+                    self.envs_dict["lyft"],
+                    dataset_tuple,
+                    env_cache_dir,
+                    self.rebuild_cache,
                 )
 
         self.calculate_agent_presence(scenes_list)

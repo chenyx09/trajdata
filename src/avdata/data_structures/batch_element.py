@@ -179,9 +179,7 @@ class AgentBatchElement:
         for group_name, neighbor_history_df in all_agents_grouped:
             if group_name in agent_indices:
                 idx = agent_indices[group_name]
-                neighbor_history_lens_np[idx] = len(
-                    neighbor_history_df
-                )
+                neighbor_history_lens_np[idx] = len(neighbor_history_df)
                 neighbor_histories[idx] = neighbor_history_df.values
 
         return (
