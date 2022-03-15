@@ -9,11 +9,11 @@ import pandas as pd
 
 
 class AgentType(IntEnum):
-    UNKNOWN = -1
-    VEHICLE = 0
-    PEDESTRIAN = 1
-    BICYCLE = 2
-    MOTORCYCLE = 3
+    UNKNOWN = 0
+    VEHICLE = 1
+    PEDESTRIAN = 2
+    BICYCLE = 3
+    MOTORCYCLE = 4
 
 
 FixedSize = namedtuple("FixedSize", ["length", "width", "height"])

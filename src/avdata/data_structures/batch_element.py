@@ -43,7 +43,8 @@ class AgentBatchElement:
         )
         self.agent_history_len: int = self.agent_history_np.shape[0]
 
-        self.agent_future_np: np.ndarray = self.get_agent_future(agent, future_sec)
+        # TODO(bivanovic): CONTINUE FROM HERE (STANDARDIZED FUTURE)
+        self.agent_future_np, self.agent_future_st_np = self.get_agent_future(agent, future_sec)
         self.agent_future_len: int = self.agent_future_np.shape[0]
 
         ### NEIGHBOR-SPECIFIC DATA ###
@@ -118,7 +119,8 @@ class AgentBatchElement:
         else:
             agent_future_df = agent.data.loc[scene_ts + 1 :, ["x", "y"]]
 
-        return agent_future_df.values
+        agent_future_st_np = agent_future_df.values - self.curr_agent_state_np[:2]
+        return agent_future_df.values, agent_future_st_np
 
     # @profile
     def get_neighbor_history(
