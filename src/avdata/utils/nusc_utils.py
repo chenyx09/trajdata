@@ -162,7 +162,7 @@ def agg_agent_data(
 
     translation_list = [agent_data["translation"]]
     agent_size = agent_data["size"]
-    yaw_list = [Quaternion(agent_data["rotation"]).yaw_pitch_roll[0]]
+    # yaw_list = [Quaternion(agent_data["rotation"]).yaw_pitch_roll[0]]
 
     curr_sample_ann_token: str = agent_data["next"]
     while curr_sample_ann_token:
@@ -170,7 +170,7 @@ def agg_agent_data(
 
         translation_list.append(agent_data["translation"])
         # size_list.append(agent_data['size'])
-        yaw_list.append(Quaternion(agent_data["rotation"]).yaw_pitch_roll[0])
+        # yaw_list.append(Quaternion(agent_data["rotation"]).yaw_pitch_roll[0])
 
         curr_sample_ann_token = agent_data["next"]
 
@@ -190,7 +190,8 @@ def agg_agent_data(
         / NUSC_DT
     )
 
-    yaws_np = np.expand_dims(np.stack(yaw_list, axis=0), axis=1)
+    # yaws_np = np.expand_dims(np.stack(yaw_list, axis=0), axis=1)
+    yaws_np = np.expand_dims(np.arctan2(velocities_np[:, 1], velocities_np[:, 0]), axis=1)
     # sizes_np = np.stack(size_list, axis=0)
 
     agent_data_np = np.concatenate(
@@ -259,6 +260,7 @@ def agg_ego_data(nusc_obj: NuScenes, scene_metadata: SceneMetadata) -> Agent:
     )
 
     yaws_np = np.expand_dims(np.stack(yaw_list, axis=0), axis=1)
+    # yaws_np = np.expand_dims(np.arctan2(velocities_np[:, 1], velocities_np[:, 0]), axis=1)
 
     ego_data_np = np.concatenate(
         [translations_np, velocities_np, accelerations_np, yaws_np], axis=1

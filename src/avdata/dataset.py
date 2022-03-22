@@ -52,6 +52,7 @@ class UnifiedDataset(Dataset):
         incl_map: bool = False,
         only_types: Optional[List[AgentType]] = None,
         no_types: Optional[List[AgentType]] = None,
+        standardize_rotation: bool = True,
         data_dirs: Dict[str, str] = {
             "nusc": "~/datasets/nuScenes",
             "nusc_mini": "~/datasets/nuScenes",
@@ -79,6 +80,7 @@ class UnifiedDataset(Dataset):
         self.incl_map = incl_map
         self.only_types = None if only_types is None else set(only_types)
         self.no_types = None if no_types is None else set(no_types)
+        self.standardize_rotation = standardize_rotation
 
         self.envs_dict: Dict[str, EnvMetadata] = env_utils.get_env_metadata(data_dirs)
 
@@ -381,4 +383,5 @@ class UnifiedDataset(Dataset):
                 self.agent_interaction_distances,
                 self.incl_robot_future,
                 self.incl_map,
+                self.standardize_rotation
             )

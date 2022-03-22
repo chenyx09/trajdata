@@ -106,7 +106,7 @@ def agent_collate_fn(batch_elems: List[AgentBatchElement]) -> AgentBatch:
 
         curr_agent_state.append(torch.as_tensor(elem.curr_agent_state_np, dtype=torch.float))
 
-        agent_history.append(torch.as_tensor(elem.agent_history_np, dtype=torch.float))
+        agent_history.append(torch.as_tensor(elem.agent_history_np, dtype=torch.float).flip(-2))
         agent_history_len[idx] = elem.agent_history_len
 
         agent_future.append(torch.as_tensor(elem.agent_future_np, dtype=torch.float))
@@ -117,13 +117,13 @@ def agent_collate_fn(batch_elems: List[AgentBatchElement]) -> AgentBatch:
         neighbor_types.append(torch.as_tensor(elem.neighbor_types_np, dtype=torch.float))
 
         padded_neighbor_histories = pad_sequence(
-            [torch.as_tensor(nh, dtype=torch.float) for nh in elem.neighbor_histories], batch_first=True, padding_value=np.nan
-        )
+            [torch.as_tensor(nh, dtype=torch.float).flip(-2) for nh in elem.neighbor_histories], batch_first=True, padding_value=np.nan
+        ).flip(-2)
         if padded_neighbor_histories.shape[-2] < max_neigh_history_len:
             to_add = max_neigh_history_len - padded_neighbor_histories.shape[-2]
             padded_neighbor_histories = F.pad(
                 padded_neighbor_histories,
-                pad=(0, 0, 0, to_add),
+                pad=(0, 0, to_add, 0),
                 mode="constant",
                 value=np.nan,
             )
@@ -140,7 +140,7 @@ def agent_collate_fn(batch_elems: List[AgentBatchElement]) -> AgentBatch:
             map_info.append(torch.as_tensor(elem.map_np, dtype=torch.float))
 
     curr_agent_state_t: Tensor = torch.stack(curr_agent_state)
-    agent_history_t: Tensor = pad_sequence(agent_history, batch_first=True, padding_value=np.nan)
+    agent_history_t: Tensor = pad_sequence(agent_history, batch_first=True, padding_value=np.nan).flip(-2)
     agent_future_t: Tensor = pad_sequence(agent_future, batch_first=True, padding_value=np.nan)
     agent_future_st_t: Tensor = pad_sequence(agent_future_st, batch_first=True, padding_value=np.nan)
 
