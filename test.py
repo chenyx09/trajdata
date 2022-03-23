@@ -15,7 +15,7 @@ def main():
         no_types=[AgentType.UNKNOWN],
     )
 
-    print(len(dataset))
+    print(f'# Data Samples: {len(dataset):,}')
 
     dataloader = DataLoader(
         dataset,

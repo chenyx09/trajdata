@@ -54,7 +54,7 @@ class UnifiedDataset(Dataset):
         no_types: Optional[List[AgentType]] = None,
         standardize_rotation: bool = True,
         data_dirs: Dict[str, str] = {
-            "nusc": "~/datasets/nuScenes",
+            # "nusc": "~/datasets/nuScenes",
             "nusc_mini": "~/datasets/nuScenes",
             "lyft_sample": "~/datasets/lyft/scenes/sample.zarr",
         },

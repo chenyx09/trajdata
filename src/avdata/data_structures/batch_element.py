@@ -41,8 +41,8 @@ class AgentBatchElement:
         self.standardize_rotation = standardize_rotation
         if self.standardize_rotation:
             agent_heading: float = agent.data.at[self.scene_ts, 'heading']
-            self.rot_matrix: np.ndarray = np.array([[np.cos(-agent_heading), -np.sin(-agent_heading)],
-                                                    [np.sin(-agent_heading),  np.cos(-agent_heading)]])
+            self.rot_matrix: np.ndarray = np.array([[np.cos(agent_heading), -np.sin(agent_heading)],
+                                                    [np.sin(agent_heading),  np.cos(agent_heading)]])
 
         ### AGENT-SPECIFIC DATA ###
         self.curr_agent_state_np, self.agent_history_np = self.get_agent_history(
@@ -102,18 +102,18 @@ class AgentBatchElement:
         else:
             agent_history_df: pd.DataFrame = agent.data.loc[:scene_ts].copy()
 
-        curr_agent_pos_np: np.ndarray = agent_history_df.loc[scene_ts].values
+        curr_agent_pos_np: np.ndarray = agent_history_df.loc[scene_ts].to_numpy()
         agent_history_df -= curr_agent_pos_np
         agent_history_df["sin_heading"] = np.sin(agent_history_df["heading"])
         agent_history_df["cos_heading"] = np.cos(agent_history_df["heading"])
         del agent_history_df["heading"]
 
         if self.standardize_rotation:
-            agent_history_df.loc[:, [ 'x',  'y']] = np.matmul(agent_history_df.loc[:, [ 'x',  'y']], self.rot_matrix.T)
-            agent_history_df.loc[:, ['vx', 'vy']] = np.matmul(agent_history_df.loc[:, ['vx', 'vy']], self.rot_matrix.T)
-            agent_history_df.loc[:, ['ax', 'ay']] = np.matmul(agent_history_df.loc[:, ['ax', 'ay']], self.rot_matrix.T)
+            agent_history_df.loc[:, [ 'x',  'y']] = agent_history_df.loc[:, [ 'x',  'y']].to_numpy() @ self.rot_matrix
+            agent_history_df.loc[:, ['vx', 'vy']] = agent_history_df.loc[:, ['vx', 'vy']].to_numpy() @ self.rot_matrix
+            agent_history_df.loc[:, ['ax', 'ay']] = agent_history_df.loc[:, ['ax', 'ay']].to_numpy() @ self.rot_matrix
 
-        return curr_agent_pos_np, agent_history_df.values
+        return curr_agent_pos_np, agent_history_df.to_numpy()
 
     def get_agent_future(
         self, agent: Agent, future_sec: Tuple[Optional[float], Optional[float]]
@@ -133,11 +133,11 @@ class AgentBatchElement:
             agent_future_df = agent.data.loc[scene_ts + 1 :, ["x", "y"]]
 
         if self.standardize_rotation:
-            agent_future_st_np = (agent_future_df.values - self.curr_agent_state_np[:2]) @ self.rot_matrix.T
+            agent_future_st_np = (agent_future_df.to_numpy() - self.curr_agent_state_np[:2]) @ self.rot_matrix
         else:
-            agent_future_st_np = agent_future_df.values - self.curr_agent_state_np[:2]
+            agent_future_st_np = agent_future_df.to_numpy() - self.curr_agent_state_np[:2]
 
-        return agent_future_df.values, agent_future_st_np
+        return agent_future_df.to_numpy(), agent_future_st_np
 
     # @profile
     def get_neighbor_history(
@@ -193,9 +193,9 @@ class AgentBatchElement:
         del all_agents_df["heading"]
 
         if self.standardize_rotation:
-            all_agents_df.loc[:, [ 'x',  'y']] = np.matmul(all_agents_df.loc[:, [ 'x',  'y']], self.rot_matrix.T)
-            all_agents_df.loc[:, ['vx', 'vy']] = np.matmul(all_agents_df.loc[:, ['vx', 'vy']], self.rot_matrix.T)
-            all_agents_df.loc[:, ['ax', 'ay']] = np.matmul(all_agents_df.loc[:, ['ax', 'ay']], self.rot_matrix.T)
+            all_agents_df.loc[:, [ 'x',  'y']] = all_agents_df.loc[:, [ 'x',  'y']].to_numpy() @ self.rot_matrix
+            all_agents_df.loc[:, ['vx', 'vy']] = all_agents_df.loc[:, ['vx', 'vy']].to_numpy() @ self.rot_matrix
+            all_agents_df.loc[:, ['ax', 'ay']] = all_agents_df.loc[:, ['ax', 'ay']].to_numpy() @ self.rot_matrix
 
         all_agents_grouped = all_agents_df.groupby(level=0, sort=False)
 
@@ -204,7 +204,7 @@ class AgentBatchElement:
             if group_name in agent_indices:
                 idx = agent_indices[group_name]
                 neighbor_history_lens_np[idx] = len(neighbor_history_df)
-                neighbor_histories[idx] = neighbor_history_df.values
+                neighbor_histories[idx] = neighbor_history_df.to_numpy()
 
         return (
             num_neighbors,
@@ -233,11 +233,11 @@ class AgentBatchElement:
         del robot_future_df["heading"]
 
         if self.standardize_rotation:
-            robot_future_df.loc[:, [ 'x',  'y']] = np.matmul(robot_future_df.loc[:, [ 'x',  'y']], self.rot_matrix.T)
-            robot_future_df.loc[:, ['vx', 'vy']] = np.matmul(robot_future_df.loc[:, ['vx', 'vy']], self.rot_matrix.T)
-            robot_future_df.loc[:, ['ax', 'ay']] = np.matmul(robot_future_df.loc[:, ['ax', 'ay']], self.rot_matrix.T)
+            robot_future_df.loc[:, [ 'x',  'y']] = robot_future_df.loc[:, [ 'x',  'y']].to_numpy() @ self.rot_matrix
+            robot_future_df.loc[:, ['vx', 'vy']] = robot_future_df.loc[:, ['vx', 'vy']].to_numpy() @ self.rot_matrix
+            robot_future_df.loc[:, ['ax', 'ay']] = robot_future_df.loc[:, ['ax', 'ay']].to_numpy() @ self.rot_matrix
 
-        return robot_future_df.values
+        return robot_future_df.to_numpy()
 
     def get_map(self, scene_time: SceneTimeAgent, agent: Agent):
         pass
@@ -248,12 +248,13 @@ class AgentBatchElement:
 
         ax.plot(self.agent_history_np[:, 0], self.agent_history_np[:, 1], label='Agent History', c='blue')
         ax.scatter(0, 0, s=100, c='r', label='Agent Current')
-        ax.arrow(0, 0, dx=np.cos(self.curr_agent_state_np[-1])/10, dy=np.sin(self.curr_agent_state_np[-1])/10, alpha=0.5)
         ax.arrow(0, 0, dx=self.agent_history_np[-1, -1]/10, dy=self.agent_history_np[-1, -2]/10)
         ax.plot(self.agent_future_st_np[:, 0], self.agent_future_st_np[:, 1], label='Agent Future', c='orange')
 
         if self.standardize_rotation:
-            rotated_check = self.agent_future_st_np[:, :2] @ self.rot_matrix
+            ax.arrow(0, 0, dx=np.cos(self.curr_agent_state_np[-1])/10, dy=np.sin(self.curr_agent_state_np[-1])/10, alpha=0.5)
+
+            rotated_check = self.agent_future_st_np[:, :2] @ self.rot_matrix.T
             ax.plot(rotated_check[:, 0], rotated_check[:, 1], c='orange', alpha=0.5)
 
         ax.scatter(np.nan, np.nan, s=100, c='k', label='Other Current')
@@ -266,6 +267,7 @@ class AgentBatchElement:
             ax.plot(self.robot_future_np[1:, 0], self.robot_future_np[1:, 1], label='Ego Future', c='green')
 
         ax.legend(loc='best', frameon=True)
+        ax.axis('equal')
         plt.show()
 
 
