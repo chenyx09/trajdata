@@ -2,12 +2,12 @@ import contextlib
 import sqlite3
 from pathlib import Path
 from sqlite3 import Cursor
-from typing import Any, Dict, List, NamedTuple, Tuple, Union
+from typing import Any, Dict, List, Tuple, Union
 
-import dill
 import numpy as np
 import pandas as pd
 from nuscenes.nuscenes import NuScenes
+from nuscenes.utils.splits import create_splits_scenes
 from pyquaternion import Quaternion
 
 from avdata.data_structures import (
@@ -33,10 +33,42 @@ heading REAL NOT NULL
 """
 
 
-class NuscSceneRecord(NamedTuple):
-    name: str
-    location: str
-    length: str
+def get_env_metadata(env_name: str, data_dir: str) -> EnvMetadata:
+    all_scene_splits: Dict[str, List[str]] = create_splits_scenes()
+    if env_name == "nusc":
+        nusc_scene_splits: Dict[str, List[str]] = {
+            k: all_scene_splits[k] for k in ["train", "val", "test"]
+        }
+
+        # nuScenes possibilities are the Cartesian product of these
+        dataset_parts: List[Tuple[str, ...]] = [
+            ("train", "val", "test"),
+            ("boston", "singapore"),
+        ]
+    elif env_name == "nusc_mini":
+        nusc_scene_splits: Dict[str, List[str]] = {
+            k: all_scene_splits[k] for k in ["mini_train", "mini_val"]
+        }
+
+        # nuScenes possibilities are the Cartesian product of these
+        dataset_parts: List[Tuple[str, ...]] = [
+            ("mini_train", "mini_val"),
+            ("boston", "singapore"),
+        ]
+
+    # Inverting the dict from above, associating every scene with its data split.
+    nusc_scene_split_map: Dict[str, str] = {
+        v_elem: k for k, v in nusc_scene_splits.items() for v_elem in v
+    }
+
+    nusc_env = EnvMetadata(
+        name=env_name,
+        data_dir=data_dir,
+        dt=NUSC_DT,
+        parts=dataset_parts,
+        scene_split_map=nusc_scene_split_map,
+    )
+    return nusc_env
 
 
 def frame_iterator(
@@ -61,90 +93,6 @@ def agent_iterator(nusc_obj: NuScenes, frame_info: Dict[str, Any]) -> Dict[str, 
         agent_category: str = ann_record["category_name"]
         if agent_category.startswith("vehicle") or agent_category.startswith("human"):
             yield ann_record
-
-
-def _get_matching_scenes_from_obj(
-    nusc_obj: NuScenes,
-    env_info: EnvMetadata,
-    dataset_tuple: Tuple[str, ...],
-    env_cache_dir: Path,
-) -> List[SceneMetadata]:
-    all_scenes_list: List[NuscSceneRecord] = list()
-
-    scenes_list: List[SceneMetadata] = list()
-    for scene_record in nusc_obj.scene:
-        scene_name: str = scene_record["name"]
-        scene_location: str = nusc_obj.get("log", scene_record["log_token"])["location"]
-        scene_split: str = env_info.scene_split_map[scene_name]
-        scene_length: int = scene_record["nbr_samples"]
-
-        # Saving all scene records for later caching.
-        all_scenes_list.append(
-            NuscSceneRecord(scene_name, scene_location, scene_length)
-        )
-
-        if (
-            scene_location.split("-")[0] in dataset_tuple
-            and scene_split in dataset_tuple
-        ):
-            scene_metadata = SceneMetadata(
-                env_info,
-                scene_name,
-                scene_location,
-                scene_split,
-                scene_length,
-                scene_record,
-            )
-            scenes_list.append(scene_metadata)
-
-    env_cache_dir.mkdir(parents=True, exist_ok=True)
-    with open(env_cache_dir / "scenes_list.dill", "wb") as f:
-        dill.dump(all_scenes_list, f)
-
-    return scenes_list
-
-
-def _get_matching_scenes_from_cache(
-    env_info: EnvMetadata, dataset_tuple: Tuple[str, ...], env_cache_dir: Path
-) -> List[SceneMetadata]:
-    with open(env_cache_dir / "scenes_list.dill", "rb") as f:
-        all_scenes_list: List[NuscSceneRecord] = dill.load(f)
-
-    scenes_list: List[SceneMetadata] = list()
-    for scene_record in all_scenes_list:
-        scene_name, scene_location, scene_length = scene_record
-        scene_split: str = env_info.scene_split_map[scene_name]
-
-        if (
-            scene_location.split("-")[0] in dataset_tuple
-            and scene_split in dataset_tuple
-        ):
-            scene_metadata = SceneMetadata(
-                env_info,
-                scene_name,
-                scene_location,
-                scene_split,
-                scene_length,
-                None,  # This isn't used if everything is already cached.
-            )
-            scenes_list.append(scene_metadata)
-
-    return scenes_list
-
-
-def get_matching_scenes(
-    nusc_obj: NuScenes,
-    env_info: EnvMetadata,
-    dataset_tuple: Tuple[str, ...],
-    env_cache_dir: Path,
-    rebuild_cache: bool = False,
-) -> List[SceneMetadata]:
-    if nusc_obj is None and not rebuild_cache:
-        return _get_matching_scenes_from_cache(env_info, dataset_tuple, env_cache_dir)
-    else:
-        return _get_matching_scenes_from_obj(
-            nusc_obj, env_info, dataset_tuple, env_cache_dir
-        )
 
 
 def get_ego_pose(nusc_obj: NuScenes, frame_info: Dict[str, Any]) -> Dict[str, Any]:
@@ -191,7 +139,9 @@ def agg_agent_data(
     )
 
     # yaws_np = np.expand_dims(np.stack(yaw_list, axis=0), axis=1)
-    yaws_np = np.expand_dims(np.arctan2(velocities_np[:, 1], velocities_np[:, 0]), axis=1)
+    yaws_np = np.expand_dims(
+        np.arctan2(velocities_np[:, 1], velocities_np[:, 0]), axis=1
+    )
     # sizes_np = np.stack(size_list, axis=0)
 
     agent_data_np = np.concatenate(

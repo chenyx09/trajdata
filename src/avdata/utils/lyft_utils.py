@@ -1,9 +1,10 @@
 import contextlib
 import sqlite3
+from collections import defaultdict
 from pathlib import Path
-from typing import List, NamedTuple, Tuple
+from random import Random
+from typing import List, Tuple
 
-import dill
 import numpy as np
 import pandas as pd
 from l5kit.data import ChunkedDataset, labels
@@ -33,84 +34,31 @@ heading REAL NOT NULL
 """
 
 
-class LyftSceneRecord(NamedTuple):
-    name: str
-    length: str
+def get_env_metadata(env_name: str, data_dir: str) -> EnvMetadata:
+    if env_name == "lyft_sample":
+        dataset_parts: List[Tuple[str, ...]] = [
+            ("mini_train", "mini_val"),
+            ("palo_alto",),
+        ]
+        # Using seeded randomness to assign 80% of scenes to "mini_train" and 20% to "mini_val"
+        rng = Random(0)
+        scene_split = ["mini_train"] * 80 + ["mini_val"] * 20
+        rng.shuffle(scene_split)
 
+        scene_split_map = {
+            f"scene-{idx:04d}": scene_split[idx] for idx in range(len(scene_split))
+        }
+    elif env_name == "lyft":
+        pass
 
-def _get_matching_scenes_from_obj(
-    lyft_obj: ChunkedDataset,
-    env_info: EnvMetadata,
-    dataset_tuple: Tuple[str, ...],
-    env_cache_dir: Path,
-) -> List[SceneMetadata]:
-    all_scenes_list: List[LyftSceneRecord] = list()
-
-    scenes_list: List[SceneMetadata] = list()
-    all_scene_frames = lyft_obj.scenes["frame_index_interval"]
-    for idx in range(all_scene_frames.shape[0]):
-        scene_name: str = f"scene-{idx:04d}"
-        scene_length: int = (
-            all_scene_frames[idx, 1] - all_scene_frames[idx, 0]
-        ).item()  # Doing .item() otherwise it'll be a numpy.int64
-
-        # Saving all scene records for later caching.
-        all_scenes_list.append(LyftSceneRecord(scene_name, scene_length))
-
-        scene_metadata = SceneMetadata(
-            env_info,
-            scene_name,
-            "palo_alto",
-            env_info.scene_split_map[scene_name],
-            scene_length,
-            all_scene_frames[idx],
-        )
-        scenes_list.append(scene_metadata)
-
-    env_cache_dir.mkdir(parents=True, exist_ok=True)
-    with open(env_cache_dir / "scenes_list.dill", "wb") as f:
-        dill.dump(all_scenes_list, f)
-
-    return scenes_list
-
-
-def _get_matching_scenes_from_cache(
-    env_info: EnvMetadata, dataset_tuple: Tuple[str, ...], env_cache_dir: Path
-) -> List[SceneMetadata]:
-    with open(env_cache_dir / "scenes_list.dill", "rb") as f:
-        all_scenes_list: List[LyftSceneRecord] = dill.load(f)
-
-    scenes_list: List[SceneMetadata] = list()
-    for scene_record in all_scenes_list:
-        scene_name, scene_length = scene_record
-
-        scene_metadata = SceneMetadata(
-            env_info,
-            scene_name,
-            "palo_alto",
-            env_info.scene_split_map[scene_name],
-            scene_length,
-            None,  # This isn't used if everything is already cached.
-        )
-        scenes_list.append(scene_metadata)
-
-    return scenes_list
-
-
-def get_matching_scenes(
-    lyft_obj: ChunkedDataset,
-    env_info: EnvMetadata,
-    dataset_tuple: Tuple[str, ...],
-    env_cache_dir: Path,
-    rebuild_cache: bool = False,
-) -> List[SceneMetadata]:
-
-    if lyft_obj is None and not rebuild_cache:
-        return _get_matching_scenes_from_cache(env_info, dataset_tuple, env_cache_dir)
-    else:
-        return _get_matching_scenes_from_obj(
-            lyft_obj, env_info, dataset_tuple, env_cache_dir
-        )
+    lyft_env = EnvMetadata(
+        name=env_name,
+        data_dir=data_dir,
+        dt=LYFT_DT,
+        parts=dataset_parts,
+        scene_split_map=scene_split_map,
+    )
+    return lyft_env
 
 
 def agg_ego_data(lyft_obj: ChunkedDataset, scene_metadata: SceneMetadata) -> Agent:

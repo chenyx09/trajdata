@@ -4,7 +4,7 @@ from avdata import UnifiedDataset
 # @profile
 def main():
     dataset = UnifiedDataset(datasets=["nusc_mini", "lyft_sample"], rebuild_cache=True)
-    print(f'Total Data Samples: {len(dataset):,}')
+    print(f"Total Data Samples: {len(dataset):,}")
 
 
 if __name__ == "__main__":

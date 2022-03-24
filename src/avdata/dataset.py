@@ -1,26 +1,19 @@
 from collections import defaultdict
-from math import ceil
+from itertools import chain
 from multiprocessing import Manager
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple, Type
 
 import dill
 import numpy as np
-
-# Lyft Level 5
-from l5kit.data import ChunkedDataset
-from nuscenes.map_expansion.map_api import NuScenesMap
-
-# NuScenes
-from nuscenes.nuscenes import NuScenes
 from torch.utils.data import Dataset
 from tqdm import tqdm
 
+from avdata import filtering
+from avdata.caching import BaseCache, SQLiteCache
 from avdata.data_structures import (
     AgentBatchElement,
-    AgentMetadata,
     AgentType,
-    EnvMetadata,
     SceneBatchElement,
     SceneMetadata,
     SceneTime,
@@ -28,14 +21,15 @@ from avdata.data_structures import (
     agent_collate_fn,
     scene_collate_fn,
 )
-from avdata.utils import env_utils, lyft_utils, nusc_utils, string_utils
+from avdata.dataset_specific import RawDataset
+from avdata.utils import env_utils, string_utils
 
 
 class UnifiedDataset(Dataset):
     # @profile
     def __init__(
         self,
-        datasets: Optional[List[str]] = None,
+        datasets: List[str],
         centric: str = "agent",
         history_sec: Tuple[Optional[float], Optional[float]] = (
             None,
@@ -58,6 +52,7 @@ class UnifiedDataset(Dataset):
             "nusc_mini": "~/datasets/nuScenes",
             "lyft_sample": "~/datasets/lyft/scenes/sample.zarr",
         },
+        cache_type: str = "sqlite",
         cache_location: str = "~/.unified_data_cache",
         rebuild_cache: bool = False,
     ) -> None:
@@ -68,10 +63,11 @@ class UnifiedDataset(Dataset):
         elif self.centric == "scene":
             self.collate_fn = scene_collate_fn
 
+        if cache_type == "sqlite":
+            cache_class = SQLiteCache
+
         self.rebuild_cache = rebuild_cache
-        self.cache_dir = Path(cache_location).expanduser().resolve()
-        if not self.cache_dir.is_dir():
-            self.cache_dir.mkdir()
+        self.cache: Type[BaseCache] = cache_class(cache_location)
 
         self.history_sec = history_sec
         self.future_sec = future_sec
@@ -82,73 +78,24 @@ class UnifiedDataset(Dataset):
         self.no_types = None if no_types is None else set(no_types)
         self.standardize_rotation = standardize_rotation
 
-        self.envs_dict: Dict[str, EnvMetadata] = env_utils.get_env_metadata(data_dirs)
+        self.envs: List[RawDataset] = env_utils.get_raw_datasets(data_dirs)
 
-        self.all_components = list()
-        for env in self.envs_dict.values():
-            self.all_components += env.components
-
-        matching_datasets: List[Tuple[str, ...]] = self.get_matching_datasets(datasets)
+        matching_datasets: List[Tuple[str, ...]] = self.get_matching_scene_tags(
+            datasets
+        )
         print(
-            "Loading data for matched datasets:",
+            "Loading data for matched scene tags:",
             string_utils.pretty_string_tuples(matching_datasets),
             flush=True,
         )
 
-        self.nusc_mini_obj: Optional[NuScenes] = None
-        self.nusc_obj: Optional[NuScenes] = None
-        self.lyft_sample_obj: Optional[ChunkedDataset] = None
-        self.lyft_obj: Optional[ChunkedDataset] = None
-
-        # Loading the nuScenes object in case we don't have
-        # its data already cached.
-        if (self.rebuild_cache or not (self.cache_dir / "nusc_mini").is_dir()) and any(
-            "nusc_mini" in dataset_tuple for dataset_tuple in matching_datasets
-        ):
-            print("Loading nuScenes mini dataset...", flush=True)
-            self.nusc_mini_obj = NuScenes(
-                version="v1.0-mini", dataroot=self.envs_dict["nusc_mini"].data_dir
-            )
-
-        # Loading the nuScenes object in case we don't have
-        # its data already cached.
-        if (self.rebuild_cache or not (self.cache_dir / "nusc").is_dir()) and any(
-            "nusc" in dataset_tuple for dataset_tuple in matching_datasets
-        ):
-            if hasattr(self, "nusc_mini_obj"):
-                raise ValueError(
-                    "nusc_mini is a subset of nusc and we do not de-duplicate scenes!"
-                )
-
-            print("Loading nuScenes dataset...", flush=True)
-            self.nusc_obj = NuScenes(
-                version="v1.0-trainval", dataroot=self.envs_dict["nusc"].data_dir
-            )
-
-        # Loading the Lyft object in case we don't have
-        # its data already cached.
-        if (
-            self.rebuild_cache or not (self.cache_dir / "lyft_sample").is_dir()
-        ) and any(
-            "lyft_sample" in dataset_tuple for dataset_tuple in matching_datasets
-        ):
-            print("Loading lyft sample dataset...", flush=True)
-            self.lyft_sample_obj = ChunkedDataset(
-                str(self.envs_dict["lyft_sample"].data_dir)
-            ).open()
-
-        # Loading the Lyft object in case we don't have
-        # its data already cached.
-        if (self.rebuild_cache or not (self.cache_dir / "lyft").is_dir()) and any(
-            "lyft" in dataset_tuple for dataset_tuple in matching_datasets
-        ):
-            if hasattr(self, "lyft_sample_obj"):
-                raise ValueError(
-                    "lyft_sample is a subset of lyft and we do not de-duplicate scenes!"
-                )
-
-            print("Loading lyft dataset...", flush=True)
-            self.lyft_obj = ChunkedDataset(str(self.envs_dict["lyft"].data_dir)).open()
+        for env in self.envs:
+            if (
+                self.rebuild_cache or not (self.cache.path / env.name).is_dir()
+            ) and any(env.name in dataset_tuple for dataset_tuple in matching_datasets):
+                # Loading dataset objects in case we don't have
+                # their data already cached.
+                env.load_dataset_obj()
 
         self.scene_index: List[SceneMetadata] = self.preprocess_scene_metadata(
             matching_datasets
@@ -160,20 +107,21 @@ class UnifiedDataset(Dataset):
             for scene_info in self.scene_index:
                 for ts in range(scene_info.length_timesteps):
                     # This is where we remove scene timesteps that would have no remaining agents after filtering.
-                    if self.no_types is not None and all(
-                        agent_info.type in self.no_types
-                        for agent_info in scene_info.agent_presence[ts]
+                    if filtering.all_agents_excluded_types(
+                        no_types, scene_info.agent_presence[ts]
                     ):
                         continue
-                    elif self.only_types is not None and all(
-                        agent_info.type not in self.only_types
-                        for agent_info in scene_info.agent_presence[ts]
+                    elif filtering.no_agent_included_types(
+                        only_types, scene_info.agent_presence[ts]
                     ):
                         continue
 
-                    if all(
-                        not self.satisfies_times(agent_info, ts, scene_info)
-                        for agent_info in scene_info.agent_presence[ts]
+                    if filtering.no_agent_satisfies_time(
+                        ts,
+                        scene_info.dt,
+                        self.history_sec,
+                        self.future_sec,
+                        scene_info.agent_presence[ts],
                     ):
                         # Ignore this datum if no agent in the scene satisfies our time requirements.
                         continue
@@ -184,23 +132,30 @@ class UnifiedDataset(Dataset):
             for scene_info in self.scene_index:
                 for ts in range(scene_info.length_timesteps):
                     for agent_info in scene_info.agent_presence[ts]:
-                        # Ignore this datum if the agent does not satisfy our time requirements.
-                        if not self.satisfies_times(agent_info, ts, scene_info):
+                        # Ignore this datum if the agent does not satisfy
+                        # our minimum timestep requirements.
+                        if not filtering.satisfies_times(
+                            agent_info,
+                            ts,
+                            scene_info.dt,
+                            self.history_sec,
+                            self.future_sec,
+                        ):
                             continue
 
-                        # This is where we remove agents that do not match our filters.
-                        if (
-                            self.no_types is not None
-                            and agent_info.type in self.no_types
+                        # This is where we remove agents that do not match
+                        # our AgentType inclusion/exclusion filters.
+                        if filtering.exclude_types(self.no_types, agent_info.type):
+                            continue
+                        elif filtering.not_included_types(
+                            self.only_types, agent_info.type
                         ):
                             continue
-                        elif (
-                            self.only_types is not None
-                            and agent_info.type not in self.only_types
+
+                        # Don't want to predict the ego if we're going to be giving the model its future!
+                        if filtering.robot_future(
+                            self.incl_robot_future, agent_info.name
                         ):
-                            continue
-                        elif self.incl_robot_future and agent_info.name == "ego":
-                            # Don't want to predict the ego if we're going to be giving its future!
                             continue
 
                         self.data_index.append(
@@ -211,66 +166,29 @@ class UnifiedDataset(Dataset):
         self.data_index = manager.list(self.data_index)
         self.data_len: int = len(self.data_index)
 
-    def get_matching_datasets(
-        self, queries: Optional[List[str]]
-    ) -> List[Tuple[str, ...]]:
-        if queries is None:
-            return self.all_components
+    def get_matching_scene_tags(self, queries: List[str]) -> List[Tuple[str, ...]]:
+        # if queries is None:
+        #     return list(chain.from_iterable(env.components for env in self.envs))
 
-        dataset_tuples = [set(data.split("-")) for data in queries]
+        query_tuples = [set(data.split("-")) for data in queries]
 
-        matching_datasets = list()
-        for dataset_tuple in dataset_tuples:
-            for dataset_component in self.all_components:
-                if dataset_tuple.issubset(dataset_component):
-                    matching_datasets.append(dataset_component)
+        matching_scene_tags = list()
+        for dataset_tuple in query_tuples:
+            for env in self.envs:
+                matching_scene_tags += env.get_matching_scene_tags(dataset_tuple)
 
-        return matching_datasets
+        return matching_scene_tags
 
     def preprocess_scene_metadata(
-        self, datasets: List[Tuple[str, ...]]
+        self, scene_tags: List[Tuple[str, ...]]
     ) -> List[SceneMetadata]:
         scenes_list: List[SceneMetadata] = list()
-        for dataset_tuple in tqdm(datasets, desc="Loading Scene Metadata"):
-            if "nusc_mini" in dataset_tuple:
-                env_cache_dir: Path = self.cache_dir / "nusc_mini"
-                scenes_list += nusc_utils.get_matching_scenes(
-                    self.nusc_mini_obj,
-                    self.envs_dict["nusc_mini"],
-                    dataset_tuple,
-                    env_cache_dir,
-                    self.rebuild_cache,
-                )
-
-            if "nusc" in dataset_tuple:
-                env_cache_dir: Path = self.cache_dir / "nusc"
-                scenes_list += nusc_utils.get_matching_scenes(
-                    self.nusc_obj,
-                    self.envs_dict["nusc"],
-                    dataset_tuple,
-                    env_cache_dir,
-                    self.rebuild_cache,
-                )
-
-            if "lyft_sample" in dataset_tuple:
-                env_cache_dir: Path = self.cache_dir / "lyft_sample"
-                scenes_list += lyft_utils.get_matching_scenes(
-                    self.lyft_sample_obj,
-                    self.envs_dict["lyft_sample"],
-                    dataset_tuple,
-                    env_cache_dir,
-                    self.rebuild_cache,
-                )
-
-            if "lyft" in dataset_tuple:
-                env_cache_dir: Path = self.cache_dir / "lyft"
-                scenes_list += lyft_utils.get_matching_scenes(
-                    self.lyft_obj,
-                    self.envs_dict["lyft"],
-                    dataset_tuple,
-                    env_cache_dir,
-                    self.rebuild_cache,
-                )
+        for scene_tag in tqdm(scene_tags, desc="Loading Scene Metadata"):
+            for env in self.envs:
+                if env.name in scene_tag:
+                    scenes_list += env.get_matching_scenes(
+                        scene_tag, self.cache, self.rebuild_cache
+                    )
 
         self.calculate_agent_presence(scenes_list)
         return scenes_list
@@ -279,7 +197,7 @@ class UnifiedDataset(Dataset):
         scene_info: SceneMetadata
         for scene_info in tqdm(scenes, desc="Calculating Agent Presence"):
             cache_scene_dir: Path = (
-                self.cache_dir / scene_info.env_name / scene_info.name
+                self.cache.path / scene_info.env_name / scene_info.name
             )
             if not cache_scene_dir.is_dir():
                 cache_scene_dir.mkdir(parents=True)
@@ -292,51 +210,20 @@ class UnifiedDataset(Dataset):
                 scene_info.update_agent_presence(cached_scene_info.agent_presence)
                 continue
 
-            if scene_info.env_name == "nusc_mini":
-                agent_presence = nusc_utils.calc_agent_presence(
-                    scene_info=scene_info,
-                    nusc_obj=self.nusc_mini_obj,
-                    cache_scene_dir=cache_scene_dir,
-                    rebuild_cache=self.rebuild_cache,
+            for env in self.envs:
+                if scene_info.env_name == env.name:
+                    agent_presence = env.get_and_cache_agent_presence(
+                        scene_info, cache_scene_dir, self.rebuild_cache
+                    )
+                    scene_info.update_agent_presence(agent_presence)
+                    break
+            else:
+                raise ValueError(
+                    f"Scene {str(scene_info)} had no corresponding environemnt!"
                 )
-            elif scene_info.env_name == "nusc":
-                agent_presence = nusc_utils.calc_agent_presence(
-                    scene_info=scene_info,
-                    nusc_obj=self.nusc_obj,
-                    cache_scene_dir=cache_scene_dir,
-                    rebuild_cache=self.rebuild_cache,
-                )
-            elif scene_info.env_name == "lyft_sample":
-                agent_presence = lyft_utils.calc_agent_presence(
-                    scene_info=scene_info,
-                    lyft_obj=self.lyft_sample_obj,
-                    cache_scene_dir=cache_scene_dir,
-                    rebuild_cache=self.rebuild_cache,
-                )
-
-            scene_info.update_agent_presence(agent_presence)
 
             with open(scene_file, "wb") as f:
                 dill.dump(scene_info, f)
-
-    def satisfies_times(
-        self, agent_info: AgentMetadata, ts: int, scene_info: SceneMetadata
-    ) -> bool:
-        dt = scene_info.dt
-
-        if self.history_sec[0] is not None:
-            min_history = ceil(self.history_sec[0] / dt)
-            agent_history_satisfies = ts - agent_info.first_timestep >= min_history
-        else:
-            agent_history_satisfies = True
-
-        if self.future_sec[0] is not None:
-            min_future = ceil(self.future_sec[0] / dt)
-            agent_future_satisfies = agent_info.last_timestep - ts >= min_future
-        else:
-            agent_future_satisfies = True
-
-        return agent_history_satisfies and agent_future_satisfies
 
     def __len__(self) -> int:
         return self.data_len
@@ -348,7 +235,7 @@ class UnifiedDataset(Dataset):
         elif self.centric == "agent":
             env_name, scene_name, ts, agent_id = self.data_index[idx]
 
-        scene_cache_dir: Path = self.cache_dir / env_name / scene_name
+        scene_cache_dir: Path = self.cache.path / env_name / scene_name
         scene_file: Path = scene_cache_dir / "scene_metadata.dill"
         with open(scene_file, "rb") as f:
             scene_info: SceneMetadata = dill.load(f)
@@ -383,5 +270,5 @@ class UnifiedDataset(Dataset):
                 self.agent_interaction_distances,
                 self.incl_robot_future,
                 self.incl_map,
-                self.standardize_rotation
+                self.standardize_rotation,
             )
