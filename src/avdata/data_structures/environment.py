@@ -2,6 +2,8 @@ import itertools
 from pathlib import Path
 from typing import Dict, List, Tuple
 
+from avdata.data_structures.scene_tag import SceneTag
+
 
 class EnvMetadata:
     def __init__(
@@ -16,9 +18,9 @@ class EnvMetadata:
         self.data_dir = Path(data_dir).expanduser().resolve()
         self.dt = dt
         self.parts = parts
-        self.components = list(
-            itertools.product(  # Cartesian product of the given list of tuples
-                *([(name,)] + parts)
-            )
-        )
+        self.scene_tags: List[SceneTag] = [
+            SceneTag(tag_tuple)
+            # Cartesian product of the given list of tuples
+            for tag_tuple in itertools.product(*([(name,)] + parts))
+        ]
         self.scene_split_map = scene_split_map

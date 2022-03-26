@@ -3,11 +3,12 @@ import sqlite3
 from collections import defaultdict
 from math import floor
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple, Type
 
 import numpy as np
 import pandas as pd
 
+from avdata.caching import BaseCache
 from avdata.data_structures.agent import Agent, AgentMetadata, AgentType
 from avdata.data_structures.scene import SceneTime, SceneTimeAgent
 
@@ -18,7 +19,7 @@ class AgentBatchElement:
     # @profile
     def __init__(
         self,
-        scene_cache_dir: Path,
+        cache: Type[BaseCache],
         data_index: int,
         scene_time_agent: SceneTimeAgent,
         history_sec: Tuple[Optional[float], Optional[float]],
@@ -30,7 +31,7 @@ class AgentBatchElement:
         incl_map: bool = False,
         standardize_rotation: bool = False,
     ) -> None:
-        self.scene_cache_dir: Path = scene_cache_dir
+        self.cache: Type[BaseCache] = cache
         self.data_index: int = data_index
         self.dt: float = scene_time_agent.metadata.dt
         self.scene_ts: int = scene_time_agent.ts

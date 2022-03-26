@@ -16,6 +16,7 @@ from avdata.data_structures import (
     AgentType,
     SceneBatchElement,
     SceneMetadata,
+    SceneTag,
     SceneTime,
     SceneTimeAgent,
     agent_collate_fn,
@@ -29,7 +30,8 @@ class UnifiedDataset(Dataset):
     # @profile
     def __init__(
         self,
-        datasets: List[str],
+        desired_data: List[str],
+        scene_description_matches: Optional[List[str]] = None,
         centric: str = "agent",
         history_sec: Tuple[Optional[float], Optional[float]] = (
             None,
@@ -78,14 +80,16 @@ class UnifiedDataset(Dataset):
         self.no_types = None if no_types is None else set(no_types)
         self.standardize_rotation = standardize_rotation
 
+        # Ensuring scene description queries are all lowercase
+        if scene_description_matches is not None:
+            scene_description_matches = [s.lower() for s in scene_description_matches]
+
         self.envs: List[RawDataset] = env_utils.get_raw_datasets(data_dirs)
 
-        matching_datasets: List[Tuple[str, ...]] = self.get_matching_scene_tags(
-            datasets
-        )
+        matching_datasets: List[SceneTag] = self.get_matching_scene_tags(desired_data)
         print(
             "Loading data for matched scene tags:",
-            string_utils.pretty_string_tuples(matching_datasets),
+            string_utils.pretty_string_tags(matching_datasets),
             flush=True,
         )
 
@@ -98,7 +102,7 @@ class UnifiedDataset(Dataset):
                 env.load_dataset_obj()
 
         self.scene_index: List[SceneMetadata] = self.preprocess_scene_metadata(
-            matching_datasets
+            matching_datasets, scene_description_matches
         )
         print(self.scene_index)
 
@@ -166,28 +170,31 @@ class UnifiedDataset(Dataset):
         self.data_index = manager.list(self.data_index)
         self.data_len: int = len(self.data_index)
 
-    def get_matching_scene_tags(self, queries: List[str]) -> List[Tuple[str, ...]]:
+    def get_matching_scene_tags(self, queries: List[str]) -> List[SceneTag]:
         # if queries is None:
         #     return list(chain.from_iterable(env.components for env in self.envs))
 
         query_tuples = [set(data.split("-")) for data in queries]
 
-        matching_scene_tags = list()
-        for dataset_tuple in query_tuples:
+        matching_scene_tags: List[SceneTag] = list()
+        for query_tuple in query_tuples:
             for env in self.envs:
-                matching_scene_tags += env.get_matching_scene_tags(dataset_tuple)
+                matching_scene_tags += env.get_matching_scene_tags(query_tuple)
 
         return matching_scene_tags
 
     def preprocess_scene_metadata(
-        self, scene_tags: List[Tuple[str, ...]]
+        self, scene_tags: List[SceneTag], scene_description_matches: Optional[List[str]]
     ) -> List[SceneMetadata]:
         scenes_list: List[SceneMetadata] = list()
         for scene_tag in tqdm(scene_tags, desc="Loading Scene Metadata"):
             for env in self.envs:
                 if env.name in scene_tag:
                     scenes_list += env.get_matching_scenes(
-                        scene_tag, self.cache, self.rebuild_cache
+                        scene_tag,
+                        scene_description_matches,
+                        self.cache,
+                        self.rebuild_cache,
                     )
 
         self.calculate_agent_presence(scenes_list)
@@ -235,16 +242,13 @@ class UnifiedDataset(Dataset):
         elif self.centric == "agent":
             env_name, scene_name, ts, agent_id = self.data_index[idx]
 
-        scene_cache_dir: Path = self.cache.path / env_name / scene_name
-        scene_file: Path = scene_cache_dir / "scene_metadata.dill"
-        with open(scene_file, "rb") as f:
-            scene_info: SceneMetadata = dill.load(f)
+        scene_info: SceneMetadata = self.cache.load_scene_metadata(env_name, scene_name)
 
         if self.centric == "scene":
             scene_time: SceneTime = SceneTime.from_cache(
                 scene_info,
                 ts,
-                scene_cache_dir,
+                self.cache,
                 only_types=self.only_types,
                 no_types=self.no_types,
             )
@@ -255,14 +259,14 @@ class UnifiedDataset(Dataset):
                 scene_info,
                 ts,
                 agent_id,
-                scene_cache_dir,
+                self.cache,
                 only_types=self.only_types,
                 no_types=self.no_types,
                 incl_robot_future=self.incl_robot_future,
             )
 
             return AgentBatchElement(
-                scene_cache_dir,
+                self.cache,
                 idx,
                 scene_time_agent,
                 self.history_sec,

@@ -1,12 +1,11 @@
 from pathlib import Path
-from typing import List, Tuple, Type
+from typing import List, Optional, Type
 
 import dill
 from l5kit.data import ChunkedDataset
 
 from avdata.caching import BaseCache
-from avdata.data_structures import AgentMetadata, EnvMetadata, SceneMetadata
-from avdata.data_structures.environment import EnvMetadata
+from avdata.data_structures import AgentMetadata, EnvMetadata, SceneMetadata, SceneTag
 from avdata.dataset_specific.raw_dataset import RawDataset
 from avdata.dataset_specific.scene_records import LyftSceneRecord
 from avdata.utils import lyft_utils
@@ -23,9 +22,8 @@ class LyftDataset(RawDataset):
 
     def _get_matching_scenes_from_obj(
         self,
-        dataset_tuple: Tuple[
-            str, ...
-        ],  # TODO(bivanovic): Add in the scene_tag query handling below
+        scene_tag: SceneTag,  # TODO(bivanovic): Add in the scene_tag query handling below
+        scene_desc_matches: Optional[List[str]],
         cache: Type[BaseCache],
     ) -> List[SceneMetadata]:
         all_scenes_list: List[LyftSceneRecord] = list()
@@ -42,7 +40,7 @@ class LyftDataset(RawDataset):
             # Saving all scene records for later caching.
             all_scenes_list.append(LyftSceneRecord(scene_name, scene_length))
 
-            if scene_split in dataset_tuple:
+            if scene_split in scene_tag and scene_desc_matches is None:
                 scene_metadata = SceneMetadata(
                     self.metadata,
                     scene_name,
@@ -58,21 +56,18 @@ class LyftDataset(RawDataset):
 
     def _get_matching_scenes_from_cache(
         self,
-        dataset_tuple: Tuple[
-            str, ...
-        ],  # TODO(bivanovic): Add in the scene_tag query handling below
+        scene_tag: SceneTag,  # TODO(bivanovic): Add in the scene_tag query handling below
+        scene_desc_matches: Optional[List[str]],
         cache: Type[BaseCache],
     ) -> List[SceneMetadata]:
-        env_cache_dir: Path = cache.path / self.name
-        with open(env_cache_dir / "scenes_list.dill", "rb") as f:
-            all_scenes_list: List[LyftSceneRecord] = dill.load(f)
+        all_scenes_list: List[LyftSceneRecord] = cache.load_env_scenes_list(self.name)
 
         scenes_list: List[SceneMetadata] = list()
         for scene_record in all_scenes_list:
             scene_name, scene_length = scene_record
             scene_split: str = self.metadata.scene_split_map[scene_name]
 
-            if scene_split in dataset_tuple:
+            if scene_split in scene_tag and scene_desc_matches is None:
                 scene_metadata = SceneMetadata(
                     self.metadata,
                     scene_name,

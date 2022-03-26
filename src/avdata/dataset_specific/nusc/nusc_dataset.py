@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import List, Tuple, Type
+from typing import List, Optional, Type
 
 import dill
 from nuscenes.map_expansion.map_api import NuScenesMap
@@ -9,6 +9,7 @@ from avdata.caching import BaseCache
 from avdata.data_structures.agent import AgentMetadata
 from avdata.data_structures.environment import EnvMetadata
 from avdata.data_structures.scene import SceneMetadata
+from avdata.data_structures.scene_tag import SceneTag
 from avdata.dataset_specific.raw_dataset import RawDataset
 from avdata.dataset_specific.scene_records import NuscSceneRecord
 from avdata.utils import nusc_utils
@@ -32,7 +33,8 @@ class NuscDataset(RawDataset):
 
     def _get_matching_scenes_from_obj(
         self,
-        dataset_tuple: Tuple[str, ...],
+        scene_tag: SceneTag,
+        scene_desc_matches: Optional[List[str]],
         cache: Type[BaseCache],
     ) -> List[SceneMetadata]:
         all_scenes_list: List[NuscSceneRecord] = list()
@@ -40,6 +42,7 @@ class NuscDataset(RawDataset):
         scenes_list: List[SceneMetadata] = list()
         for scene_record in self.dataset_obj.scene:
             scene_name: str = scene_record["name"]
+            scene_desc: str = scene_record["description"].lower()
             scene_location: str = self.dataset_obj.get(
                 "log", scene_record["log_token"]
             )["location"]
@@ -48,13 +51,15 @@ class NuscDataset(RawDataset):
 
             # Saving all scene records for later caching.
             all_scenes_list.append(
-                NuscSceneRecord(scene_name, scene_location, scene_length)
+                NuscSceneRecord(scene_name, scene_location, scene_length, scene_desc)
             )
 
-            if (
-                scene_location.split("-")[0] in dataset_tuple
-                and scene_split in dataset_tuple
-            ):
+            if scene_location.split("-")[0] in scene_tag and scene_split in scene_tag:
+                if scene_desc_matches is not None and not any(
+                    desc_query in scene_desc for desc_query in scene_desc_matches
+                ):
+                    continue
+
                 scene_metadata = SceneMetadata(
                     self.metadata,
                     scene_name,
@@ -62,6 +67,7 @@ class NuscDataset(RawDataset):
                     scene_split,
                     scene_length,
                     scene_record,
+                    scene_desc,
                 )
                 scenes_list.append(scene_metadata)
 
@@ -69,21 +75,24 @@ class NuscDataset(RawDataset):
         return scenes_list
 
     def _get_matching_scenes_from_cache(
-        self, dataset_tuple: Tuple[str, ...], cache: Type[BaseCache]
+        self,
+        scene_tag: SceneTag,
+        scene_desc_matches: Optional[List[str]],
+        cache: Type[BaseCache],
     ) -> List[SceneMetadata]:
-        env_cache_dir: Path = cache.path / self.name
-        with open(env_cache_dir / "scenes_list.dill", "rb") as f:
-            all_scenes_list: List[NuscSceneRecord] = dill.load(f)
+        all_scenes_list: List[NuscSceneRecord] = cache.load_env_scenes_list(self.name)
 
         scenes_list: List[SceneMetadata] = list()
         for scene_record in all_scenes_list:
-            scene_name, scene_location, scene_length = scene_record
+            scene_name, scene_location, scene_length, scene_desc = scene_record
             scene_split: str = self.metadata.scene_split_map[scene_name]
 
-            if (
-                scene_location.split("-")[0] in dataset_tuple
-                and scene_split in dataset_tuple
-            ):
+            if scene_location.split("-")[0] in scene_tag and scene_split in scene_tag:
+                if scene_desc_matches is not None and not any(
+                    desc_query in scene_desc for desc_query in scene_desc_matches
+                ):
+                    continue
+
                 scene_metadata = SceneMetadata(
                     self.metadata,
                     scene_name,
@@ -91,6 +100,7 @@ class NuscDataset(RawDataset):
                     scene_split,
                     scene_length,
                     None,  # This isn't used if everything is already cached.
+                    scene_desc,
                 )
                 scenes_list.append(scene_metadata)
 

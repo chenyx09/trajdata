@@ -2,7 +2,6 @@ from math import ceil
 from typing import List, Optional, Tuple
 
 from avdata.data_structures.agent import AgentMetadata, AgentType
-from avdata.data_structures.scene import SceneMetadata
 
 
 def exclude_types(no_types: Optional[List[AgentType]], agent_type: AgentType) -> bool:
