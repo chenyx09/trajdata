@@ -194,16 +194,9 @@ class AgentBatchElement:
         }
         neighbor_history_lens_np: np.ndarray = np.zeros((num_neighbors,), dtype=int)
 
-        with contextlib.closing(
-            sqlite3.connect(self.scene_cache_dir / "agent_data.db")
-        ) as conn:
-            all_agents_df = pd.read_sql_query(
-                "SELECT * FROM agent_data WHERE scene_ts BETWEEN ? AND ?",
-                conn,
-                params=(scene_ts - max_history, scene_ts),
-                index_col=["agent_id", "scene_ts"],
-            )
-
+        all_agents_df = self.cache.load_data_between_times(
+            scene_ts - max_history, scene_ts, scene_time.metadata
+        )
         all_agents_df -= self.curr_agent_state_np
         all_agents_df["sin_heading"] = np.sin(all_agents_df["heading"])
         all_agents_df["cos_heading"] = np.cos(all_agents_df["heading"])

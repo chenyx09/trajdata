@@ -7,7 +7,7 @@ from avdata import AgentBatch, AgentType, UnifiedDataset
 # @profile
 def main():
     dataset = UnifiedDataset(
-        desired_data=["nusc_mini"],  # "lyft_sample"],
+        desired_data=["nusc_mini", "lyft_sample"],
         scene_description_matches=["night"],
         centric="agent",
         history_sec=(0.1, 1.0),

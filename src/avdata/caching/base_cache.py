@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import List, NamedTuple, Type
+from typing import Iterable, List, NamedTuple, Type
 
 import dill
 import pandas as pd
@@ -36,11 +36,27 @@ class BaseCache:
         with open(env_cache_dir / "scenes_list.dill", "wb") as f:
             dill.dump(scenes_list, f)
 
-    def load_single_agent_data(self, agent_id: str) -> pd.DataFrame:
-        return NotImplementedError()
+    def load_single_agent_data(
+        self, agent_id: str, scene_info: SceneMetadata
+    ) -> pd.DataFrame:
+        raise NotImplementedError()
 
-    def load_multiple_agent_data(self, agent_ids: List[str]) -> pd.DataFrame:
-        return NotImplementedError()
+    def load_multiple_agent_data(
+        self, agent_ids: Iterable[str], scene_info: SceneMetadata
+    ) -> pd.DataFrame:
+        raise NotImplementedError()
 
-    def load_agent_xy_at_time(self, scene_ts: int) -> pd.DataFrame:
-        return NotImplementedError()
+    def load_all_agent_data(
+        self, scene_info: SceneMetadata
+    ) -> pd.DataFrame:
+        raise NotImplementedError()
+
+    def load_agent_xy_at_time(
+        self, scene_ts: int, scene_info: SceneMetadata
+    ) -> pd.DataFrame:
+        raise NotImplementedError()
+
+    def load_data_between_times(
+        from_ts: int, to_ts: int, scene_info: SceneMetadata
+    ) -> pd.DataFrame:
+        raise NotImplementedError()

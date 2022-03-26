@@ -1,7 +1,6 @@
 import contextlib
 import sqlite3
-from pathlib import Path
-from typing import Any, List, Optional, Set, Type
+from typing import List, Optional, Set, Type
 
 import numpy as np
 import pandas as pd
@@ -51,16 +50,7 @@ class SceneTime:
             and not filtering.not_included_types(only_types, agent_info.type)
         ]
 
-        # TODO(bivanovic): Certainly better ways of doing this, e.g., loading the scene data all at first and then filtering the index
-        with contextlib.closing(
-            sqlite3.connect(scene_cache_dir / "agent_data.db")
-        ) as conn:
-            data_df = pd.read_sql_query(
-                f"SELECT * FROM agent_data WHERE agent_id IN ({','.join('?'*len(filtered_agents))})",
-                conn,
-                params=tuple(a.name for a in filtered_agents),
-                index_col=["agent_id", "scene_ts"],
-            )
+        data_df: pd.DataFrame = cache.load_all_agent_data(scene_info)
 
         agents: List[Agent] = list()
         for agent_info in filtered_agents:
@@ -73,15 +63,7 @@ class SceneTime:
             [[agent.data.at[self.ts, "x"], agent.data.at[self.ts, "y"]]]
         )
 
-        with contextlib.closing(
-            sqlite3.connect(self.scene_cache_dir / "agent_data.db")
-        ) as connection:
-            data_df = pd.read_sql_query(
-                "SELECT agent_id,x,y FROM agent_data WHERE scene_ts=?",
-                connection,
-                params=(self.ts,),
-                index_col="agent_id",
-            )
+        data_df: pd.DataFrame = self.cache.load_agent_xy_at_time(self.ts, self.metadata)
 
         agent_ids = [a.name for a in self.agents]
         curr_poses = data_df.loc[agent_ids, ["x", "y"]].values
@@ -128,46 +110,32 @@ class SceneTimeAgent:
 
         agent_metadata = next((a for a in filtered_agents if a.name == agent_id), None)
 
-        with contextlib.closing(
-            sqlite3.connect(scene_cache_dir / "agent_data.db")
-        ) as conn:
-            if incl_robot_future:
-                ego_metadata = next(
-                    (a for a in filtered_agents if a.name == "ego"), None
-                )
+        if incl_robot_future:
+            ego_metadata = next((a for a in filtered_agents if a.name == "ego"), None)
 
-                data_df = pd.read_sql_query(
-                    f"SELECT * FROM agent_data WHERE agent_id IN (?, ?)",
-                    conn,
-                    params=(agent_id, "ego"),
-                    index_col=["agent_id", "scene_ts"],
-                )
+            data_df: pd.DataFrame = cache.load_multiple_agent_data(
+                (agent_id, "ego"), scene_info
+            )
 
-                return cls(
-                    scene_info,
-                    scene_ts,
-                    agents=filtered_agents,
-                    agent=Agent(agent_metadata, data_df.loc[agent_id]),
-                    cache=cache,
-                    robot=Agent(ego_metadata, data_df.loc["ego"]),
-                )
-            else:
-                data_df = pd.read_sql_query(
-                    f"SELECT * FROM agent_data WHERE agent_id=?",
-                    conn,
-                    params=(agent_id,),
-                    index_col="scene_ts",
-                )
+            return cls(
+                scene_info,
+                scene_ts,
+                agents=filtered_agents,
+                agent=Agent(agent_metadata, data_df.loc[agent_id]),
+                cache=cache,
+                robot=Agent(ego_metadata, data_df.loc["ego"]),
+            )
+        else:
+            data_df: pd.DataFrame = cache.load_single_agent_data(agent_id, scene_info)
+            del data_df["agent_id"]
 
-                del data_df["agent_id"]
-
-                return cls(
-                    scene_info,
-                    scene_ts,
-                    agents=filtered_agents,
-                    agent=Agent(agent_metadata, data_df),
-                    cache=cache,
-                )
+            return cls(
+                scene_info,
+                scene_ts,
+                agents=filtered_agents,
+                agent=Agent(agent_metadata, data_df),
+                cache=cache,
+            )
 
     # @profile
     def get_agent_distances_to(self, agent: Agent) -> np.ndarray:
@@ -175,15 +143,7 @@ class SceneTimeAgent:
             [[agent.data.at[self.ts, "x"], agent.data.at[self.ts, "y"]]]
         )
 
-        with contextlib.closing(
-            sqlite3.connect(self.scene_cache_dir / "agent_data.db")
-        ) as connection:
-            data_df = pd.read_sql_query(
-                "SELECT agent_id,x,y FROM agent_data WHERE scene_ts=?",
-                connection,
-                params=(self.ts,),
-                index_col="agent_id",
-            )
+        data_df: pd.DataFrame = self.cache.load_agent_xy_at_time(self.ts, self.metadata)
 
         agent_ids = [a.name for a in self.agents]
         curr_poses = data_df.loc[agent_ids, ["x", "y"]].values
