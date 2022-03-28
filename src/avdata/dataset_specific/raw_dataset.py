@@ -1,6 +1,6 @@
 from typing import List, NamedTuple, Optional, Set, Type
 
-from avdata.caching import BaseCache
+from avdata.caching import SceneCache, EnvCache
 from avdata.data_structures import AgentMetadata, EnvMetadata, SceneMetadata, SceneTag
 
 
@@ -26,7 +26,7 @@ class RawDataset:
         self,
         scene_tag: SceneTag,
         scene_desc_matches: Optional[List[str]],
-        cache: Type[BaseCache],
+        cache: Type[SceneCache],
     ) -> List[SceneMetadata]:
         raise NotImplementedError()
 
@@ -34,12 +34,12 @@ class RawDataset:
         self,
         scene_tag: SceneTag,
         scene_desc_matches: Optional[List[str]],
-        cache: Type[BaseCache],
+        cache: Type[SceneCache],
     ) -> List[SceneMetadata]:
         raise NotImplementedError()
 
     def cache_all_scenes_list(
-        self, cache: BaseCache, all_scenes_list: List[Type[NamedTuple]]
+        self, cache: EnvCache, all_scenes_list: List[Type[NamedTuple]]
     ) -> None:
         cache.save_env_scenes_list(self.name, all_scenes_list)
 
@@ -47,7 +47,7 @@ class RawDataset:
         self,
         scene_tag: SceneTag,
         scene_desc_matches: Optional[List[str]],
-        cache: BaseCache,
+        cache: Type[SceneCache],
         rebuild_cache: bool,
     ) -> List[SceneMetadata]:
         if self.dataset_obj is None and not rebuild_cache:
@@ -60,6 +60,6 @@ class RawDataset:
             )
 
     def get_and_cache_agent_presence(
-        self, scene_info: SceneMetadata, cache: Type[BaseCache]
+        self, scene_info: SceneMetadata, cache: Type[SceneCache]
     ) -> List[List[AgentMetadata]]:
         raise NotImplementedError()

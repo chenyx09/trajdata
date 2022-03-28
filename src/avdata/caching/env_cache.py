@@ -1,13 +1,12 @@
 from pathlib import Path
-from typing import Iterable, List, NamedTuple, Type
+from typing import List, NamedTuple, Type
 
 import dill
-import pandas as pd
 
 from avdata.data_structures.scene_metadata import SceneMetadata
 
 
-class BaseCache:
+class EnvCache:
     def __init__(self, cache_location: str) -> None:
         # Ensuring the specified cache folder exists
         self.path = Path(cache_location).expanduser().resolve()
@@ -47,31 +46,3 @@ class BaseCache:
         env_cache_dir.mkdir(parents=True, exist_ok=True)
         with open(env_cache_dir / "scenes_list.dill", "wb") as f:
             dill.dump(scenes_list, f)
-
-    def save_agent_data(
-        self, agent_data: pd.DataFrame, scene_info: SceneMetadata
-    ) -> None:
-        raise NotImplementedError()
-
-    def load_single_agent_data(
-        self, agent_id: str, scene_info: SceneMetadata
-    ) -> pd.DataFrame:
-        raise NotImplementedError()
-
-    def load_multiple_agent_data(
-        self, agent_ids: Iterable[str], scene_info: SceneMetadata
-    ) -> pd.DataFrame:
-        raise NotImplementedError()
-
-    def load_all_agent_data(self, scene_info: SceneMetadata) -> pd.DataFrame:
-        raise NotImplementedError()
-
-    def load_agent_xy_at_time(
-        self, scene_ts: int, scene_info: SceneMetadata
-    ) -> pd.DataFrame:
-        raise NotImplementedError()
-
-    def load_data_between_times(
-        from_ts: int, to_ts: int, scene_info: SceneMetadata
-    ) -> pd.DataFrame:
-        raise NotImplementedError()

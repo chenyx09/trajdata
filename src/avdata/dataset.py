@@ -10,7 +10,7 @@ from torch.utils.data import Dataset
 from tqdm import tqdm
 
 from avdata import filtering
-from avdata.caching import BaseCache, SQLiteCache
+from avdata.caching import EnvCache, SceneCache, SQLiteCache
 from avdata.data_structures import (
     AgentBatchElement,
     AgentType,
@@ -66,10 +66,10 @@ class UnifiedDataset(Dataset):
             self.collate_fn = scene_collate_fn
 
         if cache_type == "sqlite":
-            cache_class = SQLiteCache
+            self.cache_class = SQLiteCache
 
         self.rebuild_cache = rebuild_cache
-        self.cache: Type[BaseCache] = cache_class(cache_location)
+        self.env_cache: EnvCache = EnvCache(cache_location)
 
         self.history_sec = history_sec
         self.future_sec = future_sec
@@ -94,7 +94,7 @@ class UnifiedDataset(Dataset):
         )
 
         for env in self.envs:
-            if (self.rebuild_cache or not self.cache.env_is_cached(env.name)) and any(
+            if (self.rebuild_cache or not self.env_cache.env_is_cached(env.name)) and any(
                 env.name in dataset_tuple for dataset_tuple in matching_datasets
             ):
                 # Loading dataset objects in case we don't have
@@ -193,7 +193,7 @@ class UnifiedDataset(Dataset):
                     scenes_list += env.get_matching_scenes(
                         scene_tag,
                         scene_description_matches,
-                        self.cache,
+                        self.env_cache,
                         self.rebuild_cache,
                     )
 
@@ -203,17 +203,11 @@ class UnifiedDataset(Dataset):
     def calculate_agent_presence(self, scenes: List[SceneMetadata]) -> None:
         scene_info: SceneMetadata
         for scene_info in tqdm(scenes, desc="Calculating Agent Presence"):
-            cache_scene_dir: Path = (
-                self.cache.path / scene_info.env_name / scene_info.name
-            )
-            if not cache_scene_dir.is_dir():
-                cache_scene_dir.mkdir(parents=True)
-
             if (
-                self.cache.scene_is_cached(scene_info.env_name, scene_info.name)
+                self.env_cache.scene_is_cached(scene_info.env_name, scene_info.name)
                 and not self.rebuild_cache
             ):
-                cached_scene_info: SceneMetadata = self.cache.load_scene_metadata(
+                cached_scene_info: SceneMetadata = self.env_cache.load_scene_metadata(
                     scene_info.env_name, scene_info.name
                 )
 
@@ -223,7 +217,7 @@ class UnifiedDataset(Dataset):
             for env in self.envs:
                 if scene_info.env_name == env.name:
                     agent_presence = env.get_and_cache_agent_presence(
-                        scene_info, self.cache
+                        scene_info, self.cache_class(self.env_cache.path, scene_info)
                     )
                     scene_info.update_agent_presence(agent_presence)
                     break
@@ -232,7 +226,7 @@ class UnifiedDataset(Dataset):
                     f"Scene {str(scene_info)} had no corresponding environemnt!"
                 )
 
-            self.cache.save_scene_metadata(scene_info)
+            self.env_cache.save_scene_metadata(scene_info)
 
     def __len__(self) -> int:
         return self.data_len
@@ -244,13 +238,15 @@ class UnifiedDataset(Dataset):
         elif self.centric == "agent":
             env_name, scene_name, ts, agent_id = self.data_index[idx]
 
-        scene_info: SceneMetadata = self.cache.load_scene_metadata(env_name, scene_name)
+        scene_cache: Type[SceneCache]
+
+        scene_info: SceneMetadata = self.env_cache.load_scene_metadata(env_name, scene_name)
 
         if self.centric == "scene":
             scene_time: SceneTime = SceneTime.from_cache(
                 scene_info,
                 ts,
-                self.cache,
+                self.env_cache,
                 only_types=self.only_types,
                 no_types=self.no_types,
             )
@@ -261,14 +257,14 @@ class UnifiedDataset(Dataset):
                 scene_info,
                 ts,
                 agent_id,
-                self.cache,
+                self.env_cache,
                 only_types=self.only_types,
                 no_types=self.no_types,
                 incl_robot_future=self.incl_robot_future,
             )
 
             return AgentBatchElement(
-                self.cache,
+                self.env_cache,
                 idx,
                 scene_time_agent,
                 self.history_sec,

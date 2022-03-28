@@ -5,4 +5,3 @@ from .environment import EnvMetadata
 from .scene import Scene, SceneTime, SceneTimeAgent
 from .scene_metadata import SceneMetadata
 from .scene_tag import SceneTag
-from .scene_time_node import SceneTimeNode, SceneTimeNodeMetadata

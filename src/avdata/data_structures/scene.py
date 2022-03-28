@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 
 from avdata import filtering
-from avdata.caching import BaseCache
+from avdata.caching import SceneCache
 from avdata.data_structures.agent import Agent, AgentMetadata, AgentType
 from avdata.data_structures.scene_metadata import SceneMetadata
 
@@ -23,8 +23,8 @@ class SceneTime:
         self,
         metadata: SceneMetadata,
         scene_ts: int,
-        agents: List[Agent],
-        cache: Type[BaseCache],
+        agents: List[AgentMetadata],
+        cache: Type[SceneCache],
     ) -> None:
         self.metadata = metadata
         self.ts = scene_ts
@@ -36,7 +36,7 @@ class SceneTime:
         cls,
         scene_info: SceneMetadata,
         scene_ts: int,
-        cache: Type[BaseCache],
+        cache: Type[SceneCache],
         only_types: Optional[Set[AgentType]] = None,
         no_types: Optional[Set[AgentType]] = None,
     ):
@@ -76,9 +76,9 @@ class SceneTimeAgent:
         metadata: SceneMetadata,
         scene_ts: int,
         agents: List[AgentMetadata],
-        agent: Agent,
-        cache: Type[BaseCache],
-        robot: Optional[Agent] = None,
+        agent: AgentMetadata,
+        cache: Type[SceneCache],
+        robot: Optional[AgentMetadata] = None,
     ) -> None:
         self.metadata = metadata
         self.ts = scene_ts
@@ -93,7 +93,7 @@ class SceneTimeAgent:
         scene_info: SceneMetadata,
         scene_ts: int,
         agent_id: str,
-        cache: Type[BaseCache],
+        cache: Type[SceneCache],
         only_types: Optional[Set[AgentType]] = None,
         no_types: Optional[Set[AgentType]] = None,
         incl_robot_future: bool = False,
@@ -111,27 +111,20 @@ class SceneTimeAgent:
         if incl_robot_future:
             ego_metadata = next((a for a in filtered_agents if a.name == "ego"), None)
 
-            data_df: pd.DataFrame = cache.load_multiple_agent_data(
-                (agent_id, "ego"), scene_info
-            )
-
             return cls(
                 scene_info,
                 scene_ts,
                 agents=filtered_agents,
-                agent=Agent(agent_metadata, data_df.loc[agent_id]),
+                agent=agent_metadata,
                 cache=cache,
-                robot=Agent(ego_metadata, data_df.loc["ego"]),
+                robot=ego_metadata,
             )
         else:
-            data_df: pd.DataFrame = cache.load_single_agent_data(agent_id, scene_info)
-            del data_df["agent_id"]
-
             return cls(
                 scene_info,
                 scene_ts,
                 agents=filtered_agents,
-                agent=Agent(agent_metadata, data_df),
+                agent=agent_metadata,
                 cache=cache,
             )
 

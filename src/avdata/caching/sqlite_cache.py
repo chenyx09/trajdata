@@ -1,10 +1,10 @@
 import contextlib
 import sqlite3
 from typing import Iterable
-
+from pathlib import Path
 import pandas as pd
 
-from avdata.caching.base_cache import BaseCache
+from avdata.caching import EnvCache, SceneCache
 from avdata.data_structures.scene_metadata import SceneMetadata
 
 DB_SCHEMA = """
@@ -20,16 +20,18 @@ heading REAL NOT NULL
 """
 
 
-class SQLiteCache(BaseCache):
-    def __init__(self, cache_location: str) -> None:
-        super().__init__(cache_location)
+class SQLiteCache(SceneCache):
+    def __init__(self, cache_path: Path, scene_info: SceneMetadata) -> None:
+        super().__init__(cache_path, scene_info)
+
+        self.agent_data_path: Path = self.scene_dir / "agent_data.db"
 
     def save_agent_data(
-        self, agent_data: pd.DataFrame, scene_info: SceneMetadata
+        self, agent_data: pd.DataFrame
     ) -> None:
         with contextlib.closing(
             sqlite3.connect(
-                self.path / scene_info.env_name / scene_info.name / "agent_data.db"
+                self.agent_data_path
             )
         ) as connection:
             cursor = connection.cursor()
@@ -43,11 +45,11 @@ class SQLiteCache(BaseCache):
             )
 
     def load_single_agent_data(
-        self, agent_id: str, scene_info: SceneMetadata
+        self, agent_id: str
     ) -> pd.DataFrame:
         with contextlib.closing(
             sqlite3.connect(
-                self.path / scene_info.env_name / scene_info.name / "agent_data.db"
+                self.agent_data_path
             )
         ) as conn:
             data_df = pd.read_sql_query(
@@ -60,11 +62,11 @@ class SQLiteCache(BaseCache):
         return data_df
 
     def load_multiple_agent_data(
-        self, agent_ids: Iterable[str], scene_info: SceneMetadata
+        self, agent_ids: Iterable[str]
     ) -> pd.DataFrame:
         with contextlib.closing(
             sqlite3.connect(
-                self.path / scene_info.env_name / scene_info.name / "agent_data.db"
+                self.agent_data_path
             )
         ) as conn:
             data_df = pd.read_sql_query(
@@ -76,10 +78,10 @@ class SQLiteCache(BaseCache):
 
         return data_df
 
-    def load_all_agent_data(self, scene_info: SceneMetadata) -> pd.DataFrame:
+    def load_all_agent_data(self) -> pd.DataFrame:
         with contextlib.closing(
             sqlite3.connect(
-                self.path / scene_info.env_name / scene_info.name / "agent_data.db"
+                self.agent_data_path
             )
         ) as conn:
             data_df = pd.read_sql_table(
@@ -91,11 +93,11 @@ class SQLiteCache(BaseCache):
         return data_df
 
     def load_agent_xy_at_time(
-        self, scene_ts: int, scene_info: SceneMetadata
+        self, scene_ts: int
     ) -> pd.DataFrame:
         with contextlib.closing(
             sqlite3.connect(
-                self.path / scene_info.env_name / scene_info.name / "agent_data.db"
+                self.agent_data_path
             )
         ) as conn:
             data_df = pd.read_sql_query(
@@ -108,11 +110,11 @@ class SQLiteCache(BaseCache):
         return data_df
 
     def load_data_between_times(
-        self, from_ts: int, to_ts: int, scene_info: SceneMetadata
+        self, from_ts: int, to_ts: int
     ) -> pd.DataFrame:
         with contextlib.closing(
             sqlite3.connect(
-                self.path / scene_info.env_name / scene_info.name / "agent_data.db"
+                self.agent_data_path
             )
         ) as conn:
             all_agents_df = pd.read_sql_query(

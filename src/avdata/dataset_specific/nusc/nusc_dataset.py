@@ -4,7 +4,7 @@ import pandas as pd
 from nuscenes.nuscenes import NuScenes
 from nuscenes.utils.splits import create_splits_scenes
 
-from avdata.caching import BaseCache
+from avdata.caching import SceneCache
 from avdata.data_structures.agent import Agent, AgentMetadata, AgentType, FixedSize
 from avdata.data_structures.environment import EnvMetadata
 from avdata.data_structures.scene import SceneMetadata
@@ -67,7 +67,7 @@ class NuscDataset(RawDataset):
         self,
         scene_tag: SceneTag,
         scene_desc_matches: Optional[List[str]],
-        cache: Type[BaseCache],
+        cache: Type[SceneCache],
     ) -> List[SceneMetadata]:
         all_scenes_list: List[NuscSceneRecord] = list()
 
@@ -110,7 +110,7 @@ class NuscDataset(RawDataset):
         self,
         scene_tag: SceneTag,
         scene_desc_matches: Optional[List[str]],
-        cache: Type[BaseCache],
+        cache: Type[SceneCache],
     ) -> List[SceneMetadata]:
         all_scenes_list: List[NuscSceneRecord] = cache.load_env_scenes_list(self.name)
 
@@ -139,7 +139,7 @@ class NuscDataset(RawDataset):
         return scenes_list
 
     def get_and_cache_agent_presence(
-        self, scene_info: SceneMetadata, cache: Type[BaseCache]
+        self, scene_info: SceneMetadata, cache: Type[SceneCache]
     ) -> List[List[AgentMetadata]]:
         agent_presence: List[List[AgentMetadata]] = [
             [
@@ -182,6 +182,6 @@ class NuscDataset(RawDataset):
         ego_agent: Agent = nusc_utils.agg_ego_data(self.dataset_obj, scene_info)
         agent_data_list.append(ego_agent.data)
 
-        cache.save_agent_data(pd.concat(agent_data_list), scene_info)
+        cache.save_agent_data(pd.concat(agent_data_list))
 
         return agent_presence

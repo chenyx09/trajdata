@@ -6,7 +6,7 @@ import pandas as pd
 from l5kit.data import ChunkedDataset, labels
 from scipy.stats import mode
 
-from avdata.caching import BaseCache
+from avdata.caching import SceneCache
 from avdata.data_structures import AgentMetadata, EnvMetadata, SceneMetadata, SceneTag
 from avdata.data_structures.agent import Agent, AgentType, FixedSize
 from avdata.dataset_specific.lyft import lyft_utils
@@ -49,7 +49,7 @@ class LyftDataset(RawDataset):
         self,
         scene_tag: SceneTag,
         scene_desc_matches: Optional[List[str]],
-        cache: Type[BaseCache],
+        cache: Type[SceneCache],
     ) -> List[SceneMetadata]:
         all_scenes_list: List[LyftSceneRecord] = list()
 
@@ -83,7 +83,7 @@ class LyftDataset(RawDataset):
         self,
         scene_tag: SceneTag,
         scene_desc_matches: Optional[List[str]],
-        cache: Type[BaseCache],
+        cache: Type[SceneCache],
     ) -> List[SceneMetadata]:
         all_scenes_list: List[LyftSceneRecord] = cache.load_env_scenes_list(self.name)
 
@@ -106,7 +106,7 @@ class LyftDataset(RawDataset):
         return scenes_list
 
     def get_and_cache_agent_presence(
-        self, scene_info: SceneMetadata, cache: Type[BaseCache]
+        self, scene_info: SceneMetadata, cache: Type[SceneCache]
     ) -> List[List[AgentMetadata]]:
         agent_presence: List[List[AgentMetadata]] = [
             [
@@ -230,6 +230,6 @@ class LyftDataset(RawDataset):
             agent = Agent(agent_metadata, agent_data_df[final_cols])
             agent_data_list.append(agent.data)
 
-        cache.save_agent_data(pd.concat(agent_data_list), scene_info)
+        cache.save_agent_data(pd.concat(agent_data_list))
 
         return agent_presence

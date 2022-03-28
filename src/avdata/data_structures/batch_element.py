@@ -5,7 +5,7 @@ from typing import Callable, Dict, List, Optional, Tuple, Type
 import numpy as np
 import pandas as pd
 
-from avdata.caching import BaseCache
+from avdata.caching import SceneCache
 from avdata.data_structures.agent import Agent, AgentMetadata, AgentType
 from avdata.data_structures.scene import SceneTime, SceneTimeAgent
 
@@ -16,7 +16,7 @@ class AgentBatchElement:
     # @profile
     def __init__(
         self,
-        cache: Type[BaseCache],
+        cache: Type[SceneCache],
         data_index: int,
         scene_time_agent: SceneTimeAgent,
         history_sec: Tuple[Optional[float], Optional[float]],
@@ -28,7 +28,7 @@ class AgentBatchElement:
         incl_map: bool = False,
         standardize_rotation: bool = False,
     ) -> None:
-        self.cache: Type[BaseCache] = cache
+        self.cache: Type[SceneCache] = cache
         self.data_index: int = data_index
         self.dt: float = scene_time_agent.metadata.dt
         self.scene_ts: int = scene_time_agent.ts
