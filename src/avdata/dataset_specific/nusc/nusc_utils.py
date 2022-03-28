@@ -1,74 +1,19 @@
-import contextlib
-import sqlite3
-from pathlib import Path
-from sqlite3 import Cursor
-from typing import Any, Dict, List, Tuple, Union
+from typing import Any, Dict, Union
 
 import numpy as np
 import pandas as pd
 from nuscenes.nuscenes import NuScenes
-from nuscenes.utils.splits import create_splits_scenes
 from pyquaternion import Quaternion
 
 from avdata.data_structures import (
     Agent,
     AgentMetadata,
     AgentType,
-    EnvMetadata,
     FixedSize,
     SceneMetadata,
 )
 
 NUSC_DT = 0.5
-NUSC_DB_SCHEMA = """
-agent_id TEXT NOT NULL,
-scene_ts INTEGER NOT NULL,
-x REAL NOT NULL,
-y REAL NOT NULL,
-vx REAL NOT NULL,
-vy REAL NOT NULL,
-ax REAL NOT NULL,
-ay REAL NOT NULL,
-heading REAL NOT NULL
-"""
-
-
-def get_env_metadata(env_name: str, data_dir: str) -> EnvMetadata:
-    all_scene_splits: Dict[str, List[str]] = create_splits_scenes()
-    if env_name == "nusc":
-        nusc_scene_splits: Dict[str, List[str]] = {
-            k: all_scene_splits[k] for k in ["train", "val", "test"]
-        }
-
-        # nuScenes possibilities are the Cartesian product of these
-        dataset_parts: List[Tuple[str, ...]] = [
-            ("train", "val", "test"),
-            ("boston", "singapore"),
-        ]
-    elif env_name == "nusc_mini":
-        nusc_scene_splits: Dict[str, List[str]] = {
-            k: all_scene_splits[k] for k in ["mini_train", "mini_val"]
-        }
-
-        # nuScenes possibilities are the Cartesian product of these
-        dataset_parts: List[Tuple[str, ...]] = [
-            ("mini_train", "mini_val"),
-            ("boston", "singapore"),
-        ]
-
-    # Inverting the dict from above, associating every scene with its data split.
-    nusc_scene_split_map: Dict[str, str] = {
-        v_elem: k for k, v in nusc_scene_splits.items() for v_elem in v
-    }
-
-    nusc_env = EnvMetadata(
-        name=env_name,
-        data_dir=data_dir,
-        dt=NUSC_DT,
-        parts=dataset_parts,
-        scene_split_map=nusc_scene_split_map,
-    )
-    return nusc_env
 
 
 def frame_iterator(
@@ -232,70 +177,3 @@ def agg_ego_data(nusc_obj: NuScenes, scene_metadata: SceneMetadata) -> Agent:
         metadata=ego_metadata,
         data=ego_data_df,
     )
-
-
-def agent_exists(cursor: Cursor, agent_id: str):
-    cursor.execute(
-        "SELECT EXISTS(SELECT 1 FROM agent_data WHERE agent_id=?)", (agent_id,)
-    )
-    return bool(cursor.fetchone()[0])
-
-
-# @profile
-def calc_agent_presence(
-    scene_info: SceneMetadata,
-    nusc_obj: NuScenes,
-    cache_scene_dir: Path,
-    rebuild_cache: bool,
-) -> List[List[AgentMetadata]]:
-    agent_presence: List[List[AgentMetadata]] = [
-        [
-            AgentMetadata(
-                name="ego",
-                agent_type=AgentType.VEHICLE,
-                first_timestep=0,
-                last_timestep=scene_info.length_timesteps - 1,
-                fixed_size=FixedSize(length=4.084, width=1.730, height=1.562),
-            )
-        ]
-        for _ in range(scene_info.length_timesteps)
-    ]
-
-    agent_data_list: List[pd.DataFrame] = list()
-    existing_agents: Dict[str, AgentMetadata] = dict()
-    for frame_idx, frame_info in enumerate(frame_iterator(nusc_obj, scene_info)):
-        for agent_info in agent_iterator(nusc_obj, frame_info):
-            if agent_info["instance_token"] in existing_agents:
-                agent_presence[frame_idx].append(
-                    existing_agents[agent_info["instance_token"]]
-                )
-                continue
-
-            if not agent_info["next"]:
-                # There are some agents with only a single detection to them, we don't care about these.
-                continue
-
-            agent: Agent = agg_agent_data(nusc_obj, agent_info, frame_idx)
-
-            agent_presence[frame_idx].append(agent.metadata)
-            existing_agents[agent.name] = agent.metadata
-
-            agent_data_list.append(agent.data)
-
-    ego_agent: Agent = agg_ego_data(nusc_obj, scene_info)
-    agent_data_list.append(ego_agent.data)
-
-    with contextlib.closing(
-        sqlite3.connect(cache_scene_dir / "agent_data.db")
-    ) as connection:
-        cursor = connection.cursor()
-        cursor.execute(f"CREATE TABLE IF NOT EXISTS agent_data ({NUSC_DB_SCHEMA})")
-        pd.concat(agent_data_list).to_sql(
-            name="agent_data",
-            con=connection,
-            if_exists="replace",
-            index=True,
-            index_label="scene_ts",
-        )
-
-    return agent_presence

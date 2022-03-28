@@ -1,19 +1,20 @@
-from pathlib import Path
 from typing import List, NamedTuple, Optional, Set, Type
-
-import dill
 
 from avdata.caching import BaseCache
 from avdata.data_structures import AgentMetadata, EnvMetadata, SceneMetadata, SceneTag
 
 
 class RawDataset:
-    def __init__(self, metadata: EnvMetadata) -> None:
+    def __init__(self, env_name: str, data_dir: str) -> None:
+        metadata = self.compute_metadata(env_name, data_dir)
+
         self.metadata = metadata
         self.name = metadata.name
         self.scene_tags = metadata.scene_tags
-
         self.dataset_obj = None
+
+    def compute_metadata(self, env_name: str, data_dir: str) -> EnvMetadata:
+        raise NotImplementedError()
 
     def get_matching_scene_tags(self, query: Set[str]) -> List[SceneTag]:
         return [scene_tag for scene_tag in self.scene_tags if scene_tag.contains(query)]
@@ -59,6 +60,6 @@ class RawDataset:
             )
 
     def get_and_cache_agent_presence(
-        self, scene_info: SceneMetadata, cache_scene_dir: Path, rebuild_cache: bool
+        self, scene_info: SceneMetadata, cache: Type[BaseCache]
     ) -> List[List[AgentMetadata]]:
         raise NotImplementedError()

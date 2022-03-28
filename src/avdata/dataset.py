@@ -1,10 +1,10 @@
 from collections import defaultdict
-from itertools import chain
+
+# from itertools import chain
 from multiprocessing import Manager
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple, Type
+from typing import Dict, List, Optional, Tuple, Type
 
-import dill
 import numpy as np
 from torch.utils.data import Dataset
 from tqdm import tqdm
@@ -94,9 +94,9 @@ class UnifiedDataset(Dataset):
         )
 
         for env in self.envs:
-            if (
-                self.rebuild_cache or not (self.cache.path / env.name).is_dir()
-            ) and any(env.name in dataset_tuple for dataset_tuple in matching_datasets):
+            if (self.rebuild_cache or not self.cache.env_is_cached(env.name)) and any(
+                env.name in dataset_tuple for dataset_tuple in matching_datasets
+            ):
                 # Loading dataset objects in case we don't have
                 # their data already cached.
                 env.load_dataset_obj()
@@ -209,10 +209,13 @@ class UnifiedDataset(Dataset):
             if not cache_scene_dir.is_dir():
                 cache_scene_dir.mkdir(parents=True)
 
-            scene_file: Path = cache_scene_dir / "scene_metadata.dill"
-            if scene_file.is_file() and not self.rebuild_cache:
-                with open(scene_file, "rb") as f:
-                    cached_scene_info: SceneMetadata = dill.load(f)
+            if (
+                self.cache.scene_is_cached(scene_info.env_name, scene_info.name)
+                and not self.rebuild_cache
+            ):
+                cached_scene_info: SceneMetadata = self.cache.load_scene_metadata(
+                    scene_info.env_name, scene_info.name
+                )
 
                 scene_info.update_agent_presence(cached_scene_info.agent_presence)
                 continue
@@ -220,7 +223,7 @@ class UnifiedDataset(Dataset):
             for env in self.envs:
                 if scene_info.env_name == env.name:
                     agent_presence = env.get_and_cache_agent_presence(
-                        scene_info, cache_scene_dir, self.rebuild_cache
+                        scene_info, self.cache
                     )
                     scene_info.update_agent_presence(agent_presence)
                     break
@@ -229,8 +232,7 @@ class UnifiedDataset(Dataset):
                     f"Scene {str(scene_info)} had no corresponding environemnt!"
                 )
 
-            with open(scene_file, "wb") as f:
-                dill.dump(scene_info, f)
+            self.cache.save_scene_metadata(scene_info)
 
     def __len__(self) -> int:
         return self.data_len

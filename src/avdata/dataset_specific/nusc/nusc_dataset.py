@@ -1,23 +1,55 @@
-from pathlib import Path
-from typing import List, Optional, Type
+from typing import Dict, List, Optional, Tuple, Type
 
-import dill
-from nuscenes.map_expansion.map_api import NuScenesMap
+import pandas as pd
 from nuscenes.nuscenes import NuScenes
+from nuscenes.utils.splits import create_splits_scenes
 
 from avdata.caching import BaseCache
-from avdata.data_structures.agent import AgentMetadata
+from avdata.data_structures.agent import Agent, AgentMetadata, AgentType, FixedSize
 from avdata.data_structures.environment import EnvMetadata
 from avdata.data_structures.scene import SceneMetadata
 from avdata.data_structures.scene_tag import SceneTag
+from avdata.dataset_specific.nusc import nusc_utils
 from avdata.dataset_specific.raw_dataset import RawDataset
 from avdata.dataset_specific.scene_records import NuscSceneRecord
-from avdata.utils import nusc_utils
 
 
 class NuscDataset(RawDataset):
-    def __init__(self, metadata: EnvMetadata) -> None:
-        super().__init__(metadata)
+    def compute_metadata(self, env_name: str, data_dir: str) -> EnvMetadata:
+        all_scene_splits: Dict[str, List[str]] = create_splits_scenes()
+        if env_name == "nusc":
+            nusc_scene_splits: Dict[str, List[str]] = {
+                k: all_scene_splits[k] for k in ["train", "val", "test"]
+            }
+
+            # nuScenes possibilities are the Cartesian product of these
+            dataset_parts: List[Tuple[str, ...]] = [
+                ("train", "val", "test"),
+                ("boston", "singapore"),
+            ]
+        elif env_name == "nusc_mini":
+            nusc_scene_splits: Dict[str, List[str]] = {
+                k: all_scene_splits[k] for k in ["mini_train", "mini_val"]
+            }
+
+            # nuScenes possibilities are the Cartesian product of these
+            dataset_parts: List[Tuple[str, ...]] = [
+                ("mini_train", "mini_val"),
+                ("boston", "singapore"),
+            ]
+
+        # Inverting the dict from above, associating every scene with its data split.
+        nusc_scene_split_map: Dict[str, str] = {
+            v_elem: k for k, v in nusc_scene_splits.items() for v_elem in v
+        }
+
+        return EnvMetadata(
+            name=env_name,
+            data_dir=data_dir,
+            dt=nusc_utils.NUSC_DT,
+            parts=dataset_parts,
+            scene_split_map=nusc_scene_split_map,
+        )
 
     def load_dataset_obj(self) -> None:
         print(f"Loading {self.name} dataset...", flush=True)
@@ -107,12 +139,49 @@ class NuscDataset(RawDataset):
         return scenes_list
 
     def get_and_cache_agent_presence(
-        self, scene_info: SceneMetadata, cache_scene_dir: Path, rebuild_cache: bool
+        self, scene_info: SceneMetadata, cache: Type[BaseCache]
     ) -> List[List[AgentMetadata]]:
-        agent_presence: List[List[AgentMetadata]] = nusc_utils.calc_agent_presence(
-            scene_info=scene_info,
-            nusc_obj=self.dataset_obj,
-            cache_scene_dir=cache_scene_dir,
-            rebuild_cache=rebuild_cache,
-        )
+        agent_presence: List[List[AgentMetadata]] = [
+            [
+                AgentMetadata(
+                    name="ego",
+                    agent_type=AgentType.VEHICLE,
+                    first_timestep=0,
+                    last_timestep=scene_info.length_timesteps - 1,
+                    fixed_size=FixedSize(length=4.084, width=1.730, height=1.562),
+                )
+            ]
+            for _ in range(scene_info.length_timesteps)
+        ]
+
+        agent_data_list: List[pd.DataFrame] = list()
+        existing_agents: Dict[str, AgentMetadata] = dict()
+        for frame_idx, frame_info in enumerate(
+            nusc_utils.frame_iterator(self.dataset_obj, scene_info)
+        ):
+            for agent_info in nusc_utils.agent_iterator(self.dataset_obj, frame_info):
+                if agent_info["instance_token"] in existing_agents:
+                    agent_presence[frame_idx].append(
+                        existing_agents[agent_info["instance_token"]]
+                    )
+                    continue
+
+                if not agent_info["next"]:
+                    # There are some agents with only a single detection to them, we don't care about these.
+                    continue
+
+                agent: Agent = nusc_utils.agg_agent_data(
+                    self.dataset_obj, agent_info, frame_idx
+                )
+
+                agent_presence[frame_idx].append(agent.metadata)
+                existing_agents[agent.name] = agent.metadata
+
+                agent_data_list.append(agent.data)
+
+        ego_agent: Agent = nusc_utils.agg_ego_data(self.dataset_obj, scene_info)
+        agent_data_list.append(ego_agent.data)
+
+        cache.save_agent_data(pd.concat(agent_data_list), scene_info)
+
         return agent_presence

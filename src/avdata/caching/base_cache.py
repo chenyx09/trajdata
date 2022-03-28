@@ -13,6 +13,12 @@ class BaseCache:
         self.path = Path(cache_location).expanduser().resolve()
         self.path.mkdir(parents=True, exist_ok=True)
 
+    def env_is_cached(self, env_name: str) -> bool:
+        return (self.path / env_name / "scenes_list.dill").is_file()
+
+    def scene_is_cached(self, env_name: str, scene_name: str) -> bool:
+        return (self.path / env_name / scene_name / "scene_metadata.dill").is_file()
+
     def load_scene_metadata(self, env_name: str, scene_name: str) -> SceneMetadata:
         scene_cache_dir: Path = self.path / env_name / scene_name
         scene_file: Path = scene_cache_dir / "scene_metadata.dill"
@@ -20,6 +26,12 @@ class BaseCache:
             scene_metadata: SceneMetadata = dill.load(f)
 
         return scene_metadata
+
+    def save_scene_metadata(self, scene_info: SceneMetadata) -> None:
+        scene_cache_dir: Path = self.path / scene_info.env_name / scene_info.name
+        scene_file: Path = scene_cache_dir / "scene_metadata.dill"
+        with open(scene_file, "wb") as f:
+            dill.dump(scene_info, f)
 
     def load_env_scenes_list(self, env_name: str) -> List[Type[NamedTuple]]:
         env_cache_dir: Path = self.path / env_name
@@ -36,6 +48,11 @@ class BaseCache:
         with open(env_cache_dir / "scenes_list.dill", "wb") as f:
             dill.dump(scenes_list, f)
 
+    def save_agent_data(
+        self, agent_data: pd.DataFrame, scene_info: SceneMetadata
+    ) -> None:
+        raise NotImplementedError()
+
     def load_single_agent_data(
         self, agent_id: str, scene_info: SceneMetadata
     ) -> pd.DataFrame:
@@ -46,9 +63,7 @@ class BaseCache:
     ) -> pd.DataFrame:
         raise NotImplementedError()
 
-    def load_all_agent_data(
-        self, scene_info: SceneMetadata
-    ) -> pd.DataFrame:
+    def load_all_agent_data(self, scene_info: SceneMetadata) -> pd.DataFrame:
         raise NotImplementedError()
 
     def load_agent_xy_at_time(
