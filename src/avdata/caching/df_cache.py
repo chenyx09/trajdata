@@ -1,5 +1,4 @@
-import contextlib
-import sqlite3
+import pickle
 from math import floor
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -7,41 +6,26 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from avdata.caching import SceneCache
+from avdata.caching.scene_cache import SceneCache
 from avdata.data_structures.agent import AgentMetadata
 from avdata.data_structures.scene_metadata import SceneMetadata
 from avdata.utils import arr_utils
 
-DB_SCHEMA = """
-agent_id TEXT NOT NULL,
-scene_ts INTEGER NOT NULL,
-x REAL NOT NULL,
-y REAL NOT NULL,
-vx REAL NOT NULL,
-vy REAL NOT NULL,
-ax REAL NOT NULL,
-ay REAL NOT NULL,
-heading REAL NOT NULL
-"""
 
-
-class SQLiteCache(SceneCache):
+class DataFrameCache(SceneCache):
     def __init__(
         self, cache_path: Path, scene_info: SceneMetadata, scene_ts: int
     ) -> None:
+        """
+        Data cache primarily based on pandas DataFrames,
+        with Feather for fast agent data serialization
+        and pickle for miscellaneous supporting objects.
+        """
         super().__init__(cache_path, scene_info, scene_ts)
 
-        self.agent_data_path: Path = self.scene_dir / "agent_data.db"
+        self.agent_data_path: Path = self.scene_dir / "agent_data.feather"
 
-        # Only loading agents that are present in the scene (mostly for neighbor processing later)
-        agent_ids: List[str] = [
-            agent_info.name for agent_info in scene_info.agent_presence[self.scene_ts]
-        ]
-        self.scene_data_df: pd.DataFrame = self.load_multiple_agent_data(agent_ids)
-
-        self.index_dict: Dict[Tuple[str, int], int] = {
-            val: idx for idx, val in enumerate(self.scene_data_df.index)
-        }
+        self._load_agent_data()
         self._compute_col_idxs()
 
     def _compute_col_idxs(self) -> None:
@@ -53,6 +37,14 @@ class SQLiteCache(SceneCache):
         self.vel_cols = [self.column_dict["vx"], self.column_dict["vy"]]
         self.acc_cols = [self.column_dict["ax"], self.column_dict["ay"]]
 
+    def _load_agent_data(self) -> pd.DataFrame:
+        self.scene_data_df: pd.DataFrame = pd.read_feather(
+            self.agent_data_path, use_threads=False
+        ).set_index(["agent_id", "scene_ts"])
+
+        with open(self.scene_dir / "scene_index.pkl", "rb") as f:
+            self.index_dict: Dict[Tuple[str, int], int] = pickle.load(f)
+
     @staticmethod
     def save_agent_data(
         agent_data: pd.DataFrame,
@@ -62,18 +54,13 @@ class SQLiteCache(SceneCache):
         scene_cache_dir: Path = cache_path / scene_info.env_name / scene_info.name
         scene_cache_dir.mkdir(parents=True, exist_ok=True)
 
-        with contextlib.closing(
-            sqlite3.connect(scene_cache_dir / "agent_data.db")
-        ) as connection:
-            cursor = connection.cursor()
-            cursor.execute(f"CREATE TABLE IF NOT EXISTS agent_data ({DB_SCHEMA})")
-            agent_data.to_sql(
-                name="agent_data",
-                con=connection,
-                if_exists="replace",
-                index=True,
-                index_label="scene_ts",
-            )
+        index_dict: Dict[Tuple[str, int], int] = {
+            val: idx for idx, val in enumerate(agent_data.index)
+        }
+        with open(scene_cache_dir / "scene_index.pkl", "wb") as f:
+            pickle.dump(index_dict, f)
+
+        agent_data.reset_index().to_feather(scene_cache_dir / "agent_data.feather")
 
     def get_value(self, agent_id: str, scene_ts: int, attribute: str) -> float:
         return self.scene_data_df.iat[
@@ -112,17 +99,6 @@ class SQLiteCache(SceneCache):
             self.scene_data_df["cos_heading"] = np.cos(self.scene_data_df["heading"])
             self.scene_data_df.drop(columns=["heading"], inplace=True)
             self._compute_col_idxs()
-
-    def load_multiple_agent_data(self, agent_ids: List[str]) -> pd.DataFrame:
-        with contextlib.closing(sqlite3.connect(self.agent_data_path)) as conn:
-            data_df = pd.read_sql_query(
-                f"SELECT * FROM agent_data WHERE agent_id IN ({','.join('?'*len(agent_ids))})",
-                conn,
-                params=agent_ids,
-                index_col=["agent_id", "scene_ts"],
-            )
-
-        return data_df
 
     def get_agent_history(
         self,

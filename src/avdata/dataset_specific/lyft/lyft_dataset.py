@@ -155,7 +155,6 @@ class LyftDataset(RawDataset):
 
         current_cols = ["x", "y", "vx", "vy", "heading"]
         final_cols = [
-            "agent_id",
             "x",
             "y",
             "vx",
@@ -229,9 +228,10 @@ class LyftDataset(RawDataset):
                 agent_presence[frame].append(agent_metadata)
 
             agent_data_df["agent_id"] = agent_metadata.name
+            agent_data_df.set_index("agent_id", append=True, inplace=True)
 
             # For now only saving non-prob columns since Lyft is effectively one-hot (see https://arxiv.org/abs/2104.12446)
-            agent = Agent(agent_metadata, agent_data_df[final_cols])
+            agent = Agent(agent_metadata, agent_data_df.loc[:, final_cols].swaplevel())
             agent_data_list.append(agent.data)
 
         cache_class.save_agent_data(pd.concat(agent_data_list), cache_path, scene_info)

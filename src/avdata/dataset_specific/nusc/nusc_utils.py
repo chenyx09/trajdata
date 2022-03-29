@@ -1,4 +1,4 @@
-from typing import Any, Dict, Union
+from typing import Any, Dict, List, Union
 
 import numpy as np
 import pandas as pd
@@ -96,10 +96,14 @@ def agg_agent_data(
     agent_data_df = pd.DataFrame(
         agent_data_np,
         columns=["x", "y", "vx", "vy", "ax", "ay", "heading"],
-        index=list(range(curr_scene_index, last_timestep + 1)),
+        index=pd.MultiIndex.from_tuples(
+            [
+                (agent_data["instance_token"], idx)
+                for idx in range(curr_scene_index, last_timestep + 1)
+            ],
+            names=["agent_id", "scene_ts"],
+        ),
     )
-    agent_data_df.index.name = "scene_ts"
-    agent_data_df["agent_id"] = agent_data["instance_token"]
 
     agent_type = nusc_type_to_unified_type(agent_data["category_name"])
     agent_metadata = AgentMetadata(
@@ -131,40 +135,45 @@ def nusc_type_to_unified_type(nusc_type: str) -> AgentType:
 
 
 def agg_ego_data(nusc_obj: NuScenes, scene_metadata: SceneMetadata) -> Agent:
-    translation_list = list()
-    yaw_list = list()
+    translation_list: List[np.ndarray] = list()
+    yaw_list: List[float] = list()
     for frame_info in frame_iterator(nusc_obj, scene_metadata):
         ego_pose = get_ego_pose(nusc_obj, frame_info)
         yaw_list.append(Quaternion(ego_pose["rotation"]).yaw_pitch_roll[0])
         translation_list.append(ego_pose["translation"][:2])
 
-    translations_np = np.stack(translation_list, axis=0)
+    translations_np: np.ndarray = np.stack(translation_list, axis=0)
 
     # Doing this prepending so that the first velocity isn't zero (rather it's just the first actual velocity duplicated)
-    prepend_pos = translations_np[0] - (translations_np[1] - translations_np[0])
-    velocities_np = (
+    prepend_pos: np.ndarray = translations_np[0] - (
+        translations_np[1] - translations_np[0]
+    )
+    velocities_np: np.ndarray = (
         np.diff(translations_np, axis=0, prepend=np.expand_dims(prepend_pos, axis=0))
         / NUSC_DT
     )
 
     # Doing this prepending so that the first acceleration isn't zero (rather it's just the first actual acceleration duplicated)
-    prepend_vel = velocities_np[0] - (velocities_np[1] - velocities_np[0])
-    accelerations_np = (
+    prepend_vel: np.ndarray = velocities_np[0] - (velocities_np[1] - velocities_np[0])
+    accelerations_np: np.ndarray = (
         np.diff(velocities_np, axis=0, prepend=np.expand_dims(prepend_vel, axis=0))
         / NUSC_DT
     )
 
-    yaws_np = np.expand_dims(np.stack(yaw_list, axis=0), axis=1)
+    yaws_np: np.ndarray = np.expand_dims(np.stack(yaw_list, axis=0), axis=1)
     # yaws_np = np.expand_dims(np.arctan2(velocities_np[:, 1], velocities_np[:, 0]), axis=1)
 
-    ego_data_np = np.concatenate(
+    ego_data_np: np.ndarray = np.concatenate(
         [translations_np, velocities_np, accelerations_np, yaws_np], axis=1
     )
     ego_data_df = pd.DataFrame(
-        ego_data_np, columns=["x", "y", "vx", "vy", "ax", "ay", "heading"]
+        ego_data_np,
+        columns=["x", "y", "vx", "vy", "ax", "ay", "heading"],
+        index=pd.MultiIndex.from_tuples(
+            [("ego", idx) for idx in range(ego_data_np.shape[0])],
+            names=["agent_id", "scene_ts"],
+        ),
     )
-    ego_data_df.index.name = "scene_ts"
-    ego_data_df["agent_id"] = "ego"
 
     ego_metadata = AgentMetadata(
         name="ego",

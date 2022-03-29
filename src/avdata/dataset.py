@@ -10,7 +10,7 @@ from torch.utils.data import Dataset
 from tqdm import tqdm
 
 from avdata import filtering
-from avdata.caching import EnvCache, SceneCache, SQLiteCache
+from avdata.caching import DataFrameCache, EnvCache, SceneCache
 from avdata.data_structures import (
     AgentBatchElement,
     AgentType,
@@ -55,7 +55,7 @@ class UnifiedDataset(Dataset):
             "nusc_mini": "~/datasets/nuScenes",
             "lyft_sample": "~/datasets/lyft/scenes/sample.zarr",
         },
-        cache_type: str = "sqlite",
+        cache_type: str = "dataframe",
         cache_location: str = "~/.unified_data_cache",
         rebuild_cache: bool = False,
     ) -> None:
@@ -66,8 +66,8 @@ class UnifiedDataset(Dataset):
         elif self.centric == "scene":
             self.collate_fn = scene_collate_fn
 
-        if cache_type == "sqlite":
-            self.cache_class = SQLiteCache
+        if cache_type == "dataframe":
+            self.cache_class = DataFrameCache
 
         self.rebuild_cache = rebuild_cache
         self.env_cache: EnvCache = EnvCache(cache_location)
@@ -190,7 +190,7 @@ class UnifiedDataset(Dataset):
 
     def calculate_agent_data(self, scenes: List[SceneMetadata]) -> None:
         scene_info: SceneMetadata
-        for scene_info in tqdm(scenes, desc="Calculating Agent Presence"):
+        for scene_info in tqdm(scenes, desc="Calculating Agent Data"):
             if (
                 self.env_cache.scene_is_cached(scene_info.env_name, scene_info.name)
                 and not self.rebuild_cache

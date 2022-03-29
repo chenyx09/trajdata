@@ -54,10 +54,13 @@ def agg_ego_data(lyft_obj: ChunkedDataset, scene_metadata: SceneMetadata) -> Age
         axis=1,
     )
     ego_data_df = pd.DataFrame(
-        ego_data_np, columns=["x", "y", "vx", "vy", "ax", "ay", "heading"]
+        ego_data_np,
+        columns=["x", "y", "vx", "vy", "ax", "ay", "heading"],
+        index=pd.MultiIndex.from_tuples(
+            [("ego", idx) for idx in range(ego_data_np.shape[0])],
+            names=["agent_id", "scene_ts"],
+        ),
     )
-    ego_data_df["agent_id"] = "ego"
-    ego_data_df.index.name = "scene_ts"
 
     ego_metadata = AgentMetadata(
         name="ego",
