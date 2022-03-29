@@ -28,6 +28,8 @@ class EnvCache:
 
     def save_scene_metadata(self, scene_info: SceneMetadata) -> None:
         scene_cache_dir: Path = self.path / scene_info.env_name / scene_info.name
+        scene_cache_dir.mkdir(parents=True, exist_ok=True)
+
         scene_file: Path = scene_cache_dir / "scene_metadata.dill"
         with open(scene_file, "wb") as f:
             dill.dump(scene_info, f)

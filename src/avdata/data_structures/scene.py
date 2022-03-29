@@ -41,12 +41,9 @@ class SceneTime:
         no_types: Optional[Set[AgentType]] = None,
     ):
         agents_present: List[AgentMetadata] = scene_info.agent_presence[scene_ts]
-        filtered_agents: List[AgentMetadata] = [
-            agent_info
-            for agent_info in agents_present
-            if not filtering.exclude_types(no_types, agent_info.type)
-            and not filtering.not_included_types(only_types, agent_info.type)
-        ]
+        filtered_agents: List[AgentMetadata] = filtering.agent_types(
+            agents_present, no_types, only_types
+        )
 
         data_df: pd.DataFrame = cache.load_all_agent_data(scene_info)
 
@@ -99,12 +96,9 @@ class SceneTimeAgent:
         incl_robot_future: bool = False,
     ):
         agents_present: List[AgentMetadata] = scene_info.agent_presence[scene_ts]
-        filtered_agents: List[AgentMetadata] = [
-            agent_info
-            for agent_info in agents_present
-            if not filtering.exclude_types(no_types, agent_info.type)
-            and not filtering.not_included_types(only_types, agent_info.type)
-        ]
+        filtered_agents: List[AgentMetadata] = filtering.agent_types(
+            agents_present, no_types, only_types
+        )
 
         agent_metadata = next((a for a in filtered_agents if a.name == agent_id), None)
 
@@ -129,13 +123,15 @@ class SceneTimeAgent:
             )
 
     # @profile
-    def get_agent_distances_to(self, agent: Agent) -> np.ndarray:
+    def get_agent_distances_to(self, agent_info: AgentMetadata) -> np.ndarray:
         agent_pos = np.array(
-            [[agent.data.at[self.ts, "x"], agent.data.at[self.ts, "y"]]]
+            [
+                [
+                    self.cache.get_value(agent_info.name, self.ts, "x"),
+                    self.cache.get_value(agent_info.name, self.ts, "y"),
+                ]
+            ]
         )
 
-        data_df: pd.DataFrame = self.cache.load_agent_xy_at_time(self.ts, self.metadata)
-
-        agent_ids = [a.name for a in self.agents]
-        curr_poses = data_df.loc[agent_ids, ["x", "y"]].values
+        curr_poses: np.ndarray = self.cache.get_positions_at(self.ts, self.agents)
         return np.linalg.norm(curr_poses - agent_pos, axis=1)

@@ -25,7 +25,6 @@ class AgentBatch:
     agent_hist: Tensor
     agent_hist_len: Tensor
     agent_fut: Tensor
-    agent_fut_st: Tensor
     agent_fut_len: Tensor
     num_neigh: Tensor
     neigh_types: Tensor
@@ -56,7 +55,6 @@ class AgentBatch:
             agent_hist=self.agent_hist[match_type],
             agent_hist_len=self.agent_hist_len[match_type],
             agent_fut=self.agent_fut[match_type],
-            agent_fut_st=self.agent_fut_st[match_type],
             agent_fut_len=self.agent_fut_len[match_type],
             num_neigh=self.num_neigh[match_type],
             neigh_types=self.neigh_types[match_type],
@@ -86,7 +84,6 @@ def agent_collate_fn(batch_elems: List[AgentBatchElement]) -> AgentBatch:
     agent_history_len: Tensor = torch.zeros((batch_size,), dtype=torch.long)
 
     agent_future: List[Tensor] = list()
-    agent_future_st: List[Tensor] = list()
     agent_future_len: Tensor = torch.zeros((batch_size,), dtype=torch.long)
 
     num_neighbors_t: Tensor = torch.zeros((batch_size,), dtype=torch.long)
@@ -125,9 +122,6 @@ def agent_collate_fn(batch_elems: List[AgentBatchElement]) -> AgentBatch:
         agent_history_len[idx] = elem.agent_history_len
 
         agent_future.append(torch.as_tensor(elem.agent_future_np, dtype=torch.float))
-        agent_future_st.append(
-            torch.as_tensor(elem.agent_future_st_np, dtype=torch.float)
-        )
         agent_future_len[idx] = elem.agent_future_len
 
         num_neighbors_t[idx] = elem.num_neighbors
@@ -172,9 +166,6 @@ def agent_collate_fn(batch_elems: List[AgentBatchElement]) -> AgentBatch:
     agent_future_t: Tensor = pad_sequence(
         agent_future, batch_first=True, padding_value=np.nan
     )
-    agent_future_st_t: Tensor = pad_sequence(
-        agent_future_st, batch_first=True, padding_value=np.nan
-    )
 
     neighbor_types_t: Tensor = pad_sequence(
         neighbor_types, batch_first=True, padding_value=-1
@@ -198,7 +189,6 @@ def agent_collate_fn(batch_elems: List[AgentBatchElement]) -> AgentBatch:
         agent_hist=agent_history_t,
         agent_hist_len=agent_history_len,
         agent_fut=agent_future_t,
-        agent_fut_st=agent_future_st_t,
         agent_fut_len=agent_future_len,
         num_neigh=num_neighbors_t,
         neigh_types=neighbor_types_t,

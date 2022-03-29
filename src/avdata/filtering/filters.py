@@ -1,11 +1,18 @@
 from math import ceil
-from typing import List, Optional, Tuple
+from typing import List, Optional, Set, Tuple
 
 from avdata.data_structures.agent import AgentMetadata, AgentType
 
 
-def exclude_types(no_types: Optional[List[AgentType]], agent_type: AgentType) -> bool:
-    return no_types is not None and agent_type in no_types
+def agent_types(
+    agents: List[AgentMetadata], no_types: Set[AgentType], only_types: Set[AgentType]
+) -> List[AgentMetadata]:
+    if no_types is not None:
+        return [agent for agent in agents if agent.type not in no_types]
+    elif only_types is not None:
+        return [agent for agent in agents if agent.type in only_types]
+    else:
+        return agents
 
 
 def all_agents_excluded_types(
@@ -16,12 +23,6 @@ def all_agents_excluded_types(
     )
 
 
-def not_included_types(
-    only_types: Optional[List[AgentType]], agent_type: AgentType
-) -> bool:
-    return only_types is not None and agent_type not in only_types
-
-
 def no_agent_included_types(
     only_types: Optional[List[AgentType]], agents: List[AgentMetadata]
 ) -> bool:
@@ -30,8 +31,23 @@ def no_agent_included_types(
     )
 
 
-def robot_future(incl_robot_future: bool, agent_name: str) -> bool:
-    return incl_robot_future and agent_name == "ego"
+def get_valid_ts(
+    agent_info: AgentMetadata,
+    dt: float,
+    history_sec: Tuple[Optional[float], Optional[float]],
+    future_sec: Tuple[Optional[float], Optional[float]],
+) -> bool:
+    first_valid_ts = agent_info.first_timestep
+    if history_sec[0] is not None:
+        min_history = ceil(history_sec[0] / dt)
+        first_valid_ts += min_history
+
+    last_valid_ts = agent_info.last_timestep
+    if future_sec[0] is not None:
+        min_future = ceil(future_sec[0] / dt)
+        last_valid_ts -= min_future
+
+    return list(range(first_valid_ts, last_valid_ts + 1))
 
 
 def satisfies_history(

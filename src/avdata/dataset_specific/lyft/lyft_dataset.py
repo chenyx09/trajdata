@@ -1,3 +1,4 @@
+from pathlib import Path
 from random import Random
 from typing import List, Optional, Tuple, Type
 
@@ -6,7 +7,7 @@ import pandas as pd
 from l5kit.data import ChunkedDataset, labels
 from scipy.stats import mode
 
-from avdata.caching import SceneCache
+from avdata.caching import EnvCache, SceneCache
 from avdata.data_structures import AgentMetadata, EnvMetadata, SceneMetadata, SceneTag
 from avdata.data_structures.agent import Agent, AgentType, FixedSize
 from avdata.dataset_specific.lyft import lyft_utils
@@ -48,8 +49,8 @@ class LyftDataset(RawDataset):
     def _get_matching_scenes_from_obj(
         self,
         scene_tag: SceneTag,
-        scene_desc_matches: Optional[List[str]],
-        cache: Type[SceneCache],
+        scene_desc_contains: Optional[List[str]],
+        env_cache: EnvCache,
     ) -> List[SceneMetadata]:
         all_scenes_list: List[LyftSceneRecord] = list()
 
@@ -65,7 +66,7 @@ class LyftDataset(RawDataset):
             # Saving all scene records for later caching.
             all_scenes_list.append(LyftSceneRecord(scene_name, scene_length))
 
-            if scene_split in scene_tag and scene_desc_matches is None:
+            if scene_split in scene_tag and scene_desc_contains is None:
                 scene_metadata = SceneMetadata(
                     self.metadata,
                     scene_name,
@@ -76,23 +77,25 @@ class LyftDataset(RawDataset):
                 )
                 scenes_list.append(scene_metadata)
 
-        self.cache_all_scenes_list(cache, all_scenes_list)
+        self.cache_all_scenes_list(env_cache, all_scenes_list)
         return scenes_list
 
     def _get_matching_scenes_from_cache(
         self,
         scene_tag: SceneTag,
-        scene_desc_matches: Optional[List[str]],
-        cache: Type[SceneCache],
+        scene_desc_contains: Optional[List[str]],
+        env_cache: EnvCache,
     ) -> List[SceneMetadata]:
-        all_scenes_list: List[LyftSceneRecord] = cache.load_env_scenes_list(self.name)
+        all_scenes_list: List[LyftSceneRecord] = env_cache.load_env_scenes_list(
+            self.name
+        )
 
         scenes_list: List[SceneMetadata] = list()
         for scene_record in all_scenes_list:
             scene_name, scene_length = scene_record
             scene_split: str = self.metadata.scene_split_map[scene_name]
 
-            if scene_split in scene_tag and scene_desc_matches is None:
+            if scene_split in scene_tag and scene_desc_contains is None:
                 scene_metadata = SceneMetadata(
                     self.metadata,
                     scene_name,
@@ -105,20 +108,20 @@ class LyftDataset(RawDataset):
 
         return scenes_list
 
-    def get_and_cache_agent_presence(
-        self, scene_info: SceneMetadata, cache: Type[SceneCache]
-    ) -> List[List[AgentMetadata]]:
+    def get_agent_info(
+        self, scene_info: SceneMetadata, cache_path: Path, cache_class: Type[SceneCache]
+    ) -> Tuple[List[AgentMetadata], List[List[AgentMetadata]]]:
+        ego_agent_info: AgentMetadata = AgentMetadata(
+            name="ego",
+            agent_type=AgentType.VEHICLE,
+            first_timestep=0,
+            last_timestep=scene_info.length_timesteps - 1,
+            fixed_size=FixedSize(length=4.869, width=1.852, height=1.476),
+        )
+
+        agent_list: List[AgentMetadata] = [ego_agent_info]
         agent_presence: List[List[AgentMetadata]] = [
-            [
-                AgentMetadata(
-                    name="ego",
-                    agent_type=AgentType.VEHICLE,
-                    first_timestep=0,
-                    last_timestep=scene_info.length_timesteps - 1,
-                    fixed_size=FixedSize(length=4.869, width=1.852, height=1.476),
-                )
-            ]
-            for _ in range(scene_info.length_timesteps)
+            [ego_agent_info] for _ in range(scene_info.length_timesteps)
         ]
 
         agent_data_list: List[pd.DataFrame] = list()
@@ -221,6 +224,7 @@ class LyftDataset(RawDataset):
                 last_timestep=last_frame,
             )
 
+            agent_list.append(agent_metadata)
             for frame in agent_data_df.index:
                 agent_presence[frame].append(agent_metadata)
 
@@ -230,6 +234,6 @@ class LyftDataset(RawDataset):
             agent = Agent(agent_metadata, agent_data_df[final_cols])
             agent_data_list.append(agent.data)
 
-        cache.save_agent_data(pd.concat(agent_data_list))
+        cache_class.save_agent_data(pd.concat(agent_data_list), cache_path, scene_info)
 
-        return agent_presence
+        return agent_list, agent_presence

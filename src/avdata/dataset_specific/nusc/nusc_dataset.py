@@ -1,10 +1,11 @@
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Type
 
 import pandas as pd
 from nuscenes.nuscenes import NuScenes
 from nuscenes.utils.splits import create_splits_scenes
 
-from avdata.caching import SceneCache
+from avdata.caching import EnvCache, SceneCache
 from avdata.data_structures.agent import Agent, AgentMetadata, AgentType, FixedSize
 from avdata.data_structures.environment import EnvMetadata
 from avdata.data_structures.scene import SceneMetadata
@@ -66,8 +67,8 @@ class NuscDataset(RawDataset):
     def _get_matching_scenes_from_obj(
         self,
         scene_tag: SceneTag,
-        scene_desc_matches: Optional[List[str]],
-        cache: Type[SceneCache],
+        scene_desc_contains: Optional[List[str]],
+        env_cache: EnvCache,
     ) -> List[SceneMetadata]:
         all_scenes_list: List[NuscSceneRecord] = list()
 
@@ -87,8 +88,8 @@ class NuscDataset(RawDataset):
             )
 
             if scene_location.split("-")[0] in scene_tag and scene_split in scene_tag:
-                if scene_desc_matches is not None and not any(
-                    desc_query in scene_desc for desc_query in scene_desc_matches
+                if scene_desc_contains is not None and not any(
+                    desc_query in scene_desc for desc_query in scene_desc_contains
                 ):
                     continue
 
@@ -103,16 +104,18 @@ class NuscDataset(RawDataset):
                 )
                 scenes_list.append(scene_metadata)
 
-        self.cache_all_scenes_list(cache, all_scenes_list)
+        self.cache_all_scenes_list(env_cache, all_scenes_list)
         return scenes_list
 
     def _get_matching_scenes_from_cache(
         self,
         scene_tag: SceneTag,
-        scene_desc_matches: Optional[List[str]],
-        cache: Type[SceneCache],
+        scene_desc_contains: Optional[List[str]],
+        env_cache: EnvCache,
     ) -> List[SceneMetadata]:
-        all_scenes_list: List[NuscSceneRecord] = cache.load_env_scenes_list(self.name)
+        all_scenes_list: List[NuscSceneRecord] = env_cache.load_env_scenes_list(
+            self.name
+        )
 
         scenes_list: List[SceneMetadata] = list()
         for scene_record in all_scenes_list:
@@ -120,8 +123,8 @@ class NuscDataset(RawDataset):
             scene_split: str = self.metadata.scene_split_map[scene_name]
 
             if scene_location.split("-")[0] in scene_tag and scene_split in scene_tag:
-                if scene_desc_matches is not None and not any(
-                    desc_query in scene_desc for desc_query in scene_desc_matches
+                if scene_desc_contains is not None and not any(
+                    desc_query in scene_desc for desc_query in scene_desc_contains
                 ):
                     continue
 
@@ -138,20 +141,19 @@ class NuscDataset(RawDataset):
 
         return scenes_list
 
-    def get_and_cache_agent_presence(
-        self, scene_info: SceneMetadata, cache: Type[SceneCache]
-    ) -> List[List[AgentMetadata]]:
+    def get_agent_info(
+        self, scene_info: SceneMetadata, cache_path: Path, cache: Type[SceneCache]
+    ) -> Tuple[List[AgentMetadata], List[List[AgentMetadata]]]:
+        ego_agent_info: AgentMetadata = AgentMetadata(
+            name="ego",
+            agent_type=AgentType.VEHICLE,
+            first_timestep=0,
+            last_timestep=scene_info.length_timesteps - 1,
+            fixed_size=FixedSize(length=4.084, width=1.730, height=1.562),
+        )
+
         agent_presence: List[List[AgentMetadata]] = [
-            [
-                AgentMetadata(
-                    name="ego",
-                    agent_type=AgentType.VEHICLE,
-                    first_timestep=0,
-                    last_timestep=scene_info.length_timesteps - 1,
-                    fixed_size=FixedSize(length=4.084, width=1.730, height=1.562),
-                )
-            ]
-            for _ in range(scene_info.length_timesteps)
+            [ego_agent_info] for _ in range(scene_info.length_timesteps)
         ]
 
         agent_data_list: List[pd.DataFrame] = list()
@@ -182,6 +184,10 @@ class NuscDataset(RawDataset):
         ego_agent: Agent = nusc_utils.agg_ego_data(self.dataset_obj, scene_info)
         agent_data_list.append(ego_agent.data)
 
-        cache.save_agent_data(pd.concat(agent_data_list))
+        agent_list: List[AgentMetadata] = [ego_agent_info] + list(
+            existing_agents.values()
+        )
 
-        return agent_presence
+        cache.save_agent_data(pd.concat(agent_data_list), cache_path, scene_info)
+
+        return agent_list, agent_presence

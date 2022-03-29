@@ -8,12 +8,10 @@ from avdata import AgentBatch, AgentType, UnifiedDataset
 def main():
     dataset = UnifiedDataset(
         desired_data=["nusc_mini", "lyft_sample"],
-        scene_description_matches=["night"],
         centric="agent",
         history_sec=(0.1, 1.0),
         future_sec=(0.1, 2.0),
         incl_robot_future=True,
-        no_types=[AgentType.UNKNOWN],
     )
 
     print(f"# Data Samples: {len(dataset):,}")

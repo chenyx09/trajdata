@@ -16,6 +16,7 @@ class SceneMetadata:
         length_timesteps: int,
         data_access_info: Any,
         description: Optional[str] = None,
+        agents: Optional[List[AgentMetadata]] = None,
         agent_presence: Optional[List[List[AgentMetadata]]] = None,
     ) -> None:
         self.env_metadata = env_metadata
@@ -27,6 +28,7 @@ class SceneMetadata:
         self.length_timesteps = length_timesteps
         self.data_access_info = data_access_info
         self.description = description
+        self.agents = agents
         self.agent_presence = agent_presence
 
     def length_seconds(self) -> float:
@@ -35,7 +37,10 @@ class SceneMetadata:
     def __repr__(self) -> str:
         return "/".join([self.env_name, self.name])
 
-    def update_agent_presence(
-        self, new_agent_presence: List[List[AgentMetadata]]
+    def update_agent_info(
+        self,
+        new_agents: List[AgentMetadata],
+        new_agent_presence: List[List[AgentMetadata]],
     ) -> None:
+        self.agents = new_agents
         self.agent_presence = new_agent_presence
