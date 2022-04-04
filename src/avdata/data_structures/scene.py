@@ -24,7 +24,7 @@ class SceneTime:
         metadata: SceneMetadata,
         scene_ts: int,
         agents: List[AgentMetadata],
-        cache: Type[SceneCache],
+        cache: SceneCache,
     ) -> None:
         self.metadata = metadata
         self.ts = scene_ts
@@ -36,7 +36,7 @@ class SceneTime:
         cls,
         scene_info: SceneMetadata,
         scene_ts: int,
-        cache: Type[SceneCache],
+        cache: SceneCache,
         only_types: Optional[Set[AgentType]] = None,
         no_types: Optional[Set[AgentType]] = None,
     ):
@@ -74,7 +74,7 @@ class SceneTimeAgent:
         scene_ts: int,
         agents: List[AgentMetadata],
         agent: AgentMetadata,
-        cache: Type[SceneCache],
+        cache: SceneCache,
         robot: Optional[AgentMetadata] = None,
     ) -> None:
         self.metadata = metadata
@@ -90,7 +90,7 @@ class SceneTimeAgent:
         scene_info: SceneMetadata,
         scene_ts: int,
         agent_id: str,
-        cache: Type[SceneCache],
+        cache: SceneCache,
         only_types: Optional[Set[AgentType]] = None,
         no_types: Optional[Set[AgentType]] = None,
         incl_robot_future: bool = False,

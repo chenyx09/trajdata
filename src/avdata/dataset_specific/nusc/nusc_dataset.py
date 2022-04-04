@@ -142,7 +142,7 @@ class NuscDataset(RawDataset):
         return scenes_list
 
     def get_agent_info(
-        self, scene_info: SceneMetadata, cache_path: Path, cache: Type[SceneCache]
+        self, scene_info: SceneMetadata, cache_path: Path, cache: SceneCache
     ) -> Tuple[List[AgentMetadata], List[List[AgentMetadata]]]:
         ego_agent_info: AgentMetadata = AgentMetadata(
             name="ego",

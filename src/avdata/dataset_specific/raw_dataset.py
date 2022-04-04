@@ -6,13 +6,14 @@ from avdata.data_structures import AgentMetadata, EnvMetadata, SceneMetadata, Sc
 
 
 class RawDataset:
-    def __init__(self, env_name: str, data_dir: str) -> None:
+    def __init__(self, env_name: str, data_dir: str, parallelizable: bool) -> None:
         metadata = self.compute_metadata(env_name, data_dir)
 
         self.metadata = metadata
         self.name = metadata.name
         self.scene_tags = metadata.scene_tags
         self.dataset_obj = None
+        self.parallelizable = parallelizable
 
     def compute_metadata(self, env_name: str, data_dir: str) -> EnvMetadata:
         raise NotImplementedError()
@@ -22,6 +23,9 @@ class RawDataset:
 
     def load_dataset_obj(self) -> None:
         raise NotImplementedError()
+
+    def del_dataset_obj(self) -> None:
+        self.dataset_obj = None
 
     def _get_matching_scenes_from_cache(
         self,
@@ -40,7 +44,7 @@ class RawDataset:
         raise NotImplementedError()
 
     def cache_all_scenes_list(
-        self, env_cache: EnvCache, all_scenes_list: List[Type[NamedTuple]]
+        self, env_cache: EnvCache, all_scenes_list: List[NamedTuple]
     ) -> None:
         env_cache.save_env_scenes_list(self.name, all_scenes_list)
 

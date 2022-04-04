@@ -15,7 +15,7 @@ class AgentBatchElement:
     # @profile
     def __init__(
         self,
-        cache: Type[SceneCache],
+        cache: SceneCache,
         data_index: int,
         scene_time_agent: SceneTimeAgent,
         history_sec: Tuple[Optional[float], Optional[float]],
@@ -27,7 +27,7 @@ class AgentBatchElement:
         incl_map: bool = False,
         standardize_data: bool = False,
     ) -> None:
-        self.cache: Type[SceneCache] = cache
+        self.cache: SceneCache = cache
         self.data_index: int = data_index
         self.dt: float = scene_time_agent.metadata.dt
         self.scene_ts: int = scene_time_agent.ts

@@ -1,3 +1,5 @@
+import os
+
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -12,6 +14,7 @@ def main():
         history_sec=(0.1, 1.0),
         future_sec=(0.1, 2.0),
         incl_robot_future=True,
+        num_workers=os.cpu_count(),
     )
 
     print(f"# Data Samples: {len(dataset):,}")

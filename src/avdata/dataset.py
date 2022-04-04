@@ -2,10 +2,10 @@ from collections import defaultdict
 
 # from itertools import chain
 from multiprocessing import Manager
-from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Type
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
+from pathos.pools import ProcessPool
 from torch.utils.data import Dataset
 from tqdm import tqdm
 
@@ -58,6 +58,7 @@ class UnifiedDataset(Dataset):
         cache_type: str = "dataframe",
         cache_location: str = "~/.unified_data_cache",
         rebuild_cache: bool = False,
+        num_workers: int = 0,
     ) -> None:
         self.centric = centric
 
@@ -86,6 +87,7 @@ class UnifiedDataset(Dataset):
             scene_description_contains = [s.lower() for s in scene_description_contains]
 
         self.envs: List[RawDataset] = env_utils.get_raw_datasets(data_dirs)
+        self.envs_dict: Dict[str, RawDataset] = {env.name: env for env in self.envs}
 
         matching_datasets: List[SceneTag] = self.get_matching_scene_tags(desired_data)
         print(
@@ -103,7 +105,7 @@ class UnifiedDataset(Dataset):
                 env.load_dataset_obj()
 
         self.scene_index: List[SceneMetadata] = self.preprocess_scene_metadata(
-            matching_datasets, scene_description_contains
+            matching_datasets, scene_description_contains, num_workers
         )
         print(self.scene_index)
 
@@ -173,6 +175,7 @@ class UnifiedDataset(Dataset):
         self,
         scene_tags: List[SceneTag],
         scene_description_contains: Optional[List[str]],
+        num_workers: int,
     ) -> List[SceneMetadata]:
         scenes_list: List[SceneMetadata] = list()
         for scene_tag in tqdm(scene_tags, desc="Loading Scene Metadata"):
@@ -185,38 +188,104 @@ class UnifiedDataset(Dataset):
                         self.rebuild_cache,
                     )
 
-        self.calculate_agent_data(scenes_list)
-        return scenes_list
+        all_cached: bool = not self.rebuild_cache and all(
+            self.env_cache.scene_is_cached(scene_info.env_name, scene_info.name)
+            for scene_info in scenes_list
+        )
 
-    def calculate_agent_data(self, scenes: List[SceneMetadata]) -> None:
-        scene_info: SceneMetadata
-        for scene_info in tqdm(scenes, desc="Calculating Agent Data"):
-            if (
-                self.env_cache.scene_is_cached(scene_info.env_name, scene_info.name)
-                and not self.rebuild_cache
+        serial_scenes: List[SceneMetadata]
+        parallel_scenes: List[SceneMetadata]
+        if num_workers > 1 and not all_cached:
+            serial_scenes = [
+                scene_info
+                for scene_info in scenes_list
+                if not self.envs_dict[scene_info.env_name].parallelizable
+            ]
+            parallel_scenes = [
+                scene_info
+                for scene_info in scenes_list
+                if self.envs_dict[scene_info.env_name].parallelizable
+            ]
+        else:
+            serial_scenes = scenes_list
+            parallel_scenes = list()
+
+        filled_scenes_list: List[SceneMetadata] = list()
+        if serial_scenes:
+            # Scenes for which it's faster to process them serially. See
+            # the longer comment below for a more thorough explanation.
+            scene_info: SceneMetadata
+            for scene_info in tqdm(
+                serial_scenes, desc="Calculating Agent Data (Serially)"
             ):
-                cached_scene_info: SceneMetadata = self.env_cache.load_scene_metadata(
-                    scene_info.env_name, scene_info.name
+                corresponding_env = self.envs_dict[scene_info.env_name]
+                filled_scenes_list.append(
+                    self.get_agent_data(scene_info, corresponding_env)
                 )
 
-                scene_info.update_agent_info(
-                    cached_scene_info.agents, cached_scene_info.agent_presence
-                )
-                continue
-
+            # No more need for the original dataset objects and freeing up
+            # this memory allows the parallel processing below to run very fast.
             for env in self.envs:
-                if scene_info.env_name == env.name:
-                    agent_list, agent_presence = env.get_agent_info(
-                        scene_info, self.env_cache.path, self.cache_class
+                if not env.parallelizable:
+                    env.del_dataset_obj()
+
+        if parallel_scenes:
+            # Scenes for which it's faster to process them in parallel
+            # Note this really only applies to scenes whose raw datasets
+            # are "parallelizable" AKA take up a small amount of memory
+            # and effectively act as a window into the data on disk.
+            # E.g., NuScenes objects load a lot of data into RAM, so
+            # they are not parallelizable and should be processed
+            # serially (thankfully it is quite fast to do so).
+            with ProcessPool(num_workers) as pool:
+                filled_scenes_list += list(
+                    tqdm(
+                        pool.uimap(
+                            self.get_agent_data,
+                            parallel_scenes,
+                            list(
+                                self.envs_dict[scene_info.env_name]
+                                for scene_info in parallel_scenes
+                            ),
+                        ),
+                        total=len(parallel_scenes),
+                        desc=f"Calculating Agent Data ({num_workers} CPUs)",
                     )
-                    scene_info.update_agent_info(agent_list, agent_presence)
-                    break
-            else:
-                raise ValueError(
-                    f"Scene {str(scene_info)} had no corresponding environemnt!"
                 )
 
+            # No more need for the original dataset objects.
+            for env in self.envs:
+                if env.parallelizable:
+                    env.del_dataset_obj()
+
+        return filled_scenes_list
+
+    def get_agent_data(
+        self,
+        scene_info: SceneMetadata,
+        raw_dataset: RawDataset,
+    ) -> SceneMetadata:
+        if not self.rebuild_cache and self.env_cache.scene_is_cached(
+            scene_info.env_name, scene_info.name
+        ):
+            cached_scene_info: SceneMetadata = self.env_cache.load_scene_metadata(
+                scene_info.env_name, scene_info.name
+            )
+
+            scene_info.update_agent_info(
+                cached_scene_info.agents,
+                cached_scene_info.agent_presence,
+            )
+            return scene_info
+
+        else:
+            agent_list, agent_presence = raw_dataset.get_agent_info(
+                scene_info, self.env_cache.path, self.cache_class
+            )
+
+            scene_info.update_agent_info(agent_list, agent_presence)
             self.env_cache.save_scene_metadata(scene_info)
+            return scene_info
 
     def __len__(self) -> int:
         return self.data_len
@@ -231,9 +300,7 @@ class UnifiedDataset(Dataset):
         scene_info: SceneMetadata = self.env_cache.load_scene_metadata(
             env_name, scene_name
         )
-        scene_cache: Type[SceneCache] = self.cache_class(
-            self.env_cache.path, scene_info, ts
-        )
+        scene_cache: SceneCache = self.cache_class(self.env_cache.path, scene_info, ts)
 
         if self.centric == "scene":
             scene_time: SceneTime = SceneTime.from_cache(

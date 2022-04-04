@@ -34,15 +34,15 @@ class EnvCache:
         with open(scene_file, "wb") as f:
             dill.dump(scene_info, f)
 
-    def load_env_scenes_list(self, env_name: str) -> List[Type[NamedTuple]]:
+    def load_env_scenes_list(self, env_name: str) -> List[NamedTuple]:
         env_cache_dir: Path = self.path / env_name
         with open(env_cache_dir / "scenes_list.dill", "rb") as f:
-            scenes_list: List[Type[NamedTuple]] = dill.load(f)
+            scenes_list: List[NamedTuple] = dill.load(f)
 
         return scenes_list
 
     def save_env_scenes_list(
-        self, env_name: str, scenes_list: List[Type[NamedTuple]]
+        self, env_name: str, scenes_list: List[NamedTuple]
     ) -> None:
         env_cache_dir: Path = self.path / env_name
         env_cache_dir.mkdir(parents=True, exist_ok=True)
