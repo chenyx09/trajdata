@@ -1,10 +1,12 @@
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 
 from avdata.data_structures.agent import AgentMetadata
+from avdata.data_structures.map import Map, MapMetadata
+from avdata.data_structures.map_patch import MapPatch
 from avdata.data_structures.scene_metadata import SceneMetadata
 
 
@@ -26,6 +28,7 @@ class SceneCache:
         )
         self.scene_dir.mkdir(parents=True, exist_ok=True)
 
+    # AGENT STATE DATA
     @staticmethod
     def save_agent_data(
         agent_data: pd.DataFrame,
@@ -80,4 +83,30 @@ class SceneCache:
         agents: List[AgentMetadata],
         history_sec: Tuple[Optional[float], Optional[float]],
     ) -> Tuple[np.ndarray, np.ndarray]:
+        raise NotImplementedError()
+
+    # MAPS
+    @staticmethod
+    def is_map_cached(cache_path: Path, env_name: str, map_name: str) -> bool:
+        raise NotImplementedError()
+
+    @staticmethod
+    def cache_map(cache_path: Path, map_obj: Map, env_name: str) -> None:
+        raise NotImplementedError()
+
+    @staticmethod
+    def cache_map_layers(
+        cache_path: Path,
+        map_info: MapMetadata,
+        layer_fn: Callable[[str], np.ndarray],
+        env_name: str,
+    ) -> None:
+        raise NotImplementedError()
+
+    def load_map_patch(
+        self,
+        world_x: float,
+        world_y: float,
+        patch_size: int,
+    ) -> np.ndarray:
         raise NotImplementedError()

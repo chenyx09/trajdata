@@ -68,3 +68,6 @@ class RawDataset:
         self, scene_info: SceneMetadata, cache_path: Path, cache_class: Type[SceneCache]
     ) -> Tuple[List[AgentMetadata], List[List[AgentMetadata]]]:
         raise NotImplementedError()
+
+    def cache_maps(self, cache_path: Path, map_cache_class: Type[SceneCache]) -> None:
+        raise NotImplementedError()

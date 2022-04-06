@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, Final, List, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -13,7 +13,14 @@ from avdata.data_structures import (
     SceneMetadata,
 )
 
-NUSC_DT = 0.5
+NUSC_DT: Final[float] = 0.5
+
+MAP_PX_SIZE: Final[Dict[str, Tuple[int, int]]] = {
+    "singapore-onenorth": (20250, 15856),
+    "singapore-hollandvillage": (29229, 28083),
+    "singapore-queenstown": (36871, 32286),
+    "boston-seaport": (21181, 29795),
+}
 
 
 def frame_iterator(

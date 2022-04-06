@@ -1,13 +1,17 @@
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Type
 
+import numpy as np
 import pandas as pd
+from nuscenes.map_expansion.map_api import NuScenesMap, locations
 from nuscenes.nuscenes import NuScenes
 from nuscenes.utils.splits import create_splits_scenes
+from tqdm import tqdm
 
 from avdata.caching import EnvCache, SceneCache
 from avdata.data_structures.agent import Agent, AgentMetadata, AgentType, FixedSize
 from avdata.data_structures.environment import EnvMetadata
+from avdata.data_structures.map import MapMetadata
 from avdata.data_structures.scene import SceneMetadata
 from avdata.data_structures.scene_tag import SceneTag
 from avdata.dataset_specific.nusc import nusc_utils
@@ -191,3 +195,69 @@ class NuscDataset(RawDataset):
         cache.save_agent_data(pd.concat(agent_data_list), cache_path, scene_info)
 
         return agent_list, agent_presence
+
+    def cache_map(
+        self,
+        map_name: str,
+        layer_names: List[str],
+        cache_path: Path,
+        map_cache_class: Type[SceneCache],
+    ) -> None:
+        if map_cache_class.is_map_cached(cache_path, self.name, map_name):
+            return
+
+        nusc_map: NuScenesMap = NuScenesMap(
+            dataroot=self.metadata.data_dir, map_name=map_name
+        )
+
+        def layer_fn(layer_name: str) -> np.ndarray:
+            # Getting rid of the channels dim by accessing index [0]
+            return nusc_map.get_map_mask(
+                patch_box=None,
+                patch_angle=0,
+                layer_names=[layer_name],
+                canvas_size=None,
+            )[0].astype(np.bool)
+
+        map_shape = (len(layer_names),) + nusc_utils.MAP_PX_SIZE[map_name]
+        map_info: MapMetadata = MapMetadata(
+            name=map_name,
+            shape=map_shape,
+            layers=layer_names,
+            world_to_img=10 * np.eye(3),
+        )
+        map_cache_class.cache_map_layers(cache_path, map_info, layer_fn, self.name)
+
+    def cache_maps(self, cache_path: Path, map_cache_class: Type[SceneCache]) -> None:
+        """
+        Stores rasterized maps to disk for later retrieval.
+
+        Below are the map origins (south western corner, in [lat, lon]) for each of
+        the 4 maps in nuScenes:
+            boston-seaport: [42.336849169438615, -71.05785369873047]
+            singapore-onenorth: [1.2882100868743724, 103.78475189208984]
+            singapore-hollandvillage: [1.2993652317780957, 103.78217697143555]
+            singapore-queenstown: [1.2782562240223188, 103.76741409301758]
+
+        The dimensions of the maps are as follows ([width, height] in meters). They
+        can also be found in nusc_utils.py
+            singapore-onenorth:       [1585.6, 2025.0]
+            singapore-hollandvillage: [2808.3, 2922.9]
+            singapore-queenstown:     [3228.6, 3687.1]
+            boston-seaport:           [2979.5, 2118.1]
+        The rasterized semantic maps published with nuScenes v1.0 have a scale of 10px/m,
+        hence the above numbers are the image dimensions divided by 10.
+
+        nuScenes uses the same WGS 84 Web Mercator (EPSG:3857) projection as Google Maps/Earth.
+        """
+        layer_names: List[str] = [
+            "lane",
+            "road_segment",
+            "drivable_area",
+            "road_divider",
+            "lane_divider",
+            "ped_crossing",
+            "walkway",
+        ]
+        for map_name in tqdm(locations, desc=f"Caching {self.name} Maps"):
+            self.cache_map(map_name, layer_names, cache_path, map_cache_class)

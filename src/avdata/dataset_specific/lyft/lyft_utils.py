@@ -1,3 +1,5 @@
+from typing import Final
+
 import numpy as np
 import pandas as pd
 from l5kit.data import ChunkedDataset
@@ -11,7 +13,7 @@ from avdata.data_structures import (
     SceneMetadata,
 )
 
-LYFT_DT = 0.1
+LYFT_DT: Final[float] = 0.1
 
 
 def agg_ego_data(lyft_obj: ChunkedDataset, scene_metadata: SceneMetadata) -> Agent:

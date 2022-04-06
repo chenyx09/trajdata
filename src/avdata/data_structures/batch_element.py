@@ -1,12 +1,15 @@
 from collections import defaultdict
-from typing import Callable, Dict, List, Optional, Tuple, Type
+from math import ceil, sqrt
+from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 
 from avdata.caching import SceneCache
-from avdata.data_structures.agent import Agent, AgentMetadata, AgentType
+from avdata.data_structures.agent import AgentMetadata, AgentType
+from avdata.data_structures.map_patch import MapPatch
 from avdata.data_structures.scene import SceneTime, SceneTimeAgent
+from avdata.data_structures.scene_metadata import SceneMetadata
 
 
 class AgentBatchElement:
@@ -25,6 +28,7 @@ class AgentBatchElement:
         ] = defaultdict(lambda: np.inf),
         incl_robot_future: bool = False,
         incl_map: bool = False,
+        map_patch_size: Optional[int] = None,
         standardize_data: bool = False,
     ) -> None:
         self.cache: SceneCache = cache
@@ -86,9 +90,9 @@ class AgentBatchElement:
             self.robot_future_len: int = self.robot_future_np.shape[0]
 
         ### MAP ###
-        self.map_np: Optional[np.ndarray] = None
+        self.map_patch: Optional[MapPatch] = None
         if incl_map:
-            self.map_np = self.get_map(scene_time_agent, agent_info)
+            self.map_patch = self.get_agent_map_patch(map_patch_size)
 
         # self.plot()
 
@@ -168,8 +172,22 @@ class AgentBatchElement:
         )
         return robot_curr_and_fut_df.to_numpy()
 
-    def get_map(self, scene_time: SceneTimeAgent, agent: Agent):
-        pass
+    def get_agent_map_patch(self, patch_size: int) -> MapPatch:
+        world_x, world_y = self.curr_agent_state_np[:2]
+
+        if self.standardize_data:
+            heading = self.curr_agent_state_np[-1]
+            context_size: int = int(ceil(sqrt(2) * patch_size))
+            patch_data: np.ndarray = self.cache.load_map_patch(
+                world_x, world_y, context_size
+            )
+        else:
+            heading = 0.0
+            patch_data: np.ndarray = self.cache.load_map_patch(
+                world_x, world_y, patch_size
+            )
+
+        return MapPatch(data=patch_data, rot_angle=heading, crop_size=patch_size)
 
     def plot(self):
         import matplotlib.pyplot as plt

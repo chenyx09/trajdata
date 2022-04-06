@@ -2,6 +2,7 @@ from collections import defaultdict
 
 # from itertools import chain
 from multiprocessing import Manager
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -47,6 +48,7 @@ class UnifiedDataset(Dataset):
         ] = defaultdict(lambda: np.inf),
         incl_robot_future: bool = False,
         incl_map: bool = False,
+        map_patch_size: Optional[int] = None,
         only_types: Optional[List[AgentType]] = None,
         no_types: Optional[List[AgentType]] = None,
         standardize_data: bool = True,
@@ -70,14 +72,23 @@ class UnifiedDataset(Dataset):
         if cache_type == "dataframe":
             self.cache_class = DataFrameCache
 
-        self.rebuild_cache = rebuild_cache
-        self.env_cache: EnvCache = EnvCache(cache_location)
+        self.rebuild_cache: bool = rebuild_cache
+        cache_path: Path = Path(cache_location).expanduser().resolve()
+        cache_path.mkdir(parents=True, exist_ok=True)
+        self.env_cache: EnvCache = EnvCache(cache_path)
+
+        if incl_map:
+            assert (
+                map_patch_size is not None
+            ), "Path size must be provided if incl_map=True"
+            assert map_patch_size % 2 == 0, "Patch size must be divisible by 2"
 
         self.history_sec = history_sec
         self.future_sec = future_sec
         self.agent_interaction_distances = agent_interaction_distances
         self.incl_robot_future = incl_robot_future
         self.incl_map = incl_map
+        self.map_patch_size = map_patch_size
         self.only_types = None if only_types is None else set(only_types)
         self.no_types = None if no_types is None else set(no_types)
         self.standardize_data = standardize_data
@@ -103,6 +114,7 @@ class UnifiedDataset(Dataset):
                 # Loading dataset objects in case we don't have
                 # their data already cached.
                 env.load_dataset_obj()
+                env.cache_maps(cache_path, self.cache_class)
 
         self.scene_index: List[SceneMetadata] = self.preprocess_scene_metadata(
             matching_datasets, scene_description_contains, num_workers
@@ -332,5 +344,6 @@ class UnifiedDataset(Dataset):
                 self.agent_interaction_distances,
                 self.incl_robot_future,
                 self.incl_map,
+                self.map_patch_size,
                 self.standardize_data,
             )

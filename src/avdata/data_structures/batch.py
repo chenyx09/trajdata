@@ -7,13 +7,13 @@ from typing import List, Optional
 import numpy as np
 import torch
 import torch.nn.functional as F
+from kornia.geometry.transform import center_crop, rotate
 from torch import Tensor
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data._utils.collate import default_collate
 
 from avdata.data_structures.agent import AgentType
-
-from .batch_element import AgentBatchElement, SceneBatchElement
+from avdata.data_structures.batch_element import AgentBatchElement, SceneBatchElement
 
 
 @dataclass
@@ -71,6 +71,34 @@ class AgentBatch:
 SceneBatch = namedtuple("SceneBatch", "")
 
 
+def map_collate_fn(batch_elems: List[AgentBatchElement]) -> Optional[Tensor]:
+    if batch_elems[0].map_patch is None:
+        return None
+
+    patch_data: Tensor = torch.as_tensor(
+        np.stack([batch_elem.map_patch.data for batch_elem in batch_elems]),
+        dtype=torch.float,
+    )
+    rot_angles: Tensor = torch.as_tensor(
+        [batch_elem.map_patch.rot_angle for batch_elem in batch_elems],
+        dtype=torch.float,
+    )
+    patch_size: int = batch_elems[0].map_patch.crop_size
+    assert all(
+        batch_elem.map_patch.crop_size == patch_size for batch_elem in batch_elems
+    )
+
+    if (
+        torch.count_nonzero(rot_angles) == 0
+        and patch_size == patch_data.shape[-1] == patch_data.shape[-2]
+    ):
+        return patch_data
+
+    return center_crop(
+        rotate(patch_data, torch.rad2deg(rot_angles)), (patch_size, patch_size)
+    )
+
+
 def agent_collate_fn(batch_elems: List[AgentBatchElement]) -> AgentBatch:
     batch_size: int = len(batch_elems)
 
@@ -103,8 +131,6 @@ def agent_collate_fn(batch_elems: List[AgentBatchElement]) -> AgentBatch:
 
     robot_future: List[Tensor] = list()
     robot_future_len: Tensor = torch.zeros((batch_size,), dtype=torch.long)
-
-    map_info: List[Tensor] = list()
 
     elem: AgentBatchElement
     for idx, elem in enumerate(batch_elems):
@@ -156,9 +182,6 @@ def agent_collate_fn(batch_elems: List[AgentBatchElement]) -> AgentBatch:
             )
             robot_future_len[idx] = elem.robot_future_len
 
-        if elem.map_np is not None:
-            map_info.append(torch.as_tensor(elem.map_np, dtype=torch.float))
-
     curr_agent_state_t: Tensor = torch.stack(curr_agent_state)
     agent_history_t: Tensor = pad_sequence(
         agent_history, batch_first=True, padding_value=np.nan
@@ -179,7 +202,7 @@ def agent_collate_fn(batch_elems: List[AgentBatchElement]) -> AgentBatch:
         if robot_future
         else None
     )
-    map_info: Optional[Tensor] = torch.stack(map_info) if map_info else None
+    map_patches: Optional[Tensor] = map_collate_fn(batch_elems)
 
     return AgentBatch(
         data_idx=data_index_t,
@@ -196,7 +219,7 @@ def agent_collate_fn(batch_elems: List[AgentBatchElement]) -> AgentBatch:
         neigh_hist_len=neighbor_history_lens_t,
         robot_fut=robot_future_t,
         robot_fut_len=robot_future_len,
-        maps=map_info,
+        maps=map_patches,
     )
 
 

@@ -9,3 +9,10 @@ dataset = UnifiedDataset(data=['nuScenes', 'lyft', 'eth_univ', 'ucy_univ'], ...)
 
 data_loader = torch.utils.data.DataLoader(dataset, ...)
 ```
+
+### Installation
+
+First, please install the required dependencies with
+```
+pip install -r requirements.txt
+```

@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import List, NamedTuple, Type
+from typing import List, NamedTuple
 
 import dill
 
@@ -7,10 +7,8 @@ from avdata.data_structures.scene_metadata import SceneMetadata
 
 
 class EnvCache:
-    def __init__(self, cache_location: str) -> None:
-        # Ensuring the specified cache folder exists
-        self.path = Path(cache_location).expanduser().resolve()
-        self.path.mkdir(parents=True, exist_ok=True)
+    def __init__(self, cache_location: Path) -> None:
+        self.path = cache_location
 
     def env_is_cached(self, env_name: str) -> bool:
         return (self.path / env_name / "scenes_list.dill").is_file()

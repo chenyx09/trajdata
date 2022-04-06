@@ -1,13 +1,17 @@
 import pickle
 from math import floor
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
+import dill
 import numpy as np
 import pandas as pd
+import zarr
 
 from avdata.caching.scene_cache import SceneCache
 from avdata.data_structures.agent import AgentMetadata
+from avdata.data_structures.map import Map, MapMetadata
+from avdata.data_structures.map_patch import MapPatch
 from avdata.data_structures.scene_metadata import SceneMetadata
 from avdata.utils import arr_utils
 
@@ -28,6 +32,7 @@ class DataFrameCache(SceneCache):
         self._load_agent_data()
         self._compute_col_idxs()
 
+    # AGENT STATE DATA
     def _compute_col_idxs(self) -> None:
         self.column_dict: Dict[str, int] = {
             val: idx for idx, val in enumerate(self.scene_data_df.columns)
@@ -182,3 +187,67 @@ class DataFrameCache(SceneCache):
             self.scene_data_df.iloc[concat_idxs, :].to_numpy(),
             last_index_incl - first_index_incl + 1,
         )
+
+    # MAPS
+    @staticmethod
+    def is_map_cached(cache_path: Path, env_name: str, map_name: str) -> bool:
+        maps_path: Path = cache_path / env_name / "maps"
+        metadata_file: Path = maps_path / f"{map_name}_metadata.dill"
+        map_file: Path = maps_path / f"{map_name}.zarr"
+        return maps_path.is_dir() and metadata_file.is_file() and map_file.is_file()
+
+    @staticmethod
+    def cache_map(cache_path: Path, map_obj: Map, env_name: str) -> None:
+        maps_path: Path = cache_path / env_name / "maps"
+        maps_path.mkdir(parents=True, exist_ok=True)
+
+        metadata_file: Path = maps_path / f"{map_obj.metadata.name}_metadata.dill"
+        with open(metadata_file, "wb") as f:
+            dill.dump(map_obj.metadata, f)
+
+        map_file: Path = maps_path / f"{map_obj.metadata.name}.zarr"
+        zarr.save(map_file, map_obj.data)
+
+    @staticmethod
+    def cache_map_layers(
+        cache_path: Path,
+        map_info: MapMetadata,
+        layer_fn: Callable[[str], np.ndarray],
+        env_name: str,
+    ) -> None:
+        maps_path: Path = cache_path / env_name / "maps"
+        maps_path.mkdir(parents=True, exist_ok=True)
+
+        map_file: Path = maps_path / f"{map_info.name}.zarr"
+        disk_data = zarr.open_array(map_file, mode="w", shape=map_info.shape)
+        for idx, layer_name in enumerate(map_info.layers):
+            disk_data[idx] = layer_fn(layer_name)
+
+        metadata_file: Path = maps_path / f"{map_info.name}_metadata.dill"
+        with open(metadata_file, "wb") as f:
+            dill.dump(map_info, f)
+
+    def load_map_patch(
+        self,
+        world_x: float,
+        world_y: float,
+        patch_size: int,
+    ) -> np.ndarray:
+        maps_path: Path = self.path / self.scene_info.env_name / "maps"
+
+        metadata_file: Path = maps_path / f"{self.scene_info.location}_metadata.dill"
+        with open(metadata_file, "rb") as f:
+            map_info: MapMetadata = dill.load(f)
+
+        map_coords: np.ndarray = map_info.world_to_img @ np.array(
+            [world_x, world_y, 1.0]
+        )
+        map_x, map_y = map_coords[:2].round().astype(np.int)
+
+        map_file: Path = maps_path / f"{map_info.name}.zarr"
+        disk_data = zarr.open_array(map_file, mode="r")
+        return disk_data[
+            ...,
+            map_y - patch_size // 2 : map_y + patch_size // 2,
+            map_x - patch_size // 2 : map_x + patch_size // 2,
+        ]
