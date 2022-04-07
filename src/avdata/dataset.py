@@ -48,7 +48,7 @@ class UnifiedDataset(Dataset):
         ] = defaultdict(lambda: np.inf),
         incl_robot_future: bool = False,
         incl_map: bool = False,
-        map_patch_size: Optional[int] = None,
+        map_params: Optional[Dict[str, int]] = None,
         only_types: Optional[List[AgentType]] = None,
         no_types: Optional[List[AgentType]] = None,
         standardize_data: bool = True,
@@ -79,16 +79,18 @@ class UnifiedDataset(Dataset):
 
         if incl_map:
             assert (
-                map_patch_size is not None
-            ), "Path size must be provided if incl_map=True"
-            assert map_patch_size % 2 == 0, "Patch size must be divisible by 2"
+                map_params is not None
+            ), r"Path size information, e.g., {'world_size_m': ..., 'img_size_px': ...}, must be provided if incl_map=True"
+            assert (
+                map_params["img_size_px"] % 2 == 0
+            ), "Patch parameter 'img_size_px' must be divisible by 2"
 
         self.history_sec = history_sec
         self.future_sec = future_sec
         self.agent_interaction_distances = agent_interaction_distances
         self.incl_robot_future = incl_robot_future
         self.incl_map = incl_map
-        self.map_patch_size = map_patch_size
+        self.map_params = map_params
         self.only_types = None if only_types is None else set(only_types)
         self.no_types = None if no_types is None else set(no_types)
         self.standardize_data = standardize_data
@@ -344,6 +346,6 @@ class UnifiedDataset(Dataset):
                 self.agent_interaction_distances,
                 self.incl_robot_future,
                 self.incl_map,
-                self.map_patch_size,
+                self.map_params,
                 self.standardize_data,
             )

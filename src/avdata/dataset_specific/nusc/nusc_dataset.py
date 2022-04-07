@@ -224,7 +224,7 @@ class NuscDataset(RawDataset):
             name=map_name,
             shape=map_shape,
             layers=layer_names,
-            world_to_img=10 * np.eye(3),
+            resolution=10,
         )
         map_cache_class.cache_map_layers(cache_path, map_info, layer_fn, self.name)
 

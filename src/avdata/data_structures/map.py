@@ -11,12 +11,12 @@ class MapMetadata:
         name: str,
         shape: Tuple[int, int],
         layers: List[str],
-        world_to_img: np.ndarray,
+        resolution: float,  # px/m
     ) -> None:
         self.name: str = name
         self.shape: Tuple[int, int] = shape
         self.layers: List[str] = layers
-        self.world_to_img: np.ndarray = world_to_img
+        self.resolution: float = resolution
 
 
 class Map:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import namedtuple
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -33,6 +33,7 @@ class AgentBatch:
     robot_fut: Optional[Tensor]
     robot_fut_len: Tensor
     maps: Optional[Tensor]
+    maps_resolution: Optional[Tensor]
 
     def to(self, device) -> None:
         excl_vals = {"data_idx", "agent_type", "neigh_types", "num_neigh"}
@@ -65,15 +66,20 @@ class AgentBatch:
             else None,
             robot_fut_len=self.robot_fut_len[match_type],
             maps=self.maps[match_type] if self.maps is not None else None,
+            maps_resolution=self.maps_resolution[match_type]
+            if self.maps_resolution is not None
+            else None,
         )
 
 
 SceneBatch = namedtuple("SceneBatch", "")
 
 
-def map_collate_fn(batch_elems: List[AgentBatchElement]) -> Optional[Tensor]:
+def map_collate_fn(
+    batch_elems: List[AgentBatchElement],
+) -> Tuple[Optional[Tensor], Optional[Tensor]]:
     if batch_elems[0].map_patch is None:
-        return None
+        return None, None
 
     patch_data: Tensor = torch.as_tensor(
         np.stack([batch_elem.map_patch.data for batch_elem in batch_elems]),
@@ -88,15 +94,22 @@ def map_collate_fn(batch_elems: List[AgentBatchElement]) -> Optional[Tensor]:
         batch_elem.map_patch.crop_size == patch_size for batch_elem in batch_elems
     )
 
+    resolution: Tensor = torch.as_tensor(
+        [batch_elem.map_patch.resolution for batch_elem in batch_elems],
+        dtype=torch.float,
+    )
+
     if (
         torch.count_nonzero(rot_angles) == 0
         and patch_size == patch_data.shape[-1] == patch_data.shape[-2]
     ):
-        return patch_data
+        return patch_data, resolution
 
-    return center_crop(
+    rot_crop_patches: Tensor = center_crop(
         rotate(patch_data, torch.rad2deg(rot_angles)), (patch_size, patch_size)
     )
+
+    return rot_crop_patches, resolution
 
 
 def agent_collate_fn(batch_elems: List[AgentBatchElement]) -> AgentBatch:
@@ -202,7 +215,7 @@ def agent_collate_fn(batch_elems: List[AgentBatchElement]) -> AgentBatch:
         if robot_future
         else None
     )
-    map_patches: Optional[Tensor] = map_collate_fn(batch_elems)
+    map_patches, maps_resolution = map_collate_fn(batch_elems)
 
     return AgentBatch(
         data_idx=data_index_t,
@@ -220,6 +233,7 @@ def agent_collate_fn(batch_elems: List[AgentBatchElement]) -> AgentBatch:
         robot_fut=robot_future_t,
         robot_fut_len=robot_future_len,
         maps=map_patches,
+        maps_resolution=maps_resolution,
     )
 
 

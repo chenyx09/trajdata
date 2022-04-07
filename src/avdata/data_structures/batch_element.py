@@ -28,7 +28,7 @@ class AgentBatchElement:
         ] = defaultdict(lambda: np.inf),
         incl_robot_future: bool = False,
         incl_map: bool = False,
-        map_patch_size: Optional[int] = None,
+        map_params: Optional[Dict[str, int]] = None,
         standardize_data: bool = False,
     ) -> None:
         self.cache: SceneCache = cache
@@ -92,7 +92,7 @@ class AgentBatchElement:
         ### MAP ###
         self.map_patch: Optional[MapPatch] = None
         if incl_map:
-            self.map_patch = self.get_agent_map_patch(map_patch_size)
+            self.map_patch = self.get_agent_map_patch(map_params)
 
         # self.plot()
 
@@ -172,22 +172,28 @@ class AgentBatchElement:
         )
         return robot_curr_and_fut_df.to_numpy()
 
-    def get_agent_map_patch(self, patch_size: int) -> MapPatch:
+    def get_agent_map_patch(self, patch_params: Dict[str, int]) -> MapPatch:
         world_x, world_y = self.curr_agent_state_np[:2]
+        desired_patch_size = patch_params["img_size_px"]
+        world_size = patch_params["world_size_m"]
 
         if self.standardize_data:
             heading = self.curr_agent_state_np[-1]
-            context_size: int = int(ceil(sqrt(2) * patch_size))
-            patch_data: np.ndarray = self.cache.load_map_patch(
-                world_x, world_y, context_size
+            patch_data = self.cache.load_map_patch(
+                world_x, world_y, desired_patch_size, world_size, rot_pad_factor=sqrt(2)
             )
         else:
             heading = 0.0
-            patch_data: np.ndarray = self.cache.load_map_patch(
-                world_x, world_y, patch_size
+            patch_data = self.cache.load_map_patch(
+                world_x, world_y, desired_patch_size, world_size
             )
 
-        return MapPatch(data=patch_data, rot_angle=heading, crop_size=patch_size)
+        return MapPatch(
+            data=patch_data,
+            rot_angle=heading,
+            crop_size=desired_patch_size,
+            resolution=desired_patch_size / world_size,
+        )
 
     def plot(self):
         import matplotlib.pyplot as plt

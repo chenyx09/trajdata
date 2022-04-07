@@ -1,11 +1,13 @@
 import pickle
-from math import floor
+from math import ceil, floor
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
 import dill
+import kornia
 import numpy as np
 import pandas as pd
+import torch
 import zarr
 
 from avdata.caching.scene_cache import SceneCache
@@ -231,23 +233,43 @@ class DataFrameCache(SceneCache):
         self,
         world_x: float,
         world_y: float,
-        patch_size: int,
-    ) -> np.ndarray:
+        desired_patch_size: int,
+        world_size: int,
+        rot_pad_factor: float = 1.0,
+    ) -> Tuple[np.ndarray, MapMetadata]:
         maps_path: Path = self.path / self.scene_info.env_name / "maps"
 
         metadata_file: Path = maps_path / f"{self.scene_info.location}_metadata.dill"
         with open(metadata_file, "rb") as f:
             map_info: MapMetadata = dill.load(f)
 
-        map_coords: np.ndarray = map_info.world_to_img @ np.array(
-            [world_x, world_y, 1.0]
-        )
+        map_coords: np.ndarray = map_info.resolution * np.array([world_x, world_y])
         map_x, map_y = map_coords[:2].round().astype(np.int)
+
+        data_patch_size: int = ceil(world_size * map_info.resolution)
+        data_with_rot_pad_size: int = ceil(rot_pad_factor * data_patch_size)
 
         map_file: Path = maps_path / f"{map_info.name}.zarr"
         disk_data = zarr.open_array(map_file, mode="r")
-        return disk_data[
+        data_patch: np.ndarray = disk_data[
             ...,
-            map_y - patch_size // 2 : map_y + patch_size // 2,
-            map_x - patch_size // 2 : map_x + patch_size // 2,
+            map_y - data_with_rot_pad_size // 2 : map_y + data_with_rot_pad_size // 2,
+            map_x - data_with_rot_pad_size // 2 : map_x + data_with_rot_pad_size // 2,
         ]
+
+        if desired_patch_size == data_patch_size:
+            return data_patch
+        else:
+            rescaled_patch: np.ndarray = (
+                kornia.geometry.rescale(
+                    torch.from_numpy(data_patch).unsqueeze(0),
+                    desired_patch_size / data_patch_size,
+                    # Default align_corners value, just putting it to remove warnings
+                    align_corners=False,
+                    antialias=True,
+                )
+                .squeeze(0)
+                .numpy()
+            )
+
+            return rescaled_patch

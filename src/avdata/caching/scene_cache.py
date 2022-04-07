@@ -107,6 +107,8 @@ class SceneCache:
         self,
         world_x: float,
         world_y: float,
-        patch_size: int,
-    ) -> np.ndarray:
+        desired_patch_size: int,
+        world_size: int,
+        rot_pad_factor: float = 1.0,
+    ) -> Tuple[np.ndarray, MapMetadata]:
         raise NotImplementedError()
