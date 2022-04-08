@@ -52,7 +52,13 @@ def plot_agent_batch(
         )
 
     ax.scatter(center_xy[0], center_xy[1], s=20, c="orangered", label="Agent Current")
-    ax.plot(history_xy[..., 0], history_xy[..., 1], c="orange", ls="--", label="Agent History")
+    ax.plot(
+        history_xy[..., 0],
+        history_xy[..., 1],
+        c="orange",
+        ls="--",
+        label="Agent History",
+    )
     ax.plot(future_xy[..., 0], future_xy[..., 1], c="violet", label="Agent Future")
 
     num_neigh = batch.num_neigh[batch_idx]

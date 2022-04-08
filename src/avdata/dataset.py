@@ -62,6 +62,7 @@ class UnifiedDataset(Dataset):
         rebuild_cache: bool = False,
         rebuild_maps: bool = False,
         num_workers: int = 0,
+        verbose: bool = False,
     ) -> None:
         self.centric = centric
 
@@ -95,6 +96,7 @@ class UnifiedDataset(Dataset):
         self.only_types = None if only_types is None else set(only_types)
         self.no_types = None if no_types is None else set(no_types)
         self.standardize_data = standardize_data
+        self.verbose = verbose
 
         # Ensuring scene description queries are all lowercase
         if scene_description_contains is not None:
@@ -104,11 +106,12 @@ class UnifiedDataset(Dataset):
         self.envs_dict: Dict[str, RawDataset] = {env.name: env for env in self.envs}
 
         matching_datasets: List[SceneTag] = self.get_matching_scene_tags(desired_data)
-        print(
-            "Loading data for matched scene tags:",
-            string_utils.pretty_string_tags(matching_datasets),
-            flush=True,
-        )
+        if self.verbose:
+            print(
+                "Loading data for matched scene tags:",
+                string_utils.pretty_string_tags(matching_datasets),
+                flush=True,
+            )
 
         for env in self.envs:
             if (
@@ -124,7 +127,8 @@ class UnifiedDataset(Dataset):
         self.scene_index: List[SceneMetadata] = self.preprocess_scene_metadata(
             matching_datasets, scene_description_contains, num_workers
         )
-        print(self.scene_index)
+        if self.verbose:
+            print(self.scene_index)
 
         self.data_index = list()
         if self.centric == "scene":
@@ -195,7 +199,9 @@ class UnifiedDataset(Dataset):
         num_workers: int,
     ) -> List[SceneMetadata]:
         scenes_list: List[SceneMetadata] = list()
-        for scene_tag in tqdm(scene_tags, desc="Loading Scene Metadata"):
+        for scene_tag in tqdm(
+            scene_tags, desc="Loading Scene Metadata", disable=not self.verbose
+        ):
             for env in self.envs:
                 if env.name in scene_tag:
                     scenes_list += env.get_matching_scenes(
@@ -233,7 +239,9 @@ class UnifiedDataset(Dataset):
             # the longer comment below for a more thorough explanation.
             scene_info: SceneMetadata
             for scene_info in tqdm(
-                serial_scenes, desc="Calculating Agent Data (Serially)"
+                serial_scenes,
+                desc="Calculating Agent Data (Serially)",
+                disable=not self.verbose,
             ):
                 corresponding_env = self.envs_dict[scene_info.env_name]
                 filled_scenes_list.append(
@@ -267,6 +275,7 @@ class UnifiedDataset(Dataset):
                         ),
                         total=len(parallel_scenes),
                         desc=f"Calculating Agent Data ({num_workers} CPUs)",
+                        disable=not self.verbose,
                     )
                 )
 
