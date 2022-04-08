@@ -12,7 +12,7 @@ from avdata.caching import EnvCache, SceneCache
 from avdata.data_structures.agent import Agent, AgentMetadata, AgentType, FixedSize
 from avdata.data_structures.environment import EnvMetadata
 from avdata.data_structures.map import MapMetadata
-from avdata.data_structures.scene import SceneMetadata
+from avdata.data_structures.scene_metadata import SceneMetadata
 from avdata.data_structures.scene_tag import SceneTag
 from avdata.dataset_specific.nusc import nusc_utils
 from avdata.dataset_specific.raw_dataset import RawDataset
@@ -202,7 +202,11 @@ class NuscDataset(RawDataset):
         layer_names: List[str],
         cache_path: Path,
         map_cache_class: Type[SceneCache],
+        resolution: int,
     ) -> None:
+        """
+        resolution is in pixels per meter.
+        """
         if map_cache_class.is_map_cached(cache_path, self.name, map_name):
             return
 
@@ -210,25 +214,30 @@ class NuscDataset(RawDataset):
             dataroot=self.metadata.data_dir, map_name=map_name
         )
 
+        width_m, height_m = nusc_map.canvas_edge
+        height_px, width_px = round(height_m * resolution), round(width_m * resolution)
+
         def layer_fn(layer_name: str) -> np.ndarray:
             # Getting rid of the channels dim by accessing index [0]
             return nusc_map.get_map_mask(
                 patch_box=None,
                 patch_angle=0,
                 layer_names=[layer_name],
-                canvas_size=None,
+                canvas_size=(height_px, width_px),
             )[0].astype(np.bool)
 
-        map_shape = (len(layer_names),) + nusc_utils.MAP_PX_SIZE[map_name]
+        map_shape = (len(layer_names), height_px, width_px)
         map_info: MapMetadata = MapMetadata(
             name=map_name,
             shape=map_shape,
             layers=layer_names,
-            resolution=10,
+            resolution=resolution,
         )
         map_cache_class.cache_map_layers(cache_path, map_info, layer_fn, self.name)
 
-    def cache_maps(self, cache_path: Path, map_cache_class: Type[SceneCache]) -> None:
+    def cache_maps(
+        self, cache_path: Path, map_cache_class: Type[SceneCache], resolution: int = 2
+    ) -> None:
         """
         Stores rasterized maps to disk for later retrieval.
 
@@ -260,4 +269,6 @@ class NuscDataset(RawDataset):
             "walkway",
         ]
         for map_name in tqdm(locations, desc=f"Caching {self.name} Maps"):
-            self.cache_map(map_name, layer_names, cache_path, map_cache_class)
+            self.cache_map(
+                map_name, layer_names, cache_path, map_cache_class, resolution
+            )

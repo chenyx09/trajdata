@@ -37,6 +37,7 @@ class AgentBatchElement:
         self.scene_ts: int = scene_time_agent.ts
 
         agent_info: AgentMetadata = scene_time_agent.agent
+        self.agent_name: str = agent_info.name
         self.agent_type: AgentType = agent_info.type
 
         self.curr_agent_state_np: np.ndarray = cache.get_state(
@@ -45,9 +46,7 @@ class AgentBatchElement:
 
         self.standardize_data = standardize_data
         if self.standardize_data:
-            agent_heading: float = cache.get_value(
-                agent_info.name, self.scene_ts, "heading"
-            )
+            agent_heading: float = self.curr_agent_state_np[-1]
             cache.transform_data(
                 shift_mean_to=self.curr_agent_state_np,
                 rotate_by=agent_heading,
@@ -174,87 +173,26 @@ class AgentBatchElement:
 
     def get_agent_map_patch(self, patch_params: Dict[str, int]) -> MapPatch:
         world_x, world_y = self.curr_agent_state_np[:2]
-        desired_patch_size = patch_params["img_size_px"]
-        world_size = patch_params["world_size_m"]
+        desired_patch_size = patch_params["map_size_px"]
+        resolution = patch_params["px_per_m"]
 
         if self.standardize_data:
             heading = self.curr_agent_state_np[-1]
             patch_data = self.cache.load_map_patch(
-                world_x, world_y, desired_patch_size, world_size, rot_pad_factor=sqrt(2)
+                world_x, world_y, desired_patch_size, resolution, rot_pad_factor=sqrt(2)
             )
         else:
             heading = 0.0
             patch_data = self.cache.load_map_patch(
-                world_x, world_y, desired_patch_size, world_size
+                world_x, world_y, desired_patch_size, resolution
             )
 
         return MapPatch(
             data=patch_data,
             rot_angle=heading,
             crop_size=desired_patch_size,
-            resolution=desired_patch_size / world_size,
+            resolution=resolution,
         )
-
-    def plot(self):
-        import matplotlib.pyplot as plt
-
-        fig, ax = plt.subplots()
-
-        ax.plot(
-            self.agent_history_np[:, 0],
-            self.agent_history_np[:, 1],
-            label="Agent History",
-            c="blue",
-        )
-        ax.scatter(0, 0, s=100, c="r", label="Agent Current")
-        ax.arrow(
-            0,
-            0,
-            dx=self.agent_history_np[-1, -1] / 10,
-            dy=self.agent_history_np[-1, -2] / 10,
-        )
-        ax.plot(
-            self.agent_future_st_np[:, 0],
-            self.agent_future_st_np[:, 1],
-            label="Agent Future",
-            c="orange",
-        )
-
-        if self.standardize_data:
-            ax.arrow(
-                0,
-                0,
-                dx=np.cos(self.curr_agent_state_np[-1]) / 10,
-                dy=np.sin(self.curr_agent_state_np[-1]) / 10,
-                alpha=0.5,
-            )
-
-            rotated_check = self.agent_future_st_np[:, :2] @ self.rot_matrix.T
-            ax.plot(rotated_check[:, 0], rotated_check[:, 1], c="orange", alpha=0.5)
-
-        ax.scatter(np.nan, np.nan, s=100, c="k", label="Other Current")
-        for neigh_hist in self.neighbor_histories:
-            ax.scatter(neigh_hist[-1, 0], neigh_hist[-1, 1], s=100, c="k")
-            ax.plot(neigh_hist[:, 0], neigh_hist[:, 1], c="k")
-
-        if self.robot_future_np is not None:
-            ax.scatter(
-                self.robot_future_np[0, 0],
-                self.robot_future_np[0, 1],
-                s=100,
-                c="green",
-                label="Ego Current",
-            )
-            ax.plot(
-                self.robot_future_np[1:, 0],
-                self.robot_future_np[1:, 1],
-                label="Ego Future",
-                c="green",
-            )
-
-        ax.legend(loc="best", frameon=True)
-        ax.axis("equal")
-        plt.show()
 
 
 class SceneBatchElement:

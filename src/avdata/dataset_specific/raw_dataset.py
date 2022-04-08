@@ -69,5 +69,10 @@ class RawDataset:
     ) -> Tuple[List[AgentMetadata], List[List[AgentMetadata]]]:
         raise NotImplementedError()
 
-    def cache_maps(self, cache_path: Path, map_cache_class: Type[SceneCache]) -> None:
+    def cache_maps(
+        self, cache_path: Path, map_cache_class: Type[SceneCache], resolution: int = 2
+    ) -> None:
+        """
+        resolution is in pixels per meter.
+        """
         raise NotImplementedError()

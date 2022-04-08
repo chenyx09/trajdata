@@ -4,7 +4,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from avdata import AgentBatch, AgentType, UnifiedDataset
-from avdata.visualization.vis import plot_batch
+from avdata.visualization.vis import plot_agent_batch
 
 
 # @profile
@@ -17,7 +17,7 @@ def main():
         # only_types=[AgentType.VEHICLE],
         incl_robot_future=True,
         incl_map=True,
-        map_params={"world_size_m": 10, "img_size_px": 100},
+        map_params={"px_per_m": 2, "map_size_px": 224},
         num_workers=os.cpu_count(),
     )
 
@@ -36,7 +36,7 @@ def main():
     batch: AgentBatch
     for batch in tqdm(dataloader):
         pass
-        # plot_batch(batch, batch_idx=0)
+        # plot_agent_batch(batch, batch_idx=0)
 
 
 if __name__ == "__main__":

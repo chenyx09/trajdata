@@ -1,15 +1,27 @@
-from typing import Union
+from typing import Optional
 
 import matplotlib.pyplot as plt
-from matplotlib import ticker
+from matplotlib.axes import Axes
 from torch import Tensor
 
+from avdata.data_structures.agent import AgentType
 from avdata.data_structures.batch import AgentBatch
 from avdata.data_structures.map import Map
 
 
-def plot_batch(batch: AgentBatch, batch_idx: int) -> None:
-    fig, ax = plt.subplots()
+def plot_agent_batch(
+    batch: AgentBatch,
+    batch_idx: int,
+    ax: Optional[Axes] = None,
+    show: bool = True,
+    close: bool = True,
+) -> None:
+    if ax is None:
+        _, ax = plt.subplots()
+
+    agent_name: str = batch.agent_name[batch_idx]
+    agent_type: AgentType = AgentType(batch.agent_type[batch_idx].item())
+    ax.set_title(f"{str(agent_type)}/{agent_name}")
 
     history_xy: Tensor = batch.agent_hist[batch_idx, :, :2].cpu()
     center_xy: Tensor = batch.agent_hist[batch_idx, -1, :2].cpu()
@@ -39,26 +51,50 @@ def plot_batch(batch: AgentBatch, batch_idx: int) -> None:
             alpha=0.3,
         )
 
-    ax.scatter(center_xy[0], center_xy[1], s=20, c="orangered")
-    ax.plot(history_xy[..., 0], history_xy[..., 1], c="orange")
-    ax.plot(future_xy[..., 0], future_xy[..., 1], c="violet")
+    ax.scatter(center_xy[0], center_xy[1], s=20, c="orangered", label="Agent Current")
+    ax.plot(history_xy[..., 0], history_xy[..., 1], c="orange", ls="--", label="Agent History")
+    ax.plot(future_xy[..., 0], future_xy[..., 1], c="violet", label="Agent Future")
 
     num_neigh = batch.num_neigh[batch_idx]
-    neighbor_hist = batch.neigh_hist[batch_idx]
+    if num_neigh > 0:
+        neighbor_hist = batch.neigh_hist[batch_idx]
 
-    for n in range(num_neigh):
-        ax.plot(neighbor_hist[n, :, 0], neighbor_hist[n, :, 1], c="olive")
+        ax.plot([], [], c="olive", ls="--", label="Neighbor History")
+        for n in range(num_neigh):
+            ax.plot(neighbor_hist[n, :, 0], neighbor_hist[n, :, 1], c="olive", ls="--")
 
-    ax.scatter(
-        neighbor_hist[:num_neigh, -1, 0],
-        neighbor_hist[:num_neigh, -1, 1],
-        s=20,
-        c="gold",
-    )
+        ax.scatter(
+            neighbor_hist[:num_neigh, -1, 0],
+            neighbor_hist[:num_neigh, -1, 1],
+            s=20,
+            c="gold",
+            label="Neighbor Current",
+        )
+
+    if batch.robot_fut is not None and batch.robot_fut.shape[1] > 0:
+        ax.scatter(
+            batch.robot_fut[batch_idx, 0, 0],
+            batch.robot_fut[batch_idx, 0, 1],
+            s=20,
+            c="green",
+            label="Ego Current",
+        )
+        ax.plot(
+            batch.robot_fut[batch_idx, 1:, 0],
+            batch.robot_fut[batch_idx, 1:, 1],
+            label="Ego Future",
+            c="green",
+        )
 
     ax.set_xlabel("x (m)")
     ax.set_ylabel("y (m)")
 
     ax.grid(False)
-    plt.show()
-    plt.close(fig)
+    ax.legend(loc="best", frameon=True)
+    ax.axis("equal")
+
+    if show:
+        plt.show()
+
+    if close:
+        plt.close()

@@ -20,6 +20,7 @@ from avdata.data_structures.batch_element import AgentBatchElement, SceneBatchEl
 class AgentBatch:
     data_idx: Tensor
     dt: Tensor
+    agent_name: List[str]
     agent_type: Tensor
     curr_agent_state: Tensor
     agent_hist: Tensor
@@ -36,7 +37,7 @@ class AgentBatch:
     maps_resolution: Optional[Tensor]
 
     def to(self, device) -> None:
-        excl_vals = {"data_idx", "agent_type", "neigh_types", "num_neigh"}
+        excl_vals = {"data_idx", "agent_name", "agent_type", "neigh_types", "num_neigh"}
         for val in vars(self).keys():
             tensor_val = getattr(self, val)
             if val not in excl_vals and tensor_val is not None:
@@ -51,6 +52,9 @@ class AgentBatch:
         return AgentBatch(
             data_idx=self.data_idx[match_type],
             dt=self.dt[match_type],
+            agent_name=[
+                name for idx, name in enumerate(self.agent_name) if match_type[idx]
+            ],
             agent_type=agent_type.value,
             curr_agent_state=self.curr_agent_state[match_type],
             agent_hist=self.agent_hist[match_type],
@@ -118,6 +122,7 @@ def agent_collate_fn(batch_elems: List[AgentBatchElement]) -> AgentBatch:
     data_index_t: Tensor = torch.zeros((batch_size,), dtype=torch.int)
     dt_t: Tensor = torch.zeros((batch_size,), dtype=torch.float)
     agent_type_t: Tensor = torch.zeros((batch_size,), dtype=torch.int)
+    agent_names: List[str] = list()
 
     curr_agent_state: List[Tensor] = list()
 
@@ -127,20 +132,28 @@ def agent_collate_fn(batch_elems: List[AgentBatchElement]) -> AgentBatch:
     agent_future: List[Tensor] = list()
     agent_future_len: Tensor = torch.zeros((batch_size,), dtype=torch.long)
 
-    num_neighbors_t: Tensor = torch.zeros((batch_size,), dtype=torch.long)
+    num_neighbors_t: Tensor = torch.as_tensor(
+        [elem.num_neighbors for elem in batch_elems], dtype=torch.long
+    )
+    max_num_neighbors: int = num_neighbors_t.max().item()
+
     neighbor_types: List[Tensor] = list()
     neighbor_histories: List[Tensor] = list()
 
     # Doing this one up here so that I can use it later in the loop.
-    neighbor_history_lens_t: Tensor = pad_sequence(
-        [
-            torch.as_tensor(elem.neighbor_history_lens_np, dtype=torch.long)
-            for elem in batch_elems
-        ],
-        batch_first=True,
-        padding_value=0,
-    )
-    max_neigh_history_len: int = neighbor_history_lens_t.max().item()
+    if max_num_neighbors > 0:
+        neighbor_history_lens_t: Tensor = pad_sequence(
+            [
+                torch.as_tensor(elem.neighbor_history_lens_np, dtype=torch.long)
+                for elem in batch_elems
+            ],
+            batch_first=True,
+            padding_value=0,
+        )
+        max_neigh_history_len: int = neighbor_history_lens_t.max().item()
+    else:
+        neighbor_history_lens_t: Tensor = torch.full((batch_size, 0), np.nan)
+        max_neigh_history_len: int = 0
 
     robot_future: List[Tensor] = list()
     robot_future_len: Tensor = torch.zeros((batch_size,), dtype=torch.long)
@@ -149,6 +162,7 @@ def agent_collate_fn(batch_elems: List[AgentBatchElement]) -> AgentBatch:
     for idx, elem in enumerate(batch_elems):
         data_index_t[idx] = elem.data_index
         dt_t[idx] = elem.dt
+        agent_names.append(elem.agent_name)
         agent_type_t[idx] = elem.agent_type.value
 
         curr_agent_state.append(
@@ -163,31 +177,37 @@ def agent_collate_fn(batch_elems: List[AgentBatchElement]) -> AgentBatch:
         agent_future.append(torch.as_tensor(elem.agent_future_np, dtype=torch.float))
         agent_future_len[idx] = elem.agent_future_len
 
-        num_neighbors_t[idx] = elem.num_neighbors
         neighbor_types.append(
             torch.as_tensor(elem.neighbor_types_np, dtype=torch.float)
         )
 
-        padded_neighbor_histories = pad_sequence(
-            [
-                torch.as_tensor(nh, dtype=torch.float).flip(-2)
-                for nh in elem.neighbor_histories
-            ],
-            batch_first=True,
-            padding_value=np.nan,
-        ).flip(-2)
-        if padded_neighbor_histories.shape[-2] < max_neigh_history_len:
-            to_add = max_neigh_history_len - padded_neighbor_histories.shape[-2]
-            padded_neighbor_histories = F.pad(
-                padded_neighbor_histories,
-                pad=(0, 0, to_add, 0),
-                mode="constant",
-                value=np.nan,
-            )
+        if elem.num_neighbors > 0:
+            padded_neighbor_histories = pad_sequence(
+                [
+                    torch.as_tensor(nh, dtype=torch.float).flip(-2)
+                    for nh in elem.neighbor_histories
+                ],
+                batch_first=True,
+                padding_value=np.nan,
+            ).flip(-2)
+            if padded_neighbor_histories.shape[-2] < max_neigh_history_len:
+                to_add = max_neigh_history_len - padded_neighbor_histories.shape[-2]
+                padded_neighbor_histories = F.pad(
+                    padded_neighbor_histories,
+                    pad=(0, 0, to_add, 0),
+                    mode="constant",
+                    value=np.nan,
+                )
 
-        neighbor_histories.append(
-            padded_neighbor_histories.reshape((-1, padded_neighbor_histories.shape[-1]))
-        )
+            neighbor_histories.append(
+                padded_neighbor_histories.reshape(
+                    (-1, padded_neighbor_histories.shape[-1])
+                )
+            )
+        else:
+            neighbor_histories.append(
+                torch.full((0, elem.curr_agent_state_np.shape[0]), np.nan)
+            )
 
         if elem.robot_future_np is not None:
             robot_future.append(
@@ -203,12 +223,18 @@ def agent_collate_fn(batch_elems: List[AgentBatchElement]) -> AgentBatch:
         agent_future, batch_first=True, padding_value=np.nan
     )
 
-    neighbor_types_t: Tensor = pad_sequence(
-        neighbor_types, batch_first=True, padding_value=-1
-    )
-    neighbor_histories_t: Tensor = pad_sequence(
-        neighbor_histories, batch_first=True, padding_value=np.nan
-    ).reshape((batch_size, num_neighbors_t.max(), max_neigh_history_len, -1))
+    if max_num_neighbors > 0:
+        neighbor_types_t: Tensor = pad_sequence(
+            neighbor_types, batch_first=True, padding_value=-1
+        )
+        neighbor_histories_t: Tensor = pad_sequence(
+            neighbor_histories, batch_first=True, padding_value=np.nan
+        ).reshape((batch_size, max_num_neighbors, max_neigh_history_len, -1))
+    else:
+        neighbor_types_t: Tensor = torch.full((batch_size, 0), np.nan)
+        neighbor_histories_t: Tensor = torch.full(
+            (batch_size, 0, max_neigh_history_len, curr_agent_state_t.shape[-1]), np.nan
+        )
 
     robot_future_t: Optional[Tensor] = (
         pad_sequence(robot_future, batch_first=True, padding_value=np.nan)
@@ -220,6 +246,7 @@ def agent_collate_fn(batch_elems: List[AgentBatchElement]) -> AgentBatch:
     return AgentBatch(
         data_idx=data_index_t,
         dt=dt_t,
+        agent_name=agent_names,
         agent_type=agent_type_t,
         curr_agent_state=curr_agent_state_t,
         agent_hist=agent_history_t,

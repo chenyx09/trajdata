@@ -60,6 +60,7 @@ class UnifiedDataset(Dataset):
         cache_type: str = "dataframe",
         cache_location: str = "~/.unified_data_cache",
         rebuild_cache: bool = False,
+        rebuild_maps: bool = False,
         num_workers: int = 0,
     ) -> None:
         self.centric = centric
@@ -73,17 +74,17 @@ class UnifiedDataset(Dataset):
             self.cache_class = DataFrameCache
 
         self.rebuild_cache: bool = rebuild_cache
-        cache_path: Path = Path(cache_location).expanduser().resolve()
-        cache_path.mkdir(parents=True, exist_ok=True)
-        self.env_cache: EnvCache = EnvCache(cache_path)
+        self.cache_path: Path = Path(cache_location).expanduser().resolve()
+        self.cache_path.mkdir(parents=True, exist_ok=True)
+        self.env_cache: EnvCache = EnvCache(self.cache_path)
 
         if incl_map:
             assert (
                 map_params is not None
-            ), r"Path size information, e.g., {'world_size_m': ..., 'img_size_px': ...}, must be provided if incl_map=True"
+            ), r"Path size information, i.e., {'px_per_m': ..., 'map_size_px': ...}, must be provided if incl_map=True"
             assert (
-                map_params["img_size_px"] % 2 == 0
-            ), "Patch parameter 'img_size_px' must be divisible by 2"
+                map_params["map_size_px"] % 2 == 0
+            ), "Patch parameter 'map_size_px' must be divisible by 2"
 
         self.history_sec = history_sec
         self.future_sec = future_sec
@@ -111,12 +112,14 @@ class UnifiedDataset(Dataset):
 
         for env in self.envs:
             if (
-                self.rebuild_cache or not self.env_cache.env_is_cached(env.name)
+                self.rebuild_cache
+                or rebuild_maps
+                or not self.env_cache.env_is_cached(env.name)
             ) and any(env.name in dataset_tuple for dataset_tuple in matching_datasets):
                 # Loading dataset objects in case we don't have
                 # their data already cached.
                 env.load_dataset_obj()
-                env.cache_maps(cache_path, self.cache_class)
+                env.cache_maps(self.cache_path, self.cache_class)
 
         self.scene_index: List[SceneMetadata] = self.preprocess_scene_metadata(
             matching_datasets, scene_description_contains, num_workers
@@ -314,7 +317,7 @@ class UnifiedDataset(Dataset):
         scene_info: SceneMetadata = self.env_cache.load_scene_metadata(
             env_name, scene_name
         )
-        scene_cache: SceneCache = self.cache_class(self.env_cache.path, scene_info, ts)
+        scene_cache: SceneCache = self.cache_class(self.cache_path, scene_info, ts)
 
         if self.centric == "scene":
             scene_time: SceneTime = SceneTime.from_cache(

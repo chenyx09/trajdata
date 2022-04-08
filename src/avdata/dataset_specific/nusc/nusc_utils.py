@@ -15,13 +15,6 @@ from avdata.data_structures import (
 
 NUSC_DT: Final[float] = 0.5
 
-MAP_PX_SIZE: Final[Dict[str, Tuple[int, int]]] = {
-    "singapore-onenorth": (20250, 15856),
-    "singapore-hollandvillage": (29229, 28083),
-    "singapore-queenstown": (36871, 32286),
-    "boston-seaport": (21181, 29795),
-}
-
 
 def frame_iterator(
     nusc_obj: NuScenes, scene_metadata: SceneMetadata

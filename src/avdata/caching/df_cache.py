@@ -229,12 +229,38 @@ class DataFrameCache(SceneCache):
         with open(metadata_file, "wb") as f:
             dill.dump(map_info, f)
 
+    def pad_map_patch(
+        self,
+        patch: np.ndarray,
+        # top, bot, left, right
+        patch_sides: Tuple[int, int, int, int],
+        patch_size: int,
+        map_dims: Tuple[int, int],
+    ) -> np.ndarray:
+        if patch.shape[-2:] == (patch_size, patch_size):
+            return patch
+
+        top, bot, left, right = patch_sides
+        height, width = map_dims
+
+        pad_top, pad_bot, pad_left, pad_right = 0, 0, 0, 0
+        if top < 0:
+            pad_top = 0 - top
+        if bot >= height:
+            pad_bot = bot - height
+        if left < 0:
+            pad_left = 0 - left
+        if right >= width:
+            pad_right = right - width
+
+        return np.pad(patch, [(0, 0), (pad_top, pad_bot), (pad_left, pad_right)])
+
     def load_map_patch(
         self,
         world_x: float,
         world_y: float,
         desired_patch_size: int,
-        world_size: int,
+        resolution: int,
         rot_pad_factor: float = 1.0,
     ) -> Tuple[np.ndarray, MapMetadata]:
         maps_path: Path = self.path / self.scene_info.env_name / "maps"
@@ -244,18 +270,31 @@ class DataFrameCache(SceneCache):
             map_info: MapMetadata = dill.load(f)
 
         map_coords: np.ndarray = map_info.resolution * np.array([world_x, world_y])
-        map_x, map_y = map_coords[:2].round().astype(np.int)
+        map_x, map_y = round(map_coords[0].item()), round(map_coords[1].item())
 
-        data_patch_size: int = ceil(world_size * map_info.resolution)
+        data_patch_size: int = ceil(
+            desired_patch_size * map_info.resolution / resolution
+        )
         data_with_rot_pad_size: int = ceil(rot_pad_factor * data_patch_size)
 
         map_file: Path = maps_path / f"{map_info.name}.zarr"
         disk_data = zarr.open_array(map_file, mode="r")
-        data_patch: np.ndarray = disk_data[
-            ...,
-            map_y - data_with_rot_pad_size // 2 : map_y + data_with_rot_pad_size // 2,
-            map_x - data_with_rot_pad_size // 2 : map_x + data_with_rot_pad_size // 2,
-        ]
+
+        top: int = map_y - data_with_rot_pad_size // 2
+        bot: int = map_y + data_with_rot_pad_size // 2
+        left: int = map_x - data_with_rot_pad_size // 2
+        right: int = map_x + data_with_rot_pad_size // 2
+
+        data_patch: np.ndarray = self.pad_map_patch(
+            disk_data[
+                ...,
+                max(top, 0) : min(bot, disk_data.shape[1]),
+                max(left, 0) : min(right, disk_data.shape[2]),
+            ],
+            (top, bot, left, right),
+            data_with_rot_pad_size,
+            disk_data.shape[-2:],
+        )
 
         if desired_patch_size == data_patch_size:
             return data_patch
