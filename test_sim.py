@@ -1,5 +1,5 @@
 from collections import defaultdict
-from typing import Dict
+from typing import Dict, List
 
 import numpy as np
 from tqdm import trange
@@ -21,36 +21,39 @@ def main():
         map_params={"px_per_m": 2, "map_size_px": 224},
     )
 
-    desired_scene: SceneMetadata = dataset.scene_index[0]
-    sim_scene: SimulationScene = SimulationScene(
-        desired_scene,
-        dataset,
-        init_timestep=0,
-        freeze_agents=True,
-    )
+    sim_env_name = "nusc_mini_sim"
+    all_sim_scenes: List[SceneMetadata] = list()
+    desired_scene: SceneMetadata
+    for idx, desired_scene in enumerate(dataset.scene_index):
+        sim_scene: SimulationScene = SimulationScene(
+            env_name=sim_env_name,
+            scene_name=f"sim_scene-{idx:04d}",
+            scene_info=desired_scene,
+            dataset=dataset,
+            init_timestep=10,
+            freeze_agents=True,
+        )
 
-    obs: AgentBatch = sim_scene.reset()
-    # plot_agent_batch(obs, 0, show=False, close=False)
-    # plot_agent_batch(obs, 1, show=False, close=False)
-    # plot_agent_batch(obs, 2, show=False, close=False)
-    # plot_agent_batch(obs, 3, show=True, close=True)
+        obs: AgentBatch = sim_scene.reset()
+        for t in trange(1, 11):
+            new_xyh_dict: Dict[str, np.ndarray] = {
+                agent.name: obs.curr_agent_state[idx, [0, 1, -1]].numpy()
+                + np.array([t, t, t / 10])
+                for idx, agent in enumerate(sim_scene.agents)
+            }
+            obs = sim_scene.step(new_xyh_dict)
 
-    test_cache = DataFrameCache(
-        cache_path=dataset.cache_path, scene_info=desired_scene, scene_ts=0
-    )
-    for t in trange(1, 11):
-        new_state_dict: Dict[str, np.ndarray] = {
-            agent.name: test_cache.get_state(agent.name, 0)[np.array([0, 1, -1])]
-            + np.array([t, t, 0])
-            for agent in sim_scene.agents
-        }
-        obs = sim_scene.step(new_state_dict)
         # plot_agent_batch(obs, 0, show=False, close=False)
         # plot_agent_batch(obs, 1, show=False, close=False)
         # plot_agent_batch(obs, 2, show=False, close=False)
         # plot_agent_batch(obs, 3, show=True, close=True)
 
-    sim_scene.save("sim_scene-0001")
+        sim_scene.finalize()
+        sim_scene.save()
+
+        all_sim_scenes.append(sim_scene.scene_info)
+
+    dataset.env_cache.save_env_scenes_list(sim_env_name, all_sim_scenes)
 
 
 if __name__ == "__main__":

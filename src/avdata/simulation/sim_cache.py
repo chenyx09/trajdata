@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Dict
 
 import numpy as np
@@ -12,5 +13,8 @@ class SimulationCache(SceneCache):
     def transform_data(self, **kwargs) -> None:
         raise NotImplementedError()
 
-    def append_state(pos_dict: Dict[str, np.ndarray]) -> None:
+    def append_state(self, xyh_dict: Dict[str, np.ndarray]) -> None:
+        raise NotImplementedError()
+
+    def save_sim_scene(self) -> None:
         raise NotImplementedError()

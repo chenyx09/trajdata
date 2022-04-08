@@ -93,8 +93,6 @@ class AgentBatchElement:
         if incl_map:
             self.map_patch = self.get_agent_map_patch(map_params)
 
-        # self.plot()
-
     def get_agent_history(
         self,
         agent_info: AgentMetadata,
