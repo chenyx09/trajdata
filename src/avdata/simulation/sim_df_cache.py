@@ -7,9 +7,10 @@ import pandas as pd
 
 from avdata.caching.df_cache import DataFrameCache
 from avdata.data_structures.scene_metadata import SceneMetadata
+from avdata.simulation.sim_cache import SimulationCache
 
 
-class SimulationDataFrameCache(DataFrameCache):
+class SimulationDataFrameCache(DataFrameCache, SimulationCache):
     def __init__(
         self, cache_path: Path, scene_info: SceneMetadata, scene_ts: int
     ) -> None:
@@ -53,3 +54,6 @@ class SimulationDataFrameCache(DataFrameCache):
             self.scene_data_df.iloc[:, self.acc_cols] = (
                 self.scene_data_df.iloc[:, self.acc_cols].to_numpy() @ self.rot_matrix
             )
+
+    def append_state(pos_dict: Dict[str, np.ndarray]) -> None:
+        pass

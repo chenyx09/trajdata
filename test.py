@@ -17,8 +17,9 @@ def main():
         # only_types=[AgentType.VEHICLE],
         incl_robot_future=True,
         incl_map=True,
-        map_params={"px_per_m": 2, "map_size_px": 224},
+        map_params={"px_per_m": 2, "map_size_px": 50},
         num_workers=os.cpu_count(),
+        verbose=True,
     )
 
     print(f"# Data Samples: {len(dataset):,}")
@@ -27,7 +28,7 @@ def main():
 
     dataloader = DataLoader(
         dataset,
-        batch_size=64,
+        batch_size=4,
         shuffle=True,
         collate_fn=dataset.collate_fn,
         num_workers=os.cpu_count(),

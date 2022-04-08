@@ -75,7 +75,7 @@ class DataFrameCache(SceneCache):
         ]
 
     def get_state(self, agent_id: str, scene_ts: int) -> np.ndarray:
-        return self.scene_data_df.iloc[self.index_dict[(agent_id, scene_ts)]]
+        return self.scene_data_df.iloc[self.index_dict[(agent_id, scene_ts)]].to_numpy()
 
     def transform_data(self, **kwargs) -> None:
         if "shift_mean_to" in kwargs:

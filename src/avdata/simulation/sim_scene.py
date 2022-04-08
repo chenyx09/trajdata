@@ -1,4 +1,6 @@
-from typing import List
+from typing import Dict, List
+
+import numpy as np
 
 from avdata import filtering
 from avdata.caching.df_cache import DataFrameCache
@@ -14,11 +16,16 @@ from avdata.simulation.sim_df_cache import SimulationDataFrameCache
 
 class SimulationScene:
     def __init__(
-        self, scene_info: SceneMetadata, dataset: UnifiedDataset, init_timestep: int = 0
+        self,
+        scene_info: SceneMetadata,
+        dataset: UnifiedDataset,
+        init_timestep: int = 0,
+        freeze_agents: bool = True,
     ) -> None:
         self.scene_info: SceneMetadata = scene_info
         self.dataset: UnifiedDataset = dataset
         self.init_scene_ts: int = init_timestep
+        self.freeze_agents: bool = freeze_agents
 
         if self.dataset.cache_class == DataFrameCache:
             self.cache: SimulationCache = SimulationDataFrameCache(
@@ -26,19 +33,34 @@ class SimulationScene:
             )
 
         self.scene_ts: int = self.init_scene_ts
-
-    def reset(self) -> AgentBatch:
-        self.scene_ts: int = self.init_scene_ts
-
-        agent_data_list: List[AgentBatchElement] = list()
-
         agents_present: List[AgentMetadata] = self.scene_info.agent_presence[
             self.scene_ts
         ]
-        filtered_agents: List[AgentMetadata] = filtering.agent_types(
+        self.agents: List[AgentMetadata] = filtering.agent_types(
             agents_present, self.dataset.no_types, self.dataset.only_types
         )
-        for agent in filtered_agents:
+
+    def reset(self) -> AgentBatch:
+        self.scene_ts: int = self.init_scene_ts
+        return self.get_obs()
+
+    def step(self, new_state_dict: Dict[str, np.ndarray]) -> AgentBatch:
+        self.scene_ts += 1
+        self.cache.append_state(new_state_dict)
+
+        return self.get_obs()
+
+    def get_obs(self) -> AgentBatch:
+        if not self.freeze_agents:
+            agents_present: List[AgentMetadata] = self.scene_info.agent_presence[
+                self.scene_ts
+            ]
+            self.agents: List[AgentMetadata] = filtering.agent_types(
+                agents_present, self.dataset.no_types, self.dataset.only_types
+            )
+
+        agent_data_list: List[AgentBatchElement] = list()
+        for agent in self.agents:
             scene_time_agent = SceneTimeAgent.from_cache(
                 self.scene_info,
                 self.scene_ts,

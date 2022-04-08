@@ -1,10 +1,8 @@
-from pathlib import Path
 from typing import Dict
 
 import numpy as np
 
-from avdata.caching import SceneCache
-from avdata.data_structures import SceneMetadata
+from avdata.caching.scene_cache import SceneCache
 
 
 class SimulationCache(SceneCache):
@@ -14,5 +12,5 @@ class SimulationCache(SceneCache):
     def transform_data(self, **kwargs) -> None:
         raise NotImplementedError()
 
-    def new_pos(pos_dict: Dict[str, np.ndarray]) -> None:
+    def append_state(pos_dict: Dict[str, np.ndarray]) -> None:
         raise NotImplementedError()
