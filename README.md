@@ -3,13 +3,6 @@
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![Imports: isort](https://img.shields.io/badge/%20imports-isort-%231674b1?style=flat&labelColor=ef8336)](https://pycqa.github.io/isort/)
 
-The dream:
-```
-dataset = UnifiedDataset(data=['nuScenes', 'lyft', 'eth_univ', 'ucy_univ'], ...)
-
-data_loader = torch.utils.data.DataLoader(dataset, ...)
-```
-
 ### Installation
 
 First, in whichever environment you would like to use (conda, venv, ...), please install the required dependencies with
