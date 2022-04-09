@@ -64,6 +64,28 @@ class UnifiedDataset(Dataset):
         num_workers: int = 0,
         verbose: bool = False,
     ) -> None:
+        """Instantiates a PyTorch Dataset object which aggregates data
+        from multiple autonomous vehicle (AV) datasets.
+
+        Args:
+            desired_data (List[str]): Names of AV datasets, training splits, or locations from which to load data.
+            scene_description_contains (Optional[List[str]], optional): Strings to search for within scene descriptions (for datasets which provide scene descriptions). Defaults to None.
+            centric (str, optional): Batch data format, one of {"agent", "scene"}, matching the type of model you want to train. Defaults to "agent".
+            history_sec (Tuple[Optional[float], Optional[float]], optional): _description_. Defaults to ( None, None, ).
+            incl_robot_future (bool, optional): _description_. Defaults to False.
+            incl_map (bool, optional): _description_. Defaults to False.
+            map_params (Optional[Dict[str, int]], optional): _description_. Defaults to None.
+            only_types (Optional[List[AgentType]], optional): _description_. Defaults to None.
+            no_types (Optional[List[AgentType]], optional): _description_. Defaults to None.
+            standardize_data (bool, optional): _description_. Defaults to True.
+            data_dirs (_type_, optional): _description_. Defaults to { "nusc_mini": "~/datasets/nuScenes", "lyft_sample": "~/datasets/lyft/scenes/sample.zarr", }.
+            cache_type (str, optional): _description_. Defaults to "dataframe".
+            cache_location (str, optional): _description_. Defaults to "~/.unified_data_cache".
+            rebuild_cache (bool, optional): _description_. Defaults to False.
+            rebuild_maps (bool, optional): _description_. Defaults to False.
+            num_workers (int, optional): _description_. Defaults to 0.
+            verbose (bool, optional): _description_. Defaults to False.
+        """
         self.centric = centric
 
         if self.centric == "agent":
