@@ -1,5 +1,5 @@
-from collections import defaultdict
 import os
+from collections import defaultdict
 
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -32,11 +32,10 @@ def main():
         dataset,
         batch_size=4,
         shuffle=True,
-        collate_fn=dataset.collate_fn,
+        collate_fn=dataset.get_collate_fn(return_dict=True),
         # num_workers=os.cpu_count(),
     )
 
-    batch: AgentBatch
     for batch in tqdm(dataloader):
         pass
         # plot_agent_batch(batch, batch_idx=0)

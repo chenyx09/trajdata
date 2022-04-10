@@ -1,9 +1,10 @@
 from collections import defaultdict
+from functools import partial
 
 # from itertools import chain
 from multiprocessing import Manager
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 from pathos.pools import ProcessPool
@@ -87,11 +88,6 @@ class UnifiedDataset(Dataset):
             verbose (bool, optional): _description_. Defaults to False.
         """
         self.centric = centric
-
-        if self.centric == "agent":
-            self.collate_fn = agent_collate_fn
-        elif self.centric == "scene":
-            self.collate_fn = scene_collate_fn
 
         if cache_type == "dataframe":
             self.cache_class = DataFrameCache
@@ -200,6 +196,16 @@ class UnifiedDataset(Dataset):
         manager = Manager()
         self.data_index = manager.list(self.data_index)
         self.data_len: int = len(self.data_index)
+
+    def get_collate_fn(
+        self, centric: str = "agent", return_dict: bool = False
+    ) -> Callable:
+        if centric == "agent":
+            collate_fn = partial(agent_collate_fn, return_dict=return_dict)
+        elif centric == "scene":
+            collate_fn = partial(scene_collate_fn, return_dict=return_dict)
+
+        return collate_fn
 
     def get_matching_scene_tags(self, queries: List[str]) -> List[SceneTag]:
         # if queries is None:

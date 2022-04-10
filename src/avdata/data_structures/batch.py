@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from collections import namedtuple
-from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from dataclasses import asdict, dataclass
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -116,7 +116,9 @@ def map_collate_fn(
     return rot_crop_patches, resolution
 
 
-def agent_collate_fn(batch_elems: List[AgentBatchElement]) -> AgentBatch:
+def agent_collate_fn(
+    batch_elems: List[AgentBatchElement], return_dict: bool
+) -> Union[AgentBatch, Dict[str, Any]]:
     batch_size: int = len(batch_elems)
 
     data_index_t: Tensor = torch.zeros((batch_size,), dtype=torch.int)
@@ -246,7 +248,7 @@ def agent_collate_fn(batch_elems: List[AgentBatchElement]) -> AgentBatch:
     )
     map_patches, maps_resolution = map_collate_fn(batch_elems)
 
-    return AgentBatch(
+    batch = AgentBatch(
         data_idx=data_index_t,
         dt=dt_t,
         agent_name=agent_names,
@@ -265,6 +267,11 @@ def agent_collate_fn(batch_elems: List[AgentBatchElement]) -> AgentBatch:
         maps=map_patches,
         maps_resolution=maps_resolution,
     )
+
+    if return_dict:
+        return asdict(batch)
+
+    return batch
 
 
 def scene_collate_fn(batch_elems: List[SceneBatchElement]) -> SceneBatch:
