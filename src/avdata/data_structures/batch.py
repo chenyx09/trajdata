@@ -205,8 +205,11 @@ def agent_collate_fn(batch_elems: List[AgentBatchElement]) -> AgentBatch:
                 )
             )
         else:
+            # If there's no neighbors, make the state dimension match the
+            # agent history state dimension (presumably they'll be the same
+            # since they're obtained from the same cached data source).
             neighbor_histories.append(
-                torch.full((0, elem.curr_agent_state_np.shape[0]), np.nan)
+                torch.full((0, elem.agent_history_np.shape[-1]), np.nan)
             )
 
         if elem.robot_future_np is not None:

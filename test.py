@@ -1,3 +1,4 @@
+from collections import defaultdict
 import os
 
 from torch.utils.data import DataLoader
@@ -12,13 +13,14 @@ def main():
     dataset = UnifiedDataset(
         desired_data=["nusc_mini"],
         centric="agent",
-        history_sec=(0.1, 1.0),
-        future_sec=(0.1, 2.0),
-        # only_types=[AgentType.VEHICLE],
-        incl_robot_future=True,
+        history_sec=(1.5, 1.5),
+        future_sec=(5.0, 5.0),
+        only_types=[AgentType.VEHICLE],
+        agent_interaction_distances=defaultdict(lambda: 30.0),
+        # incl_robot_future=True,
         incl_map=True,
         map_params={"px_per_m": 2, "map_size_px": 50},
-        num_workers=os.cpu_count(),
+        num_workers=4,
         verbose=True,
     )
 
@@ -31,7 +33,7 @@ def main():
         batch_size=4,
         shuffle=True,
         collate_fn=dataset.collate_fn,
-        num_workers=os.cpu_count(),
+        # num_workers=os.cpu_count(),
     )
 
     batch: AgentBatch
