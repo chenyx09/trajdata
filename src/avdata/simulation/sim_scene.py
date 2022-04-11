@@ -57,9 +57,6 @@ class SimulationScene:
                 : self.init_scene_ts + 1
             ]
 
-            for agent in self.agents:
-                agent.last_timestep = self.init_scene_ts
-
     def reset(self) -> Union[AgentBatch, Dict[str, Any]]:
         self.scene_ts: int = self.init_scene_ts
         return self.get_obs()
@@ -80,9 +77,6 @@ class SimulationScene:
 
             self.scene_info.agent_presence[self.scene_ts] = self.agents
         else:
-            for agent in self.agents:
-                agent.last_timestep = self.scene_ts
-
             self.scene_info.agent_presence.append(self.agents)
 
         return self.get_obs()
@@ -116,6 +110,9 @@ class SimulationScene:
         return agent_collate_fn(agent_data_list, return_dict=self.return_dict)
 
     def finalize(self) -> None:
+        for agent in self.agents:
+            agent.last_timestep = self.scene_ts
+            
         self.scene_info.agent_presence = self.scene_info.agent_presence[
             : self.scene_ts + 1
         ]
