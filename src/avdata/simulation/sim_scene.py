@@ -1,5 +1,5 @@
 from copy import deepcopy
-from typing import Dict, List
+from typing import Any, Dict, List, Union
 
 import numpy as np
 
@@ -24,6 +24,7 @@ class SimulationScene:
         dataset: UnifiedDataset,
         init_timestep: int = 0,
         freeze_agents: bool = True,
+        return_dict: bool = False,
     ) -> None:
         self.scene_info: SceneMetadata = deepcopy(scene_info)
 
@@ -34,6 +35,7 @@ class SimulationScene:
         self.dataset: UnifiedDataset = dataset
         self.init_scene_ts: int = init_timestep
         self.freeze_agents: bool = freeze_agents
+        self.return_dict: bool = return_dict
 
         if self.dataset.cache_class == DataFrameCache:
             self.cache: SimulationCache = SimulationDataFrameCache(
@@ -58,11 +60,11 @@ class SimulationScene:
             for agent in self.agents:
                 agent.last_timestep = self.init_scene_ts
 
-    def reset(self) -> AgentBatch:
+    def reset(self) -> Union[AgentBatch, Dict[str, Any]]:
         self.scene_ts: int = self.init_scene_ts
         return self.get_obs()
 
-    def step(self, new_xyh_dict: Dict[str, np.ndarray]) -> AgentBatch:
+    def step(self, new_xyh_dict: Dict[str, np.ndarray]) -> Union[AgentBatch, Dict[str, Any]]:
         self.scene_ts += 1
         self.scene_info.length_timesteps += 1
 
@@ -85,7 +87,7 @@ class SimulationScene:
 
         return self.get_obs()
 
-    def get_obs(self) -> AgentBatch:
+    def get_obs(self) -> Union[AgentBatch, Dict[str, Any]]:
         agent_data_list: List[AgentBatchElement] = list()
         for agent in self.agents:
             scene_time_agent = SceneTimeAgent(
@@ -111,7 +113,7 @@ class SimulationScene:
             # AgentBatchElement transforms (standardizes) the cache.
             self.cache.reset()
 
-        return agent_collate_fn(agent_data_list)
+        return agent_collate_fn(agent_data_list, return_dict=self.return_dict)
 
     def finalize(self) -> None:
         self.scene_info.agent_presence = self.scene_info.agent_presence[
