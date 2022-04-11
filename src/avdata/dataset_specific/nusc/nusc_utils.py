@@ -47,27 +47,48 @@ def get_ego_pose(nusc_obj: NuScenes, frame_info: Dict[str, Any]) -> Dict[str, An
 
 
 def agg_agent_data(
-    nusc_obj: NuScenes, agent_data: Dict[str, Any], curr_scene_index: int
+    nusc_obj: NuScenes,
+    agent_data: Dict[str, Any],
+    curr_scene_index: int,
+    frame_idx_dict: Dict[str, int],
 ) -> Agent:
     """Loops through all annotations of a specific agent in a scene and aggregates their data into an Agent object."""
     if agent_data["prev"]:
         print("WARN: This is not the first frame of this agent!")
 
-    translation_list = [agent_data["translation"]]
+    translation_list = [np.array(agent_data["translation"][:2])[np.newaxis]]
     agent_size = agent_data["size"]
     # yaw_list = [Quaternion(agent_data["rotation"]).yaw_pitch_roll[0]]
 
+    prev_idx: int = curr_scene_index
     curr_sample_ann_token: str = agent_data["next"]
     while curr_sample_ann_token:
         agent_data = nusc_obj.get("sample_annotation", curr_sample_ann_token)
+        
+        translation = np.array(agent_data["translation"][:2])
+        curr_idx: int = frame_idx_dict[agent_data["sample_token"]]
+        if curr_idx > prev_idx + 1:
+            fill_time = np.arange(prev_idx + 1, curr_idx)
+            xs = np.interp(
+                x=fill_time,
+                xp=[prev_idx, curr_idx],
+                fp=[translation_list[-1][0, 0], translation[0]]
+            )
+            ys = np.interp(
+                x=fill_time,
+                xp=[prev_idx, curr_idx],
+                fp=[translation_list[-1][0, 1], translation[1]]
+            )
+            translation_list.append(np.stack([xs, ys], axis=1))
 
-        translation_list.append(agent_data["translation"])
+        translation_list.append(translation[np.newaxis])
         # size_list.append(agent_data['size'])
         # yaw_list.append(Quaternion(agent_data["rotation"]).yaw_pitch_roll[0])
-
+        
+        prev_idx = curr_idx
         curr_sample_ann_token = agent_data["next"]
 
-    translations_np = np.stack(translation_list, axis=0)[:, :2]
+    translations_np = np.concatenate(translation_list, axis=0)
 
     # Doing this prepending so that the first velocity isn't zero (rather it's just the first actual velocity duplicated)
     prepend_pos = translations_np[0] - (translations_np[1] - translations_np[0])

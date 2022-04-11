@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Type
+from typing import Dict, List, Optional, Tuple, Type, Union
 
 import numpy as np
 import pandas as pd
@@ -162,9 +162,14 @@ class NuscDataset(RawDataset):
 
         agent_data_list: List[pd.DataFrame] = list()
         existing_agents: Dict[str, AgentMetadata] = dict()
-        for frame_idx, frame_info in enumerate(
+
+        all_frames: List[Dict[str, Union[str, int]]] = list(
             nusc_utils.frame_iterator(self.dataset_obj, scene_info)
-        ):
+        )
+        frame_idx_dict: Dict[str, int] = {
+            frame_dict["token"]: idx for idx, frame_dict in enumerate(all_frames)
+        }
+        for frame_idx, frame_info in enumerate(all_frames):
             for agent_info in nusc_utils.agent_iterator(self.dataset_obj, frame_info):
                 if agent_info["instance_token"] in existing_agents:
                     agent_presence[frame_idx].append(
@@ -177,7 +182,7 @@ class NuscDataset(RawDataset):
                     continue
 
                 agent: Agent = nusc_utils.agg_agent_data(
-                    self.dataset_obj, agent_info, frame_idx
+                    self.dataset_obj, agent_info, frame_idx, frame_idx_dict
                 )
 
                 agent_presence[frame_idx].append(agent.metadata)
