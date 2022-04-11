@@ -172,9 +172,6 @@ class NuscDataset(RawDataset):
         for frame_idx, frame_info in enumerate(all_frames):
             for agent_info in nusc_utils.agent_iterator(self.dataset_obj, frame_info):
                 if agent_info["instance_token"] in existing_agents:
-                    agent_presence[frame_idx].append(
-                        existing_agents[agent_info["instance_token"]]
-                    )
                     continue
 
                 if not agent_info["next"]:
@@ -185,7 +182,11 @@ class NuscDataset(RawDataset):
                     self.dataset_obj, agent_info, frame_idx, frame_idx_dict
                 )
 
-                agent_presence[frame_idx].append(agent.metadata)
+                for scene_ts in range(
+                    agent.metadata.first_timestep, agent.metadata.last_timestep + 1
+                ):
+                    agent_presence[scene_ts].append(agent.metadata)
+
                 existing_agents[agent.name] = agent.metadata
 
                 agent_data_list.append(agent.data)

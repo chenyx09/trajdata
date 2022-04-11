@@ -64,7 +64,7 @@ def agg_agent_data(
     curr_sample_ann_token: str = agent_data["next"]
     while curr_sample_ann_token:
         agent_data = nusc_obj.get("sample_annotation", curr_sample_ann_token)
-        
+
         translation = np.array(agent_data["translation"][:2])
         curr_idx: int = frame_idx_dict[agent_data["sample_token"]]
         if curr_idx > prev_idx + 1:
@@ -72,19 +72,19 @@ def agg_agent_data(
             xs = np.interp(
                 x=fill_time,
                 xp=[prev_idx, curr_idx],
-                fp=[translation_list[-1][0, 0], translation[0]]
+                fp=[translation_list[-1][0, 0], translation[0]],
             )
             ys = np.interp(
                 x=fill_time,
                 xp=[prev_idx, curr_idx],
-                fp=[translation_list[-1][0, 1], translation[1]]
+                fp=[translation_list[-1][0, 1], translation[1]],
             )
             translation_list.append(np.stack([xs, ys], axis=1))
 
         translation_list.append(translation[np.newaxis])
         # size_list.append(agent_data['size'])
         # yaw_list.append(Quaternion(agent_data["rotation"]).yaw_pitch_roll[0])
-        
+
         prev_idx = curr_idx
         curr_sample_ann_token = agent_data["next"]
 
