@@ -134,7 +134,7 @@ def agg_agent_data(
         first_timestep=curr_scene_index,
         last_timestep=last_timestep,
         extent=FixedExtent(
-            length=agent_size[0], width=agent_size[1], height=agent_size[2]
+            length=agent_size[1], width=agent_size[0], height=agent_size[2]
         ),
     )
     return Agent(
