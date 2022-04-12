@@ -42,9 +42,6 @@ class SimulationDataFrameCache(DataFrameCache, SimulationCache):
         """
         Only difference to the original df_cache is that we don't touch the heading column.
         """
-        if "sincos_heading" in kwargs:
-            kwargs.pop("sincos_heading")
-            
         if "shift_mean_to" in kwargs:
             # This standardizes the scene to be relative to the state passed in
             self._data_transf_mean = kwargs["shift_mean_to"]
@@ -58,6 +55,9 @@ class SimulationDataFrameCache(DataFrameCache, SimulationCache):
                     [np.sin(agent_heading), np.cos(agent_heading)],
                 ]
             )
+            
+        if "sincos_heading" in kwargs:
+            self._data_transf_sincos = True
         
         super().transform_data(**kwargs)
 
@@ -70,7 +70,7 @@ class SimulationDataFrameCache(DataFrameCache, SimulationCache):
         if scene_ts >= agent_info.last_timestep:
             # Returning an empty DataFrame with the correct
             # number of columns.
-            return self.og_data_df.iloc[0 : 0]
+            return self.scene_data_df.iloc[0 : 0]
         
         first_index_incl: int = self.og_index_dict[(agent_info.name, scene_ts + 1)]
         last_index_incl: int
@@ -97,6 +97,11 @@ class SimulationDataFrameCache(DataFrameCache, SimulationCache):
         future_df.iloc[:, self.acc_cols] = (
             future_df.iloc[:, self.acc_cols].to_numpy() @ self._data_transf_rot
         )
+        
+        if self._data_transf_sincos:
+            future_df["sin_heading"] = np.sin(future_df["heading"])
+            future_df["cos_heading"] = np.cos(future_df["heading"])
+            future_df.drop(columns=["heading"], inplace=True)
         
         return future_df
 
