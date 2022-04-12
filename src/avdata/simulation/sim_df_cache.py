@@ -33,12 +33,17 @@ class SimulationDataFrameCache(DataFrameCache, SimulationCache):
             val: idx for idx, val in enumerate(self.scene_data_df.index)
         }
 
-    def get_agent_future(self, agent_info: AgentMetadata, scene_ts: int, future_sec: Tuple[Optional[float], Optional[float]]) -> pd.DataFrame:
+    def get_agent_future(
+        self,
+        agent_info: AgentMetadata,
+        scene_ts: int,
+        future_sec: Tuple[Optional[float], Optional[float]],
+    ) -> pd.DataFrame:
         if scene_ts >= agent_info.last_timestep:
             # Returning an empty DataFrame with the correct
             # columns.
-            return self.scene_data_df.iloc[0 : 0]
-        
+            return self.scene_data_df.iloc[0:0]
+
         return super().get_agent_future(agent_info, scene_ts, future_sec)
 
     def append_state(self, xyh_dict: Dict[str, np.ndarray]) -> None:
@@ -74,7 +79,9 @@ class SimulationDataFrameCache(DataFrameCache, SimulationCache):
         self.reset()
 
     def save_sim_scene(self, sim_scene_info: SceneMetadata) -> None:
-        history_idxs = self.persistent_data_df.index.get_level_values("scene_ts") <= self.scene_ts
+        history_idxs = (
+            self.persistent_data_df.index.get_level_values("scene_ts") <= self.scene_ts
+        )
         DataFrameCache.save_agent_data(
             self.persistent_data_df[history_idxs], self.path, sim_scene_info
         )

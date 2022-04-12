@@ -43,12 +43,12 @@ class SimulationScene:
             agents_present, self.dataset.no_types, self.dataset.only_types
         )
         self.scene_info.agents = self.agents
-        
+
         # Note this order of operations is important, we first instantiate
         # the cache with the copied scene_info + modified agents list.
         # Then, we change the env_name and etc later during finalization
-        # (if we did it earlier then the cache would go looking inside 
-        # the sim folder for scene data rather than the original scene 
+        # (if we did it earlier then the cache would go looking inside
+        # the sim folder for scene data rather than the original scene
         # data location).
         if self.dataset.cache_class == DataFrameCache:
             self.cache: SimulationCache = SimulationDataFrameCache(
@@ -116,13 +116,13 @@ class SimulationScene:
     def finalize(self) -> None:
         for agent in self.agents:
             agent.last_timestep = self.scene_ts
-        
+
         self.scene_info.length_timesteps = self.scene_ts + 1
 
         self.scene_info.agent_presence = self.scene_info.agent_presence[
             : self.scene_ts + 1
         ]
-        
+
         self.scene_info.env_metadata.name = self.env_name
         self.scene_info.env_name = self.env_name
         self.scene_info.name = self.scene_name

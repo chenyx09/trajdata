@@ -76,7 +76,7 @@ def plot_agent_batch(
         ax.plot([], [], c="olive", ls="--", label="Neighbor History")
         for n in range(num_neigh):
             ax.plot(neighbor_hist[n, :, 0], neighbor_hist[n, :, 1], c="olive", ls="--")
-            
+
         ax.plot([], [], c="darkgreen", label="Neighbor Future")
         for n in range(num_neigh):
             ax.plot(neighbor_fut[n, :, 0], neighbor_fut[n, :, 1], c="darkgreen")

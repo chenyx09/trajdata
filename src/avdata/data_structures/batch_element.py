@@ -54,12 +54,14 @@ class AgentBatchElement:
             )
 
         ### AGENT-SPECIFIC DATA ###
-        self.agent_history_np: np.ndarray = self.get_agent_history(
+        self.agent_history_np, self.agent_history_extent_np = self.get_agent_history(
             agent_info, history_sec
         )
         self.agent_history_len: int = self.agent_history_np.shape[0]
 
-        self.agent_future_np: np.ndarray = self.get_agent_future(agent_info, future_sec)
+        self.agent_future_np, self.agent_future_extent_np = self.get_agent_future(
+            agent_info, future_sec
+        )
         self.agent_future_len: int = self.agent_future_np.shape[0]
 
         ### NEIGHBOR-SPECIFIC DATA ###
@@ -110,7 +112,14 @@ class AgentBatchElement:
         agent_history_df: pd.DataFrame = self.cache.get_agent_history(
             agent_info, self.scene_ts, history_sec
         )
-        return agent_history_df.to_numpy()
+        agent_extent: np.ndarray
+        if agent_info.fixed_size is not None:
+            agent_extent = np.repeat(
+                np.array(agent_info.fixed_size)[np.newaxis],
+                agent_history_df.shape[0],
+                axis=0,
+            )
+        return agent_history_df.to_numpy(), agent_extent
 
     def get_agent_future(
         self,
@@ -120,7 +129,14 @@ class AgentBatchElement:
         agent_future_df: pd.DataFrame = self.cache.get_agent_future(
             agent_info, self.scene_ts, future_sec
         )
-        return agent_future_df.to_numpy()
+        agent_extent: np.ndarray
+        if agent_info.fixed_size is not None:
+            agent_extent = np.repeat(
+                np.array(agent_info.fixed_size)[np.newaxis],
+                agent_future_df.shape[0],
+                axis=0,
+            )
+        return agent_future_df.to_numpy(), agent_extent
 
     # @profile
     def get_neighbor_history(
