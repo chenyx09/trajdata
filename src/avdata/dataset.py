@@ -36,6 +36,7 @@ class UnifiedDataset(Dataset):
         desired_data: List[str],
         scene_description_contains: Optional[List[str]] = None,
         centric: str = "agent",
+        desired_dt: Optional[float] = None,
         history_sec: Tuple[Optional[float], Optional[float]] = (
             None,
             None,
@@ -140,7 +141,11 @@ class UnifiedDataset(Dataset):
                 # Loading dataset objects in case we don't have
                 # their data already cached.
                 env.load_dataset_obj()
-                env.cache_maps(self.cache_path, self.cache_class)
+
+                if rebuild_maps or not self.cache_class.are_maps_cached(
+                    self.cache_path, env.name
+                ):
+                    env.cache_maps(self.cache_path, self.cache_class)
 
         self.scene_index: List[SceneMetadata] = self.preprocess_scene_metadata(
             matching_datasets, scene_description_contains, num_workers

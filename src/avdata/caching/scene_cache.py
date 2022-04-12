@@ -95,6 +95,10 @@ class SceneCache:
 
     # MAPS
     @staticmethod
+    def are_maps_cached(cache_path: Path, env_name: str) -> bool:
+        raise NotImplementedError()
+
+    @staticmethod
     def is_map_cached(cache_path: Path, env_name: str, map_name: str) -> bool:
         raise NotImplementedError()
 

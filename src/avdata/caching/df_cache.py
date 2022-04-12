@@ -232,15 +232,23 @@ class DataFrameCache(SceneCache):
 
     # MAPS
     @staticmethod
+    def get_maps_path(cache_path: Path, env_name: str) -> Path:
+        return cache_path / env_name / "maps"
+
+    @staticmethod
+    def are_maps_cached(cache_path: Path, env_name: str) -> bool:
+        return DataFrameCache.get_maps_path(cache_path, env_name).is_dir()
+
+    @staticmethod
     def is_map_cached(cache_path: Path, env_name: str, map_name: str) -> bool:
-        maps_path: Path = cache_path / env_name / "maps"
+        maps_path: Path = DataFrameCache.get_maps_path(cache_path, env_name)
         metadata_file: Path = maps_path / f"{map_name}_metadata.dill"
         map_file: Path = maps_path / f"{map_name}.zarr"
         return maps_path.is_dir() and metadata_file.is_file() and map_file.is_file()
 
     @staticmethod
     def cache_map(cache_path: Path, map_obj: Map, env_name: str) -> None:
-        maps_path: Path = cache_path / env_name / "maps"
+        maps_path: Path = DataFrameCache.get_maps_path(cache_path, env_name)
         maps_path.mkdir(parents=True, exist_ok=True)
 
         metadata_file: Path = maps_path / f"{map_obj.metadata.name}_metadata.dill"
@@ -257,7 +265,7 @@ class DataFrameCache(SceneCache):
         layer_fn: Callable[[str], np.ndarray],
         env_name: str,
     ) -> None:
-        maps_path: Path = cache_path / env_name / "maps"
+        maps_path: Path = DataFrameCache.get_maps_path(cache_path, env_name)
         maps_path.mkdir(parents=True, exist_ok=True)
 
         map_file: Path = maps_path / f"{map_info.name}.zarr"
@@ -303,7 +311,9 @@ class DataFrameCache(SceneCache):
         resolution: int,
         rot_pad_factor: float = 1.0,
     ) -> Tuple[np.ndarray, MapMetadata]:
-        maps_path: Path = self.path / self.scene_info.env_name / "maps"
+        maps_path: Path = DataFrameCache.get_maps_path(
+            self.path, self.scene_info.env_name
+        )
 
         metadata_file: Path = maps_path / f"{self.scene_info.location}_metadata.dill"
         with open(metadata_file, "rb") as f:
