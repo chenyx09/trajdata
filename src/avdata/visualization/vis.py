@@ -51,7 +51,6 @@ def plot_agent_batch(
             alpha=0.3,
         )
 
-    ax.scatter(center_xy[0], center_xy[1], s=20, c="orangered", label="Agent Current")
     ax.plot(
         history_xy[..., 0],
         history_xy[..., 1],
@@ -67,6 +66,7 @@ def plot_agent_batch(
         color="k",
     )
     ax.plot(future_xy[..., 0], future_xy[..., 1], c="violet", label="Agent Future")
+    ax.scatter(center_xy[0], center_xy[1], s=20, c="orangered", label="Agent Current")
 
     num_neigh = batch.num_neigh[batch_idx]
     if num_neigh > 0:
@@ -90,18 +90,18 @@ def plot_agent_batch(
         )
 
     if batch.robot_fut is not None and batch.robot_fut.shape[1] > 0:
+        ax.plot(
+            batch.robot_fut[batch_idx, 1:, 0],
+            batch.robot_fut[batch_idx, 1:, 1],
+            label="Ego Future",
+            c="green",
+        )
         ax.scatter(
             batch.robot_fut[batch_idx, 0, 0],
             batch.robot_fut[batch_idx, 0, 1],
             s=20,
             c="green",
             label="Ego Current",
-        )
-        ax.plot(
-            batch.robot_fut[batch_idx, 1:, 0],
-            batch.robot_fut[batch_idx, 1:, 1],
-            label="Ego Future",
-            c="green",
         )
 
     ax.set_xlabel("x (m)")

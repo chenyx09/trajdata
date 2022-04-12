@@ -42,7 +42,12 @@ class SimulationScene:
         self.agents: List[AgentMetadata] = filtering.agent_types(
             agents_present, self.dataset.no_types, self.dataset.only_types
         )
-        self.scene_info.agents = self.agents
+
+        if self.freeze_agents:
+            self.scene_info.agent_presence = self.scene_info.agent_presence[
+                : self.init_scene_ts + 1
+            ]
+            self.scene_info.agents = self.agents
 
         # Note this order of operations is important, we first instantiate
         # the cache with the copied scene_info + modified agents list.
@@ -54,11 +59,6 @@ class SimulationScene:
             self.cache: SimulationCache = SimulationDataFrameCache(
                 dataset.cache_path, self.scene_info, init_timestep
             )
-
-        if self.freeze_agents:
-            self.scene_info.agent_presence = self.scene_info.agent_presence[
-                : self.init_scene_ts + 1
-            ]
 
     def reset(self) -> Union[AgentBatch, Dict[str, Any]]:
         self.scene_ts: int = self.init_scene_ts

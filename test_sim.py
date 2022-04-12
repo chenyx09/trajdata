@@ -35,12 +35,28 @@ def main():
         )
 
         obs: AgentBatch = sim_scene.reset()
-        for t in trange(1, 11):
-            new_xyh_dict: Dict[str, np.ndarray] = {
-                agent.name: obs.curr_agent_state[idx, [0, 1, -1]].numpy()
-                + np.array([t, 0, t / 100])
-                for idx, agent in enumerate(sim_scene.agents)
-            }
+        for t in trange(1, 21):
+            new_xyh_dict: Dict[str, np.ndarray] = dict()
+            for idx, agent_name in enumerate(obs.agent_name):
+                curr_yaw = obs.curr_agent_state[idx, -1]
+                curr_pos = obs.curr_agent_state[idx, :2]
+                world_from_agent = np.array(
+                    [
+                        [np.cos(curr_yaw), np.sin(curr_yaw)],
+                        [-np.sin(curr_yaw), np.cos(curr_yaw)]
+                    ]
+                )
+                next_state = np.zeros((3, ))
+                if obs.agent_fut_len[idx] < 1:
+                    next_state[:2] = curr_pos
+                    yaw_ac = 0
+                else:
+                    next_state[:2] = obs.agent_fut[idx, 0, :2] @ world_from_agent + curr_pos
+                    yaw_ac = np.arctan2(obs.agent_fut[idx, 0, -2], obs.agent_fut[idx, 0, -1])
+                    
+                next_state[2] = curr_yaw + yaw_ac
+                new_xyh_dict[agent_name] = next_state
+                
             obs = sim_scene.step(new_xyh_dict)
 
         plot_agent_batch(obs, 0, show=False, close=False)
