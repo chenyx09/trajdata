@@ -1,7 +1,7 @@
-from collections import namedtuple
+from dataclasses import dataclass
 from enum import IntEnum
-from typing import Optional
 
+import numpy as np
 import pandas as pd
 
 
@@ -13,7 +13,19 @@ class AgentType(IntEnum):
     MOTORCYCLE = 4
 
 
-FixedSize = namedtuple("FixedSize", ["length", "width", "height"])
+class Extent:
+    pass
+
+
+@dataclass
+class FixedExtent(Extent):
+    length: float
+    width: float
+    height: float
+
+
+class VariableExtent(Extent):
+    pass
 
 
 class AgentMetadata:
@@ -25,13 +37,36 @@ class AgentMetadata:
         agent_type: AgentType,
         first_timestep: int,
         last_timestep: int,
-        fixed_size: Optional[FixedSize] = None,
+        extent: Extent = None,
     ) -> None:
         self.name = name
         self.type = agent_type
         self.first_timestep = first_timestep
         self.last_timestep = last_timestep
-        self.fixed_size = fixed_size
+        self.extent = extent
+
+    def get_extents(self, start_ts: int, end_ts: int) -> np.ndarray:
+        """Get the agent's extents within the specified scene timesteps.
+
+        Args:
+            start_ts (int): The first scene timestep to get extents for (inclusive)
+            end_ts (int): The last scene timestep to get extents for (inclusive)
+
+        Returns:
+            np.ndarray: The extents as a (T, 3)-shaped ndarray (length, width, height)
+        """
+        if isinstance(
+            self.extent, FixedExtent
+        ):  # TODO(bivanovic): Handle variable extents and implement it for Lyft.
+            return np.repeat(
+                np.array([[self.extent.length, self.extent.width, self.extent.height]]),
+                end_ts - start_ts + 1,
+                axis=0,
+            )
+        else:
+            return self.extent[
+                start_ts - self.first_timestep : end_ts - self.first_timestep + 1
+            ]
 
 
 class Agent:

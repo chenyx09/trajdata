@@ -1,4 +1,4 @@
-from typing import Any, Dict, Final, List, Tuple, Union
+from typing import Any, Dict, Final, List, Union
 
 import numpy as np
 import pandas as pd
@@ -9,8 +9,9 @@ from avdata.data_structures import (
     Agent,
     AgentMetadata,
     AgentType,
-    FixedSize,
+    FixedExtent,
     SceneMetadata,
+    VariableExtent,
 )
 
 NUSC_DT: Final[float] = 0.5
@@ -132,7 +133,7 @@ def agg_agent_data(
         agent_type=agent_type,
         first_timestep=curr_scene_index,
         last_timestep=last_timestep,
-        fixed_size=FixedSize(
+        extent=FixedExtent(
             length=agent_size[0], width=agent_size[1], height=agent_size[2]
         ),
     )
@@ -201,7 +202,7 @@ def agg_ego_data(nusc_obj: NuScenes, scene_metadata: SceneMetadata) -> Agent:
         agent_type=AgentType.VEHICLE,
         first_timestep=0,
         last_timestep=ego_data_np.shape[0] - 1,
-        fixed_size=FixedSize(length=4.084, width=1.730, height=1.562),
+        extent=FixedExtent(length=4.084, width=1.730, height=1.562),
     )
     return Agent(
         metadata=ego_metadata,

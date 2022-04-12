@@ -1,5 +1,5 @@
 from collections import defaultdict
-from math import ceil, sqrt
+from math import sqrt
 from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -9,7 +9,6 @@ from avdata.caching import SceneCache
 from avdata.data_structures.agent import AgentMetadata, AgentType
 from avdata.data_structures.map_patch import MapPatch
 from avdata.data_structures.scene import SceneTime, SceneTimeAgent
-from avdata.data_structures.scene_metadata import SceneMetadata
 
 
 class AgentBatchElement:
@@ -77,6 +76,7 @@ class AgentBatchElement:
             self.num_neighbors,
             self.neighbor_types_np,
             self.neighbor_histories,
+            self.neighbor_history_extents,
             self.neighbor_history_lens_np,
         ) = self.get_neighbor_history(
             scene_time_agent, agent_info, history_sec, distance_limit
@@ -86,6 +86,7 @@ class AgentBatchElement:
             _,
             _,
             self.neighbor_futures,
+            self.neighbor_future_extents,
             self.neighbor_future_lens_np,
         ) = self.get_neighbor_future(
             scene_time_agent, agent_info, future_sec, distance_limit
@@ -112,13 +113,9 @@ class AgentBatchElement:
         agent_history_df: pd.DataFrame = self.cache.get_agent_history(
             agent_info, self.scene_ts, history_sec
         )
-        agent_extent: np.ndarray
-        if agent_info.fixed_size is not None:
-            agent_extent = np.repeat(
-                np.array(agent_info.fixed_size)[np.newaxis],
-                agent_history_df.shape[0],
-                axis=0,
-            )
+        agent_extent: np.ndarray = agent_info.get_extents(
+            self.scene_ts - agent_history_df.shape[0] + 1, self.scene_ts
+        )
         return agent_history_df.to_numpy(), agent_extent
 
     def get_agent_future(
@@ -129,13 +126,9 @@ class AgentBatchElement:
         agent_future_df: pd.DataFrame = self.cache.get_agent_future(
             agent_info, self.scene_ts, future_sec
         )
-        agent_extent: np.ndarray
-        if agent_info.fixed_size is not None:
-            agent_extent = np.repeat(
-                np.array(agent_info.fixed_size)[np.newaxis],
-                agent_future_df.shape[0],
-                axis=0,
-            )
+        agent_extent: np.ndarray = agent_info.get_extents(
+            self.scene_ts + 1, self.scene_ts + agent_future_df.shape[0]
+        )
         return agent_future_df.to_numpy(), agent_extent
 
     # @profile
@@ -145,9 +138,7 @@ class AgentBatchElement:
         agent_info: AgentMetadata,
         history_sec: Tuple[Optional[float], Optional[float]],
         distance_limit: Callable[[np.ndarray, int], np.ndarray],
-    ) -> Tuple[int, np.ndarray, List[np.ndarray], np.ndarray]:
-        scene_ts: int = self.scene_ts
-
+    ) -> Tuple[int, np.ndarray, List[np.ndarray], List[np.ndarray], np.ndarray]:
         # The indices of the returned ndarray match the scene_time agents list (including the index of the central agent,
         # which would have a distance of 0 to itself).
         agent_distances: np.ndarray = scene_time.get_agent_distances_to(agent_info)
@@ -166,8 +157,15 @@ class AgentBatchElement:
 
         num_neighbors: int = len(nearby_agents)
         all_agents_np, neighbor_history_lens_np = self.cache.get_agents_history(
-            scene_ts, nearby_agents, history_sec
+            self.scene_ts, nearby_agents, history_sec
         )
+
+        neighbor_history_extents: List[np.ndarray] = [
+            agent.get_extents(
+                self.scene_ts - neighbor_history_lens_np[idx] + 1, self.scene_ts
+            )
+            for idx, agent in enumerate(nearby_agents)
+        ]
 
         neighbor_histories: List[np.ndarray] = np.vsplit(
             all_agents_np, neighbor_history_lens_np.cumsum()
@@ -178,6 +176,7 @@ class AgentBatchElement:
             neighbor_types_np,
             # The last one will always be empty because of what cumsum returns above.
             neighbor_histories[:-1],
+            neighbor_history_extents,
             neighbor_history_lens_np,
         )
 
@@ -188,7 +187,7 @@ class AgentBatchElement:
         agent_info: AgentMetadata,
         future_sec: Tuple[Optional[float], Optional[float]],
         distance_limit: Callable[[np.ndarray, int], np.ndarray],
-    ) -> Tuple[int, np.ndarray, List[np.ndarray], np.ndarray]:
+    ) -> Tuple[int, np.ndarray, List[np.ndarray], List[np.ndarray], np.ndarray]:
         scene_ts: int = self.scene_ts
 
         # The indices of the returned ndarray match the scene_time agents list (including the index of the central agent,
@@ -212,6 +211,13 @@ class AgentBatchElement:
             scene_ts, nearby_agents, future_sec
         )
 
+        neighbor_future_extents: List[np.ndarray] = [
+            agent.get_extents(
+                self.scene_ts + 1, self.scene_ts + neighbor_future_lens_np[idx]
+            )
+            for idx, agent in enumerate(nearby_agents)
+        ]
+
         neighbor_futures: List[np.ndarray] = np.vsplit(
             all_agents_np, neighbor_future_lens_np.cumsum()
         )
@@ -221,6 +227,7 @@ class AgentBatchElement:
             neighbor_types_np,
             # The last one will always be empty because of what cumsum returns above.
             neighbor_futures[:-1],
+            neighbor_future_extents,
             neighbor_future_lens_np,
         )
 

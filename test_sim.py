@@ -5,7 +5,6 @@ import numpy as np
 from tqdm import trange
 
 from avdata import AgentBatch, AgentType, UnifiedDataset
-from avdata.caching.df_cache import DataFrameCache
 from avdata.data_structures.scene_metadata import SceneMetadata
 from avdata.simulation import SimulationScene
 from avdata.visualization.vis import plot_agent_batch
@@ -43,20 +42,24 @@ def main():
                 world_from_agent = np.array(
                     [
                         [np.cos(curr_yaw), np.sin(curr_yaw)],
-                        [-np.sin(curr_yaw), np.cos(curr_yaw)]
+                        [-np.sin(curr_yaw), np.cos(curr_yaw)],
                     ]
                 )
-                next_state = np.zeros((3, ))
+                next_state = np.zeros((3,))
                 if obs.agent_fut_len[idx] < 1:
                     next_state[:2] = curr_pos
                     yaw_ac = 0
                 else:
-                    next_state[:2] = obs.agent_fut[idx, 0, :2] @ world_from_agent + curr_pos
-                    yaw_ac = np.arctan2(obs.agent_fut[idx, 0, -2], obs.agent_fut[idx, 0, -1])
-                    
+                    next_state[:2] = (
+                        obs.agent_fut[idx, 0, :2] @ world_from_agent + curr_pos
+                    )
+                    yaw_ac = np.arctan2(
+                        obs.agent_fut[idx, 0, -2], obs.agent_fut[idx, 0, -1]
+                    )
+
                 next_state[2] = curr_yaw + yaw_ac
                 new_xyh_dict[agent_name] = next_state
-                
+
             obs = sim_scene.step(new_xyh_dict)
 
         plot_agent_batch(obs, 0, show=False, close=False)

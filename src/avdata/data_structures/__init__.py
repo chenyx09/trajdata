@@ -1,4 +1,4 @@
-from .agent import Agent, AgentMetadata, AgentType, FixedSize
+from .agent import Agent, AgentMetadata, AgentType, FixedExtent, VariableExtent
 from .batch import AgentBatch, SceneBatch, agent_collate_fn, scene_collate_fn
 from .batch_element import AgentBatchElement, SceneBatchElement
 from .environment import EnvMetadata

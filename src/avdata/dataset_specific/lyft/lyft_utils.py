@@ -9,8 +9,9 @@ from avdata.data_structures import (
     Agent,
     AgentMetadata,
     AgentType,
-    FixedSize,
+    FixedExtent,
     SceneMetadata,
+    VariableExtent,
 )
 
 LYFT_DT: Final[float] = 0.1
@@ -69,7 +70,7 @@ def agg_ego_data(lyft_obj: ChunkedDataset, scene_metadata: SceneMetadata) -> Age
         agent_type=AgentType.VEHICLE,
         first_timestep=0,
         last_timestep=ego_data_np.shape[0] - 1,
-        fixed_size=FixedSize(length=4.869, width=1.852, height=1.476),
+        extent=FixedExtent(length=4.869, width=1.852, height=1.476),
     )
     return Agent(
         metadata=ego_metadata,

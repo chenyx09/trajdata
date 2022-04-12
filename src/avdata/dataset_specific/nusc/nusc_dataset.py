@@ -9,7 +9,13 @@ from nuscenes.utils.splits import create_splits_scenes
 from tqdm import tqdm
 
 from avdata.caching import EnvCache, SceneCache
-from avdata.data_structures.agent import Agent, AgentMetadata, AgentType, FixedSize
+from avdata.data_structures.agent import (
+    Agent,
+    AgentMetadata,
+    AgentType,
+    FixedExtent,
+    VariableExtent,
+)
 from avdata.data_structures.environment import EnvMetadata
 from avdata.data_structures.map import MapMetadata
 from avdata.data_structures.scene_metadata import SceneMetadata
@@ -153,7 +159,7 @@ class NuscDataset(RawDataset):
             agent_type=AgentType.VEHICLE,
             first_timestep=0,
             last_timestep=scene_info.length_timesteps - 1,
-            fixed_size=FixedSize(length=4.084, width=1.730, height=1.562),
+            extent=FixedExtent(length=4.084, width=1.730, height=1.562),
         )
 
         agent_presence: List[List[AgentMetadata]] = [

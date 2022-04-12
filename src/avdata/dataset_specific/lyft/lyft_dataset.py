@@ -9,7 +9,7 @@ from scipy.stats import mode
 
 from avdata.caching import EnvCache, SceneCache
 from avdata.data_structures import AgentMetadata, EnvMetadata, SceneMetadata, SceneTag
-from avdata.data_structures.agent import Agent, AgentType, FixedSize
+from avdata.data_structures.agent import Agent, AgentType, FixedExtent
 from avdata.dataset_specific.lyft import lyft_utils
 from avdata.dataset_specific.raw_dataset import RawDataset
 from avdata.dataset_specific.scene_records import LyftSceneRecord
@@ -116,14 +116,14 @@ class LyftDataset(RawDataset):
             agent_type=AgentType.VEHICLE,
             first_timestep=0,
             last_timestep=scene_info.length_timesteps - 1,
-            fixed_size=FixedSize(length=4.869, width=1.852, height=1.476),
+            extent=FixedExtent(length=4.869, width=1.852, height=1.476),
         )
 
         agent_list: List[AgentMetadata] = [ego_agent_info]
         agent_presence: List[List[AgentMetadata]] = [
             [ego_agent_info] for _ in range(scene_info.length_timesteps)
         ]
-
+        # TODO(bivanovic): Handle missing timesteps via linear interpolation
         agent_data_list: List[pd.DataFrame] = list()
 
         ego_agent: Agent = lyft_utils.agg_ego_data(self.dataset_obj, scene_info)
