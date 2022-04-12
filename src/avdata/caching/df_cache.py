@@ -190,6 +190,46 @@ class DataFrameCache(SceneCache):
             last_index_incl - first_index_incl + 1,
         )
 
+    def get_agents_future(
+        self,
+        scene_ts: int,
+        agents: List[AgentMetadata],
+        future_sec: Tuple[Optional[float], Optional[float]],
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        last_timesteps = np.array(
+            [agent.last_timestep for agent in agents], dtype=np.long
+        )
+
+        first_timesteps = np.array(
+            [agent.first_timestep for agent in agents], dtype=np.long
+        )
+        first_timesteps = np.minimum(scene_ts + 1, last_timesteps)
+
+        if future_sec[1] is not None:
+            max_future: int = floor(future_sec[1] / self.dt)
+            last_timesteps = np.minimum(scene_ts + max_future, last_timesteps)
+
+        first_index_incl: np.ndarray = np.array(
+            [
+                self.index_dict[(agent.name, first_timesteps[idx])]
+                for idx, agent in enumerate(agents)
+            ],
+            dtype=np.long,
+        )
+        last_index_incl: np.ndarray = np.array(
+            [
+                self.index_dict[(agent.name, last_timesteps[idx])]
+                for idx, agent in enumerate(agents)
+            ],
+            dtype=np.long,
+        )
+
+        concat_idxs = arr_utils.vrange(first_index_incl, last_index_incl + 1)
+        return (
+            self.scene_data_df.iloc[concat_idxs, :].to_numpy(),
+            last_index_incl - first_index_incl + 1,
+        )
+
     # MAPS
     @staticmethod
     def is_map_cached(cache_path: Path, env_name: str, map_name: str) -> bool:

@@ -18,19 +18,14 @@ class SimulationDataFrameCache(DataFrameCache, SimulationCache):
         self, cache_path: Path, scene_info: SceneMetadata, scene_ts: int
     ) -> None:
         super().__init__(cache_path, scene_info, scene_ts)
-        self.og_index_dict = deepcopy(self.index_dict)
-        self.og_data_df = self.scene_data_df.copy()
-        
-        history_idxs = self.scene_data_df.index.get_level_values("scene_ts") <= scene_ts
-        self.persistent_data_df: pd.DataFrame = self.scene_data_df[history_idxs].copy()
+        agent_names: List[str] = [agent.name for agent in scene_info.agents]
+        in_index: np.ndarray = self.scene_data_df.index.isin(agent_names, level=0)
+        self.persistent_data_df: pd.DataFrame = self.scene_data_df.iloc[in_index].copy()
 
         self.scene_data_df = self.persistent_data_df.copy()
         self.index_dict: Dict[Tuple[str, int], int] = {
             val: idx for idx, val in enumerate(self.scene_data_df.index)
         }
-        
-        self._data_transf_mean: np.ndarray = np.zeros_like(self.scene_data_df.iloc[0].to_numpy())
-        self._data_transf_rot: np.ndarray = np.eye(2)
 
     def reset(self) -> None:
         self.scene_data_df = self.persistent_data_df.copy()
@@ -38,72 +33,13 @@ class SimulationDataFrameCache(DataFrameCache, SimulationCache):
             val: idx for idx, val in enumerate(self.scene_data_df.index)
         }
 
-    def transform_data(self, **kwargs) -> None:
-        """
-        Only difference to the original df_cache is that we don't touch the heading column.
-        """
-        if "shift_mean_to" in kwargs:
-            # This standardizes the scene to be relative to the state passed in
-            self._data_transf_mean = kwargs["shift_mean_to"]
-        
-        if "rotate_by" in kwargs:
-            # This rotates the scene so that the predicted agent's current heading aligns with the x-axis
-            agent_heading: float = kwargs["rotate_by"]
-            self._data_transf_rot = np.array(
-                [
-                    [np.cos(agent_heading), -np.sin(agent_heading)],
-                    [np.sin(agent_heading), np.cos(agent_heading)],
-                ]
-            )
-            
-        if "sincos_heading" in kwargs:
-            self._data_transf_sincos = True
-        
-        super().transform_data(**kwargs)
-
-    def get_agent_future(
-        self,
-        agent_info: AgentMetadata,
-        scene_ts: int,
-        future_sec: Tuple[Optional[float], Optional[float]],
-    ) -> pd.DataFrame:
+    def get_agent_future(self, agent_info: AgentMetadata, scene_ts: int, future_sec: Tuple[Optional[float], Optional[float]]) -> pd.DataFrame:
         if scene_ts >= agent_info.last_timestep:
             # Returning an empty DataFrame with the correct
-            # number of columns.
+            # columns.
             return self.scene_data_df.iloc[0 : 0]
         
-        first_index_incl: int = self.og_index_dict[(agent_info.name, scene_ts + 1)]
-        last_index_incl: int
-        if future_sec[1] is not None:
-            max_future = floor(future_sec[1] / self.dt)
-            last_index_incl = self.og_index_dict[
-                (agent_info.name, min(scene_ts + max_future, agent_info.last_timestep))
-            ]
-        else:
-            last_index_incl = self.og_index_dict[
-                (agent_info.name, agent_info.last_timestep)
-            ]
-
-        future_df: pd.DataFrame = self.og_data_df.iloc[first_index_incl : last_index_incl + 1].copy()
-        
-        future_df -= self._data_transf_mean
-        
-        future_df.iloc[:, self.pos_cols] = (
-            future_df.iloc[:, self.pos_cols].to_numpy() @ self._data_transf_rot
-        )
-        future_df.iloc[:, self.vel_cols] = (
-            future_df.iloc[:, self.vel_cols].to_numpy() @ self._data_transf_rot
-        )
-        future_df.iloc[:, self.acc_cols] = (
-            future_df.iloc[:, self.acc_cols].to_numpy() @ self._data_transf_rot
-        )
-        
-        if self._data_transf_sincos:
-            future_df["sin_heading"] = np.sin(future_df["heading"])
-            future_df["cos_heading"] = np.cos(future_df["heading"])
-            future_df.drop(columns=["heading"], inplace=True)
-        
-        return future_df
+        return super().get_agent_future(agent_info, scene_ts, future_sec)
 
     def append_state(self, xyh_dict: Dict[str, np.ndarray]) -> None:
         self.scene_ts += 1
@@ -132,11 +68,13 @@ class SimulationDataFrameCache(DataFrameCache, SimulationCache):
 
         sim_step_df = pd.DataFrame(sim_dict)
         sim_step_df.set_index(["agent_id", "scene_ts"], inplace=True)
+        self.persistent_data_df.drop(index=self.scene_ts, level=1, inplace=True)
         self.persistent_data_df = pd.concat([self.persistent_data_df, sim_step_df])
         self.persistent_data_df.sort_index(inplace=True)
         self.reset()
 
     def save_sim_scene(self, sim_scene_info: SceneMetadata) -> None:
+        history_idxs = self.persistent_data_df.index.get_level_values("scene_ts") <= self.scene_ts
         DataFrameCache.save_agent_data(
-            self.persistent_data_df, self.path, sim_scene_info
+            self.persistent_data_df[history_idxs], self.path, sim_scene_info
         )

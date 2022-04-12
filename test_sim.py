@@ -38,7 +38,7 @@ def main():
         for t in trange(1, 11):
             new_xyh_dict: Dict[str, np.ndarray] = {
                 agent.name: obs.curr_agent_state[idx, [0, 1, -1]].numpy()
-                + np.array([t, 0, t/100])
+                + np.array([t, 0, t / 100])
                 for idx, agent in enumerate(sim_scene.agents)
             }
             obs = sim_scene.step(new_xyh_dict)

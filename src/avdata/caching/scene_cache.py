@@ -85,6 +85,14 @@ class SceneCache:
     ) -> Tuple[np.ndarray, np.ndarray]:
         raise NotImplementedError()
 
+    def get_agents_future(
+        self,
+        scene_ts: int,
+        agents: List[AgentMetadata],
+        future_sec: Tuple[Optional[float], Optional[float]],
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        raise NotImplementedError()
+
     # MAPS
     @staticmethod
     def is_map_cached(cache_path: Path, env_name: str, map_name: str) -> bool:

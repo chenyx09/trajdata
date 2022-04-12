@@ -23,7 +23,7 @@ def plot_agent_batch(
     agent_type: AgentType = AgentType(batch.agent_type[batch_idx].item())
     ax.set_title(f"{str(agent_type)}/{agent_name}")
 
-    history_xy: Tensor = batch.agent_hist[batch_idx, :, :2].cpu()
+    history_xy: Tensor = batch.agent_hist[batch_idx].cpu()
     center_xy: Tensor = batch.agent_hist[batch_idx, -1, :2].cpu()
     future_xy: Tensor = batch.agent_fut[batch_idx, :, :2].cpu()
 
@@ -59,15 +59,27 @@ def plot_agent_batch(
         ls="--",
         label="Agent History",
     )
+    ax.quiver(
+        history_xy[..., 0],
+        history_xy[..., 1],
+        history_xy[..., -1],
+        history_xy[..., -2],
+        color="k",
+    )
     ax.plot(future_xy[..., 0], future_xy[..., 1], c="violet", label="Agent Future")
 
     num_neigh = batch.num_neigh[batch_idx]
     if num_neigh > 0:
         neighbor_hist = batch.neigh_hist[batch_idx]
+        neighbor_fut = batch.neigh_fut[batch_idx]
 
         ax.plot([], [], c="olive", ls="--", label="Neighbor History")
         for n in range(num_neigh):
             ax.plot(neighbor_hist[n, :, 0], neighbor_hist[n, :, 1], c="olive", ls="--")
+            
+        ax.plot([], [], c="darkgreen", label="Neighbor Future")
+        for n in range(num_neigh):
+            ax.plot(neighbor_fut[n, :, 0], neighbor_fut[n, :, 1], c="darkgreen")
 
         ax.scatter(
             neighbor_hist[:num_neigh, -1, 0],

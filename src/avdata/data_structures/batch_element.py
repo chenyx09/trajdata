@@ -80,6 +80,15 @@ class AgentBatchElement:
             scene_time_agent, agent_info, history_sec, distance_limit
         )
 
+        (
+            _,
+            _,
+            self.neighbor_futures,
+            self.neighbor_future_lens_np,
+        ) = self.get_neighbor_future(
+            scene_time_agent, agent_info, future_sec, distance_limit
+        )
+
         ### ROBOT DATA ###
         self.robot_future_np: Optional[np.ndarray] = None
         if incl_robot_future:
@@ -154,6 +163,49 @@ class AgentBatchElement:
             # The last one will always be empty because of what cumsum returns above.
             neighbor_histories[:-1],
             neighbor_history_lens_np,
+        )
+
+    # @profile
+    def get_neighbor_future(
+        self,
+        scene_time: SceneTimeAgent,
+        agent_info: AgentMetadata,
+        future_sec: Tuple[Optional[float], Optional[float]],
+        distance_limit: Callable[[np.ndarray, int], np.ndarray],
+    ) -> Tuple[int, np.ndarray, List[np.ndarray], np.ndarray]:
+        scene_ts: int = self.scene_ts
+
+        # The indices of the returned ndarray match the scene_time agents list (including the index of the central agent,
+        # which would have a distance of 0 to itself).
+        agent_distances: np.ndarray = scene_time.get_agent_distances_to(agent_info)
+        agent_idx: int = scene_time.agents.index(agent_info)
+
+        neighbor_types: np.ndarray = np.array([a.type.value for a in scene_time.agents])
+        nearby_mask: np.ndarray = agent_distances <= distance_limit(
+            neighbor_types, agent_info.type
+        )
+        nearby_mask[agent_idx] = False
+
+        nearby_agents: List[AgentMetadata] = [
+            agent for (idx, agent) in enumerate(scene_time.agents) if nearby_mask[idx]
+        ]
+        neighbor_types_np: np.ndarray = neighbor_types[nearby_mask]
+
+        num_neighbors: int = len(nearby_agents)
+        all_agents_np, neighbor_future_lens_np = self.cache.get_agents_future(
+            scene_ts, nearby_agents, future_sec
+        )
+
+        neighbor_futures: List[np.ndarray] = np.vsplit(
+            all_agents_np, neighbor_future_lens_np.cumsum()
+        )
+
+        return (
+            num_neighbors,
+            neighbor_types_np,
+            # The last one will always be empty because of what cumsum returns above.
+            neighbor_futures[:-1],
+            neighbor_future_lens_np,
         )
 
     def get_robot_current_and_future(
