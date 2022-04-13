@@ -94,13 +94,13 @@ def plot_agent_batch(
             batch.robot_fut[batch_idx, 1:, 0],
             batch.robot_fut[batch_idx, 1:, 1],
             label="Ego Future",
-            c="green",
+            c="blue",
         )
         ax.scatter(
             batch.robot_fut[batch_idx, 0, 0],
             batch.robot_fut[batch_idx, 0, 1],
             s=20,
-            c="green",
+            c="blue",
             label="Ego Current",
         )
 
