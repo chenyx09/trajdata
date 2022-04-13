@@ -88,7 +88,8 @@ class UnifiedDataset(Dataset):
             num_workers (int, optional): _description_. Defaults to 0.
             verbose (bool, optional): _description_. Defaults to False.
         """
-        self.centric = centric
+        self.centric: str = centric
+        self.desired_dt: float = desired_dt
 
         if cache_type == "dataframe":
             self.cache_class = DataFrameCache
@@ -335,7 +336,6 @@ class UnifiedDataset(Dataset):
                 cached_scene_info.agents,
                 cached_scene_info.agent_presence,
             )
-            return scene_info
 
         else:
             agent_list, agent_presence = raw_dataset.get_agent_info(
@@ -344,7 +344,43 @@ class UnifiedDataset(Dataset):
 
             scene_info.update_agent_info(agent_list, agent_presence)
             self.env_cache.save_scene_metadata(scene_info)
-            return scene_info
+
+        self.enforce_desired_dt(scene_info)
+
+        return scene_info
+
+    def enforce_desired_dt(self, scene_info: SceneMetadata) -> None:
+        # TODO(bivanovic): Eventually also implement subsample_scene_dt
+        if self.desired_dt is not None and scene_info.dt != self.desired_dt:
+            self.interpolate_scene_dt(scene_info)
+
+    def interpolate_scene_dt(self, scene_info: SceneMetadata) -> None:
+        dt_ratio: float = scene_info.dt / self.desired_dt
+        if not dt_ratio.is_integer():
+            raise ValueError(
+                f"{scene_info.dt} is not divisible by {self.desired_dt} for {str(scene_info)}"
+            )
+
+        dt_factor: int = int(dt_ratio)
+
+        # E.g., the scene is currently at dt = 0.5s (2 Hz),
+        # but we want desired_dt = 0.1s (10 Hz).
+        scene_info.length_timesteps = (scene_info.length_timesteps - 1) * dt_factor + 1
+        agent_presence: List[List[AgentMetadata]] = [
+            [] for _ in range(scene_info.length_timesteps)
+        ]
+        for agent in scene_info.agents:
+            agent.first_timestep *= dt_factor
+            agent.last_timestep *= dt_factor
+            # TODO(bivanovic): Update variable agent extents too.
+
+            for scene_ts in range(agent.first_timestep, agent.last_timestep + 1):
+                agent_presence[scene_ts].append(agent)
+
+        scene_info.update_agent_info(scene_info.agents, agent_presence)
+        scene_info.dt = self.desired_dt
+        # Note we do not touch scene_info.env_metadata.dt, this will serve as our
+        # source of the "original" data dt information.
 
     def __len__(self) -> int:
         return self.data_len
@@ -359,7 +395,14 @@ class UnifiedDataset(Dataset):
         scene_info: SceneMetadata = self.env_cache.load_scene_metadata(
             env_name, scene_name
         )
+        self.enforce_desired_dt(scene_info)
+
         scene_cache: SceneCache = self.cache_class(self.cache_path, scene_info, ts)
+        if (
+            self.desired_dt is not None
+            and scene_info.env_metadata.dt != self.desired_dt
+        ):
+            scene_cache.interpolate_data(self.desired_dt)
 
         if self.centric == "scene":
             scene_time: SceneTime = SceneTime.from_cache(

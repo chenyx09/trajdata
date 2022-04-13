@@ -107,6 +107,64 @@ class DataFrameCache(SceneCache):
             self.scene_data_df.drop(columns=["heading"], inplace=True)
             self._compute_col_idxs()
 
+    def interpolate_data(self, desired_dt: float, method: str = "linear") -> None:
+        dt_ratio: float = self.scene_info.env_metadata.dt / desired_dt
+        if not dt_ratio.is_integer():
+            raise ValueError(
+                f"{self.scene_info.dt} is not divisible by {desired_dt} for {str(self.scene_info)}"
+            )
+
+        dt_factor: int = int(dt_ratio)
+
+        agent_info_dict: Dict[str, AgentMetadata] = {
+            agent.name: agent for agent in self.scene_info.agents
+        }
+        new_index: pd.MultiIndex = pd.MultiIndex.from_tuples(
+            [
+                (agent_name, scene_ts)
+                for agent_name in self.scene_data_df.index.unique(level=0)
+                for scene_ts in range(
+                    # These have already been multiplied by dt_factor earlier.
+                    agent_info_dict[agent_name].first_timestep,
+                    agent_info_dict[agent_name].last_timestep + 1,
+                )
+            ],
+            names=["agent_id", "scene_ts"],
+        )
+
+        interpolated_df: pd.DataFrame = pd.DataFrame(
+            index=new_index, columns=self.scene_data_df.columns
+        )
+        interpolated_df = interpolated_df.astype(self.scene_data_df.dtypes.to_dict())
+
+        scene_data: np.ndarray = self.scene_data_df.to_numpy()
+        unwrapped_heading: np.ndarray = self.scene_data_df.groupby(level=0, sort=False)[
+            "heading"
+        ].apply(lambda df: pd.Series(np.unwrap(df)))
+
+        # Getting the data initially in the new df, making sure to unwrap angles above
+        # in preparation for interpolation.
+        scene_data_idxs: np.ndarray = np.nonzero(
+            new_index.get_level_values("scene_ts") % dt_factor == 0
+        )[0]
+        interpolated_df.iloc[scene_data_idxs] = scene_data
+        interpolated_df.iloc[
+            scene_data_idxs, self.column_dict["heading"]
+        ] = unwrapped_heading
+
+        # Interpolation.
+        interpolated_df.interpolate(method=method, limit_area="inside", inplace=True)
+
+        # Wrapping angles back to [-pi, pi).
+        interpolated_df.iloc[:, self.column_dict["heading"]] = arr_utils.angle_wrap(
+            interpolated_df.iloc[:, self.column_dict["heading"]]
+        )
+
+        self.scene_data_df = interpolated_df
+        self.index_dict: Dict[Tuple[str, int], int] = {
+            val: idx for idx, val in enumerate(self.scene_data_df.index)
+        }
+
     def get_agent_history(
         self,
         agent_info: AgentMetadata,

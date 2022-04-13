@@ -45,6 +45,9 @@ class AgentMetadata:
         self.last_timestep = last_timestep
         self.extent = extent
 
+    def __repr__(self) -> str:
+        return "/".join([self.type.name, self.name])
+
     def get_extents(self, start_ts: int, end_ts: int) -> np.ndarray:
         """Get the agent's extents within the specified scene timesteps.
 

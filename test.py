@@ -13,6 +13,7 @@ def main():
     dataset = UnifiedDataset(
         desired_data=["nusc_mini"],
         centric="agent",
+        desired_dt=0.1,
         history_sec=(1.5, 1.5),
         future_sec=(5.0, 5.0),
         only_types=[AgentType.VEHICLE],
@@ -32,7 +33,7 @@ def main():
         dataset,
         batch_size=4,
         shuffle=True,
-        collate_fn=dataset.get_collate_fn(return_dict=True),
+        collate_fn=dataset.get_collate_fn(),
         # num_workers=os.cpu_count(),
     )
 

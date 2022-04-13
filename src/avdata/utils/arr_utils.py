@@ -21,3 +21,15 @@ def vrange(starts: np.ndarray, stops: np.ndarray) -> np.ndarray:
     """
     lens = stops - starts
     return np.repeat(stops - lens.cumsum(), lens) + np.arange(lens.sum())
+
+
+def angle_wrap(radians: np.ndarray) -> np.ndarray:
+    """This function wraps angles to lie within [-pi, pi).
+
+    Args:
+        radians (np.ndarray): The input array of angles (in radians).
+
+    Returns:
+        np.ndarray: Wrapped angles that lie within [-pi, pi).
+    """
+    return (radians + np.pi) % (2 * np.pi) - np.pi

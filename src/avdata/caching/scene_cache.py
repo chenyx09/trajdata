@@ -56,6 +56,15 @@ class SceneCache:
         """
         raise NotImplementedError()
 
+    def interpolate_data(self, desired_dt: float, method: str = "linear") -> None:
+        """Increase the sampling frequency of the data by interpolation.
+
+        Args:
+            desired_dt (float): The desired spacing between timesteps.
+            method (str, optional): The type of interpolation to use, currently only "linear" is implemented. Defaults to "linear".
+        """
+        raise NotImplementedError()
+
     def get_agent_history(
         self,
         agent_info: AgentMetadata,
