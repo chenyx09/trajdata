@@ -29,12 +29,12 @@ def main():
             scene_name=f"sim_scene-{idx:04d}",
             scene_info=desired_scene,
             dataset=dataset,
-            init_timestep=10,
+            init_timestep=0,
             freeze_agents=True,
         )
 
         obs: AgentBatch = sim_scene.reset()
-        for t in trange(1, 21):
+        for t in trange(1, 51):
             new_xyh_dict: Dict[str, np.ndarray] = dict()
             for idx, agent_name in enumerate(obs.agent_name):
                 curr_yaw = obs.curr_agent_state[idx, -1]

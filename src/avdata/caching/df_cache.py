@@ -341,13 +341,18 @@ class DataFrameCache(SceneCache):
         # top, bot, left, right
         patch_sides: Tuple[int, int, int, int],
         patch_size: int,
-        map_dims: Tuple[int, int],
+        map_dims: Tuple[int, int, int],
     ) -> np.ndarray:
         if patch.shape[-2:] == (patch_size, patch_size):
             return patch
 
         top, bot, left, right = patch_sides
-        height, width = map_dims
+        channels, height, width = map_dims
+        
+        # If we're off the map, just return zeros in the
+        # desired size of the patch.
+        if bot <= 0 or top >= height or right <= 0 or left >= width:
+            return np.zeros((channels, patch_size, patch_size))
 
         pad_top, pad_bot, pad_left, pad_right = 0, 0, 0, 0
         if top < 0:
@@ -383,7 +388,10 @@ class DataFrameCache(SceneCache):
         data_patch_size: int = ceil(
             desired_patch_size * map_info.resolution / resolution
         )
-        data_with_rot_pad_size: int = ceil(rot_pad_factor * data_patch_size)
+        
+        # Ensuring the size is divisible by two so that the // 2 below does not
+        # chop any information off.
+        data_with_rot_pad_size: int = ceil((rot_pad_factor * data_patch_size)/2)*2
 
         map_file: Path = maps_path / f"{map_info.name}.zarr"
         disk_data = zarr.open_array(map_file, mode="r")
@@ -401,9 +409,9 @@ class DataFrameCache(SceneCache):
             ],
             (top, bot, left, right),
             data_with_rot_pad_size,
-            disk_data.shape[-2:],
+            disk_data.shape,
         )
-
+        
         if desired_patch_size == data_patch_size:
             return data_patch
         else:

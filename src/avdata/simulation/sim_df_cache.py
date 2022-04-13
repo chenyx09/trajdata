@@ -73,7 +73,9 @@ class SimulationDataFrameCache(DataFrameCache, SimulationCache):
 
         sim_step_df = pd.DataFrame(sim_dict)
         sim_step_df.set_index(["agent_id", "scene_ts"], inplace=True)
-        self.persistent_data_df.drop(index=self.scene_ts, level=1, inplace=True)
+        if self.scene_ts < self.scene_info.length_timesteps:
+            self.persistent_data_df.drop(index=self.scene_ts, level=1, inplace=True)
+            
         self.persistent_data_df = pd.concat([self.persistent_data_df, sim_step_df])
         self.persistent_data_df.sort_index(inplace=True)
         self.reset()
