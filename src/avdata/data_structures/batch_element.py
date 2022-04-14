@@ -246,18 +246,19 @@ class AgentBatchElement:
 
     def get_agent_map_patch(self, patch_params: Dict[str, int]) -> MapPatch:
         world_x, world_y = self.curr_agent_state_np[:2]
-        desired_patch_size = patch_params["map_size_px"]
-        resolution = patch_params["px_per_m"]
+        desired_patch_size: int = patch_params["map_size_px"]
+        resolution: int = patch_params["px_per_m"]
+        offset_xy: Tuple[float, float] = patch_params.get("offset_frac_xy", (0., 0.))
 
         if self.standardize_data:
             heading = self.curr_agent_state_np[-1]
             patch_data = self.cache.load_map_patch(
-                world_x, world_y, desired_patch_size, resolution, rot_pad_factor=sqrt(2)
+                world_x, world_y, desired_patch_size, resolution, offset_xy, heading, rot_pad_factor=sqrt(2)
             )
         else:
             heading = 0.0
             patch_data = self.cache.load_map_patch(
-                world_x, world_y, desired_patch_size, resolution
+                world_x, world_y, desired_patch_size, resolution, offset_xy, heading
             )
 
         return MapPatch(

@@ -33,3 +33,20 @@ def angle_wrap(radians: np.ndarray) -> np.ndarray:
         np.ndarray: Wrapped angles that lie within [-pi, pi).
     """
     return (radians + np.pi) % (2 * np.pi) - np.pi
+
+
+def rotation_matrix(angle: float) -> np.ndarray:
+    """Creates a 2D rotation matrix.
+
+    Args:
+        angle (float): The angle to rotate points by.
+
+    Returns:
+        np.ndarray: The 2x2 rotation matrix.
+    """
+    return np.array(
+        [
+            [np.cos(angle), -np.sin(angle)],
+            [np.sin(angle),  np.cos(angle)],
+        ]
+    )

@@ -13,7 +13,6 @@ import zarr
 from avdata.caching.scene_cache import SceneCache
 from avdata.data_structures.agent import AgentMetadata
 from avdata.data_structures.map import Map, MapMetadata
-from avdata.data_structures.map_patch import MapPatch
 from avdata.data_structures.scene_metadata import SceneMetadata
 from avdata.utils import arr_utils
 
@@ -372,6 +371,8 @@ class DataFrameCache(SceneCache):
         world_y: float,
         desired_patch_size: int,
         resolution: int,
+        offset_xy: Tuple[float, float],
+        agent_heading: float,
         rot_pad_factor: float = 1.0,
     ) -> Tuple[np.ndarray, MapMetadata]:
         maps_path: Path = DataFrameCache.get_maps_path(
@@ -388,6 +389,13 @@ class DataFrameCache(SceneCache):
         data_patch_size: int = ceil(
             desired_patch_size * map_info.resolution / resolution
         )
+        
+        # Incorporating offsets.
+        if offset_xy != (0., 0.):
+            map_offset: Tuple[float, float] = (offset_xy[0] * data_patch_size // 2, -offset_xy[1] * data_patch_size // 2)
+            rotated_offset: np.ndarray = arr_utils.rotation_matrix(-agent_heading) @ map_offset
+            map_x -= round(rotated_offset[0])
+            map_y += round(rotated_offset[1])
         
         # Ensuring the size is divisible by two so that the // 2 below does not
         # chop any information off.

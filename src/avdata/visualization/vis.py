@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Tuple
 
 import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
@@ -12,6 +12,7 @@ from avdata.data_structures.map import Map
 def plot_agent_batch(
     batch: AgentBatch,
     batch_idx: int,
+    map_offset_frac: Tuple[float, float] = (0., 0.),
     ax: Optional[Axes] = None,
     show: bool = True,
     close: bool = True,
@@ -43,10 +44,10 @@ def plot_agent_batch(
             ),
             origin="lower",
             extent=(
-                center_xy[0] - world_extent // 2,
-                center_xy[0] + world_extent // 2,
-                center_xy[1] - world_extent // 2,
-                center_xy[1] + world_extent // 2,
+                center_xy[0] - (map_offset_frac[0] + 1) * world_extent // 2,
+                center_xy[0] - (map_offset_frac[0] - 1) * world_extent // 2,
+                center_xy[1] - (map_offset_frac[1] + 1) * world_extent // 2,
+                center_xy[1] - (map_offset_frac[1] - 1) * world_extent // 2,
             ),
             alpha=0.3,
         )

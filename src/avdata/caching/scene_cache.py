@@ -6,7 +6,6 @@ import pandas as pd
 
 from avdata.data_structures.agent import AgentMetadata
 from avdata.data_structures.map import Map, MapMetadata
-from avdata.data_structures.map_patch import MapPatch
 from avdata.data_structures.scene_metadata import SceneMetadata
 
 
@@ -130,6 +129,8 @@ class SceneCache:
         world_y: float,
         desired_patch_size: int,
         resolution: int,
+        offset_xy: Tuple[float, float],
+        agent_heading: float,
         rot_pad_factor: float = 1.0,
     ) -> Tuple[np.ndarray, MapMetadata]:
         raise NotImplementedError()
