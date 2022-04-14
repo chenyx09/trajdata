@@ -308,12 +308,12 @@ class DataFrameCache(SceneCache):
         maps_path: Path = DataFrameCache.get_maps_path(cache_path, env_name)
         maps_path.mkdir(parents=True, exist_ok=True)
 
+        map_file: Path = maps_path / f"{map_obj.metadata.name}.zarr"
+        zarr.save(map_file, map_obj.data)
+        
         metadata_file: Path = maps_path / f"{map_obj.metadata.name}_metadata.dill"
         with open(metadata_file, "wb") as f:
             dill.dump(map_obj.metadata, f)
-
-        map_file: Path = maps_path / f"{map_obj.metadata.name}.zarr"
-        zarr.save(map_file, map_obj.data)
 
     @staticmethod
     def cache_map_layers(

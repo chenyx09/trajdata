@@ -1,4 +1,5 @@
 from collections import defaultdict
+from tabnanny import verbose
 from typing import Dict, List
 
 import numpy as np
@@ -13,14 +14,14 @@ from avdata.visualization.vis import plot_agent_batch
 # @profile
 def main():
     dataset = UnifiedDataset(
-        desired_data=["nusc_mini"],
+        desired_data=["lyft_sample"],
         only_types=[AgentType.VEHICLE],
         agent_interaction_distances=defaultdict(lambda: 50.0),
         incl_map=True,
         map_params={"px_per_m": 2, "map_size_px": 224, "offset_frac_xy": (-1.0, 0.5)},
     )
 
-    sim_env_name = "nusc_mini_sim"
+    sim_env_name = "lyft_sample_sim"
     all_sim_scenes: List[SceneMetadata] = list()
     desired_scene: SceneMetadata
     for idx, desired_scene in enumerate(dataset.scene_index):
@@ -34,6 +35,10 @@ def main():
         )
 
         obs: AgentBatch = sim_scene.reset()
+        plot_agent_batch(obs, 0, dataset.map_params["offset_frac_xy"], show=False, close=False)
+        plot_agent_batch(obs, 1, dataset.map_params["offset_frac_xy"], show=False, close=False)
+        plot_agent_batch(obs, 2, dataset.map_params["offset_frac_xy"], show=False, close=False)
+        plot_agent_batch(obs, 3, dataset.map_params["offset_frac_xy"], show=True, close=True)
         for t in trange(1, 51):
             new_xyh_dict: Dict[str, np.ndarray] = dict()
             for idx, agent_name in enumerate(obs.agent_name):

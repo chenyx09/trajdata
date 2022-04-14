@@ -1,16 +1,21 @@
+from math import ceil
 from pathlib import Path
 from random import Random
 from typing import List, Optional, Tuple, Type
 
 import numpy as np
 import pandas as pd
-from l5kit.data import ChunkedDataset, labels
+from l5kit.data import ChunkedDataset, labels, LocalDataManager
+from l5kit.configs.config import load_metadata
+from l5kit.rasterization import RenderContext
 from scipy.stats import mode
 
 from avdata.caching import EnvCache, SceneCache
 from avdata.data_structures import AgentMetadata, EnvMetadata, SceneMetadata, SceneTag
 from avdata.data_structures.agent import Agent, AgentType, FixedExtent
+from avdata.data_structures.map import Map, MapMetadata
 from avdata.dataset_specific.lyft import lyft_utils
+from avdata.dataset_specific.lyft.rasterizer import MapSemanticRasterizer
 from avdata.dataset_specific.raw_dataset import RawDataset
 from avdata.dataset_specific.scene_records import LyftSceneRecord
 
@@ -237,3 +242,39 @@ class LyftDataset(RawDataset):
         cache_class.save_agent_data(pd.concat(agent_data_list), cache_path, scene_info)
 
         return agent_list, agent_presence
+
+    def cache_maps(self, cache_path: Path, map_cache_class: Type[SceneCache], resolution: int = 2) -> None:
+        # We have to do this ../.. stuff because the data_dir for lyft is scenes/sample.zarr
+        dm = LocalDataManager((self.metadata.data_dir / ".." / "..").resolve())
+        
+        world_right, world_top = self.dataset_obj.agents["centroid"].max(axis=0) * 1.15
+        world_left, world_bottom = self.dataset_obj.agents["centroid"].min(axis=0) * 1.15
+        
+        world_center: np.ndarray = np.array([(world_left + world_right)/2, (world_bottom + world_top)/2])
+        raster_size_px: np.ndarray = np.array([ceil((world_right - world_left) * resolution), ceil((world_top - world_bottom) * resolution)])
+
+        dataset_meta = load_metadata(dm.require("meta.json"))
+        world_to_ecef = np.array(dataset_meta["world_to_ecef"], dtype=np.float64)
+        semantic_map_filepath = dm.require("semantic_map/semantic_map.pb")
+        render_context = RenderContext(
+            raster_size_px=raster_size_px,
+            pixel_size_m=np.array([1/resolution, 1/resolution]),
+            center_in_raster_ratio=np.array([0.5, 0.5]),
+            set_origin_to_bottom=True,
+        )
+
+        rasterizer = MapSemanticRasterizer(render_context,
+                                           semantic_map_filepath,
+                                           world_to_ecef)
+        
+        map_data: np.ndarray = rasterizer.render_semantic_map(world_center)
+        
+        map_info: MapMetadata = MapMetadata(
+            name='palo_alto',
+            shape=map_data.shape,
+            layers=["lane_area", "lane_lines", "ped_walkways"],
+            resolution=resolution,
+        )
+        
+        map_obj: Map = Map(map_info, map_data)
+        map_cache_class.cache_map(cache_path, map_obj, self.name)
