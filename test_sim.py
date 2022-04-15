@@ -42,7 +42,7 @@ def main():
         )
 
         obs: AgentBatch = sim_scene.reset()
-        for t in trange(1, 401):
+        for t in trange(1, 1001):
             new_xyh_dict: Dict[str, np.ndarray] = dict()
             for idx, agent_name in enumerate(obs.agent_name):
                 curr_yaw = obs.curr_agent_state[idx, -1]
