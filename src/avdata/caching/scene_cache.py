@@ -131,6 +131,7 @@ class SceneCache:
         resolution: int,
         offset_xy: Tuple[float, float],
         agent_heading: float,
+        return_rgb: bool,
         rot_pad_factor: float = 1.0,
     ) -> Tuple[np.ndarray, MapMetadata]:
         raise NotImplementedError()

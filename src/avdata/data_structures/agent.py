@@ -14,7 +14,8 @@ class AgentType(IntEnum):
 
 
 class Extent:
-    pass
+    def interpolate(self, dt_factor: int, method: str = "linear") -> None:
+        raise NotImplementedError()
 
 
 @dataclass
@@ -23,9 +24,22 @@ class FixedExtent(Extent):
     width: float
     height: float
 
+    def interpolate(self, dt_factor: int, method: str = "linear"):
+        pass
+
 
 class VariableExtent(Extent):
-    pass
+    def __init__(self, extent_data: np.ndarray) -> None:
+        self.data = extent_data
+
+    def interpolate(self, dt_factor: int, method: str = "linear"):
+        new_extent_data = np.full(
+            ((self.data.shape[0] - 1) * dt_factor + 1, self.data.shape[1]),
+            fill_value=np.nan,
+        )
+        new_extent_data[::dt_factor] = self.data
+        interpolated_df = pd.DataFrame(new_extent_data).interpolate(method=method)
+        self.data = interpolated_df.to_numpy()
 
 
 class AgentMetadata:
@@ -37,7 +51,7 @@ class AgentMetadata:
         agent_type: AgentType,
         first_timestep: int,
         last_timestep: int,
-        extent: Extent = None,
+        extent: Extent,
     ) -> None:
         self.name = name
         self.type = agent_type
@@ -66,8 +80,8 @@ class AgentMetadata:
                 end_ts - start_ts + 1,
                 axis=0,
             )
-        else:
-            return self.extent[
+        elif isinstance(self.extent, VariableExtent):
+            return self.extent.data[
                 start_ts - self.first_timestep : end_ts - self.first_timestep + 1
             ]
 

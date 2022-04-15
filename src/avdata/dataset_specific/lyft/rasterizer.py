@@ -1,17 +1,22 @@
-import numpy as np
-
 from collections import defaultdict
-from enum import IntEnum
-from typing import Dict, List, Optional
+from typing import Dict
 
 import cv2
 import numpy as np
-
 from l5kit.data.map_api import InterpolationMethod
-from l5kit.rasterization.semantic_rasterizer import cv2_subpixel, COLORS, INTERPOLATION_POINTS, CV2_SUB_VALUES, RasterEls, SemanticRasterizer
 from l5kit.geometry import transform_points
+from l5kit.rasterization.semantic_rasterizer import (
+    CV2_SUB_VALUES,
+    INTERPOLATION_POINTS,
+    RasterEls,
+    SemanticRasterizer,
+    cv2_subpixel,
+)
 
-def indices_in_bounds(center: np.ndarray, bounds: np.ndarray, half_extent: float) -> np.ndarray:
+
+def indices_in_bounds(
+    center: np.ndarray, bounds: np.ndarray, half_extent: float
+) -> np.ndarray:
     """
     Get indices of elements for which the bounding box described by bounds intersects the one defined around
     center (square with side 2*half_side)
@@ -26,9 +31,10 @@ def indices_in_bounds(center: np.ndarray, bounds: np.ndarray, half_extent: float
     """
     return np.arange(bounds.shape[0], dtype=np.long)
 
+
 class MapSemanticRasterizer(SemanticRasterizer):
     def render_semantic_map(
-            self, center_in_world: np.ndarray
+        self, center_in_world: np.ndarray, raster_from_world: np.ndarray
     ) -> np.ndarray:
         """Renders the semantic map at given x,y coordinates.
 
@@ -39,18 +45,26 @@ class MapSemanticRasterizer(SemanticRasterizer):
             np.ndarray: RGB raster
 
         """
-        raster_from_world = self.render_context.raster_from_world(center_in_world, 0.0)
-
-        lane_area_img: np.ndarray = np.zeros(shape=(self.raster_size[1], self.raster_size[0], 3), dtype=np.uint8)
-        lane_line_img: np.ndarray = np.zeros(shape=(self.raster_size[1], self.raster_size[0], 3), dtype=np.uint8)
-        ped_area_img: np.ndarray = np.zeros(shape=(self.raster_size[1], self.raster_size[0], 3), dtype=np.uint8)
+        lane_area_img: np.ndarray = np.zeros(
+            shape=(self.raster_size[1], self.raster_size[0], 3), dtype=np.uint8
+        )
+        lane_line_img: np.ndarray = np.zeros(
+            shape=(self.raster_size[1], self.raster_size[0], 3), dtype=np.uint8
+        )
+        ped_area_img: np.ndarray = np.zeros(
+            shape=(self.raster_size[1], self.raster_size[0], 3), dtype=np.uint8
+        )
 
         # filter using half a radius from the center
         raster_radius = float(np.linalg.norm(self.raster_size * self.pixel_size)) / 2
 
         # get all lanes as interpolation so that we can transform them all together
-        lane_indices = indices_in_bounds(center_in_world, self.mapAPI.bounds_info["lanes"]["bounds"], raster_radius)
-        lanes_mask: Dict[str, np.ndarray] = defaultdict(lambda: np.zeros(len(lane_indices) * 2, dtype=np.bool))
+        lane_indices = indices_in_bounds(
+            center_in_world, self.mapAPI.bounds_info["lanes"]["bounds"], raster_radius
+        )
+        lanes_mask: Dict[str, np.ndarray] = defaultdict(
+            lambda: np.zeros(len(lane_indices) * 2, dtype=np.bool)
+        )
         lanes_area = np.zeros((len(lane_indices) * 2, INTERPOLATION_POINTS, 2))
 
         for idx, lane_idx in enumerate(lane_indices):
@@ -63,32 +77,48 @@ class MapSemanticRasterizer(SemanticRasterizer):
             lanes_area[idx * 2] = lane_coords["xyz_left"][:, :2]
             lanes_area[idx * 2 + 1] = lane_coords["xyz_right"][::-1, :2]
 
-            lanes_mask[RasterEls.LANE_NOTL.name][idx * 2: idx * 2 + 2] = True
+            lanes_mask[RasterEls.LANE_NOTL.name][idx * 2 : idx * 2 + 2] = True
 
         if len(lanes_area):
-            lanes_area = cv2_subpixel(transform_points(lanes_area.reshape((-1, 2)), raster_from_world))
+            lanes_area = cv2_subpixel(
+                transform_points(lanes_area.reshape((-1, 2)), raster_from_world)
+            )
 
             for lane_area in lanes_area.reshape((-1, INTERPOLATION_POINTS * 2, 2)):
                 # need to for-loop otherwise some of them are empty
                 cv2.fillPoly(lane_area_img, [lane_area], (255, 0, 0), **CV2_SUB_VALUES)
 
             lanes_area = lanes_area.reshape((-1, INTERPOLATION_POINTS, 2))
-            for name, mask in lanes_mask.items():  # draw each type of lane with its own color
-                cv2.polylines(lane_line_img, lanes_area[mask], False, (0, 255, 0), **CV2_SUB_VALUES)
+            for (
+                name,
+                mask,
+            ) in lanes_mask.items():  # draw each type of lane with its own color
+                cv2.polylines(
+                    lane_line_img,
+                    lanes_area[mask],
+                    False,
+                    (0, 255, 0),
+                    **CV2_SUB_VALUES
+                )
 
         # plot crosswalks
         crosswalks = []
-        for idx in indices_in_bounds(center_in_world, self.mapAPI.bounds_info["crosswalks"]["bounds"], raster_radius):
-            crosswalk = self.mapAPI.get_crosswalk_coords(self.mapAPI.bounds_info["crosswalks"]["ids"][idx])
-            xy_cross = cv2_subpixel(transform_points(crosswalk["xyz"][:, :2], raster_from_world))
+        for idx in indices_in_bounds(
+            center_in_world,
+            self.mapAPI.bounds_info["crosswalks"]["bounds"],
+            raster_radius,
+        ):
+            crosswalk = self.mapAPI.get_crosswalk_coords(
+                self.mapAPI.bounds_info["crosswalks"]["ids"][idx]
+            )
+            xy_cross = cv2_subpixel(
+                transform_points(crosswalk["xyz"][:, :2], raster_from_world)
+            )
             crosswalks.append(xy_cross)
 
         cv2.fillPoly(ped_area_img, crosswalks, (0, 0, 255), **CV2_SUB_VALUES)
-        
-        map_img: np.ndarray = (lane_area_img + lane_line_img + ped_area_img).astype(np.float32) / 255
 
-        import matplotlib.pyplot as plt
-        plt.imshow(map_img, origin='lower')
-        plt.show()
-
+        map_img: np.ndarray = (lane_area_img + lane_line_img + ped_area_img).astype(
+            np.float32
+        ) / 255
         return map_img.transpose(2, 0, 1)

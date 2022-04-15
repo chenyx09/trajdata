@@ -18,14 +18,18 @@ class SimulationDataFrameCache(DataFrameCache, SimulationCache):
         self, cache_path: Path, scene_info: SceneMetadata, scene_ts: int
     ) -> None:
         super().__init__(cache_path, scene_info, scene_ts)
+
         agent_names: List[str] = [agent.name for agent in scene_info.agents]
         in_index: np.ndarray = self.scene_data_df.index.isin(agent_names, level=0)
-        self.persistent_data_df: pd.DataFrame = self.scene_data_df.iloc[in_index].copy()
+        self.scene_data_df: pd.DataFrame = self.scene_data_df.iloc[in_index].copy()
 
-        self.scene_data_df = self.persistent_data_df.copy()
-        self.index_dict: Dict[Tuple[str, int], int] = {
-            val: idx for idx, val in enumerate(self.scene_data_df.index)
-        }
+        # Important to first prune self.scene_data_df before interpolation (since it
+        # will use the agents list from the scene_info object which was modified earlier
+        # in the SimulationScene init.
+        if scene_info.env_metadata.dt != scene_info.dt:
+            self.interpolate_data(scene_info.dt)
+
+        self.persistent_data_df: pd.DataFrame = self.scene_data_df.copy()
 
     def reset(self) -> None:
         self.scene_data_df = self.persistent_data_df.copy()
@@ -45,6 +49,24 @@ class SimulationDataFrameCache(DataFrameCache, SimulationCache):
             return self.scene_data_df.iloc[0:0]
 
         return super().get_agent_future(agent_info, scene_ts, future_sec)
+
+    def get_agents_future(
+        self,
+        scene_ts: int,
+        agents: List[AgentMetadata],
+        future_sec: Tuple[Optional[float], Optional[float]],
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        last_timesteps = np.array(
+            [agent.last_timestep for agent in agents], dtype=np.long
+        )
+
+        if np.all(np.greater(scene_ts, last_timesteps)):
+            return (
+                np.zeros((0, self.scene_data_df.shape[1])),
+                np.zeros_like(last_timesteps),
+            )
+
+        return super().get_agents_future(scene_ts, agents, future_sec)
 
     def append_state(self, xyh_dict: Dict[str, np.ndarray]) -> None:
         self.scene_ts += 1
@@ -75,7 +97,7 @@ class SimulationDataFrameCache(DataFrameCache, SimulationCache):
         sim_step_df.set_index(["agent_id", "scene_ts"], inplace=True)
         if self.scene_ts < self.scene_info.length_timesteps:
             self.persistent_data_df.drop(index=self.scene_ts, level=1, inplace=True)
-            
+
         self.persistent_data_df = pd.concat([self.persistent_data_df, sim_step_df])
         self.persistent_data_df.sort_index(inplace=True)
         self.reset()

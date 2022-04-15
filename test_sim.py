@@ -14,11 +14,18 @@ from avdata.visualization.vis import plot_agent_batch
 # @profile
 def main():
     dataset = UnifiedDataset(
-        desired_data=["lyft_sample"],
+        desired_data=["nusc_mini-mini_val"],
         only_types=[AgentType.VEHICLE],
         agent_interaction_distances=defaultdict(lambda: 50.0),
         incl_map=True,
-        map_params={"px_per_m": 2, "map_size_px": 224, "offset_frac_xy": (-1.0, 0.5)},
+        map_params={
+            "px_per_m": 2,
+            "map_size_px": 224,
+            "offset_frac_xy": (0.0, 0.0),
+            "return_rgb": True,
+        },
+        verbose=True,
+        desired_dt=0.05,
     )
 
     sim_env_name = "lyft_sample_sim"
@@ -35,11 +42,7 @@ def main():
         )
 
         obs: AgentBatch = sim_scene.reset()
-        plot_agent_batch(obs, 0, dataset.map_params["offset_frac_xy"], show=False, close=False)
-        plot_agent_batch(obs, 1, dataset.map_params["offset_frac_xy"], show=False, close=False)
-        plot_agent_batch(obs, 2, dataset.map_params["offset_frac_xy"], show=False, close=False)
-        plot_agent_batch(obs, 3, dataset.map_params["offset_frac_xy"], show=True, close=True)
-        for t in trange(1, 51):
+        for t in trange(1, 401):
             new_xyh_dict: Dict[str, np.ndarray] = dict()
             for idx, agent_name in enumerate(obs.agent_name):
                 curr_yaw = obs.curr_agent_state[idx, -1]
@@ -67,10 +70,18 @@ def main():
 
             obs = sim_scene.step(new_xyh_dict)
 
-        plot_agent_batch(obs, 0, dataset.map_params["offset_frac_xy"], show=False, close=False)
-        plot_agent_batch(obs, 1, dataset.map_params["offset_frac_xy"], show=False, close=False)
-        plot_agent_batch(obs, 2, dataset.map_params["offset_frac_xy"], show=False, close=False)
-        plot_agent_batch(obs, 3, dataset.map_params["offset_frac_xy"], show=True, close=True)
+        plot_agent_batch(
+            obs, 0, dataset.map_params["offset_frac_xy"], show=False, close=False
+        )
+        plot_agent_batch(
+            obs, 1, dataset.map_params["offset_frac_xy"], show=False, close=False
+        )
+        plot_agent_batch(
+            obs, 2, dataset.map_params["offset_frac_xy"], show=False, close=False
+        )
+        plot_agent_batch(
+            obs, 3, dataset.map_params["offset_frac_xy"], show=True, close=True
+        )
 
         sim_scene.finalize()
         sim_scene.save()

@@ -20,7 +20,7 @@ def get_raw_datasets(data_dirs: Dict[str, str]) -> List[RawDataset]:
 
     if "lyft_sample" in data_dirs:
         raw_datasets.append(
-            LyftDataset("lyft_sample", data_dirs["lyft_sample"], parallelizable=True)
+            LyftDataset("lyft_sample", data_dirs["lyft_sample"], parallelizable=False)
         )
 
     return raw_datasets

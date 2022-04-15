@@ -162,7 +162,7 @@ class AgentBatchElement:
 
         neighbor_history_extents: List[np.ndarray] = [
             agent.get_extents(
-                self.scene_ts - neighbor_history_lens_np[idx] + 1, self.scene_ts
+                self.scene_ts - neighbor_history_lens_np[idx].item() + 1, self.scene_ts
             )
             for idx, agent in enumerate(nearby_agents)
         ]
@@ -248,17 +248,31 @@ class AgentBatchElement:
         world_x, world_y = self.curr_agent_state_np[:2]
         desired_patch_size: int = patch_params["map_size_px"]
         resolution: int = patch_params["px_per_m"]
-        offset_xy: Tuple[float, float] = patch_params.get("offset_frac_xy", (0., 0.))
+        offset_xy: Tuple[float, float] = patch_params.get("offset_frac_xy", (0.0, 0.0))
+        return_rgb: bool = patch_params.get("return_rgb", True)
 
         if self.standardize_data:
             heading = self.curr_agent_state_np[-1]
             patch_data = self.cache.load_map_patch(
-                world_x, world_y, desired_patch_size, resolution, offset_xy, heading, rot_pad_factor=sqrt(2)
+                world_x,
+                world_y,
+                desired_patch_size,
+                resolution,
+                offset_xy,
+                heading,
+                return_rgb,
+                rot_pad_factor=sqrt(2),
             )
         else:
             heading = 0.0
             patch_data = self.cache.load_map_patch(
-                world_x, world_y, desired_patch_size, resolution, offset_xy, heading
+                world_x,
+                world_y,
+                desired_patch_size,
+                resolution,
+                offset_xy,
+                heading,
+                return_rgb,
             )
 
         return MapPatch(

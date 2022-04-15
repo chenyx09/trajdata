@@ -280,7 +280,7 @@ def agent_collate_fn(
                 batch_first=True,
                 padding_value=np.nan,
             )
-            if padded_neighbor_futures.shape[-2] < max_neigh_history_len:
+            if padded_neighbor_futures.shape[-2] < max_neigh_future_len:
                 to_add = max_neigh_future_len - padded_neighbor_futures.shape[-2]
                 padded_neighbor_futures = F.pad(
                     padded_neighbor_futures,

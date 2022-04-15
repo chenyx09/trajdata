@@ -372,7 +372,7 @@ class UnifiedDataset(Dataset):
         for agent in scene_info.agents:
             agent.first_timestep *= dt_factor
             agent.last_timestep *= dt_factor
-            # TODO(bivanovic): Update variable agent extents too.
+            agent.extent.interpolate(dt_factor)
 
             for scene_ts in range(agent.first_timestep, agent.last_timestep + 1):
                 agent_presence[scene_ts].append(agent)

@@ -238,12 +238,18 @@ class NuscDataset(RawDataset):
                 canvas_size=(height_px, width_px),
             )[0].astype(np.bool)
 
+        map_from_world: np.ndarray = np.array(
+            [[resolution, 0.0, 0.0], [0.0, resolution, 0.0], [0.0, 0.0, 1.0]]
+        )
+
         map_shape = (len(layer_names), height_px, width_px)
         map_info: MapMetadata = MapMetadata(
             name=map_name,
             shape=map_shape,
             layers=layer_names,
+            layer_rgb_groups=([0, 1, 2], [3, 4], [5, 6]),
             resolution=resolution,
+            map_from_world=map_from_world,
         )
         map_cache_class.cache_map_layers(cache_path, map_info, layer_fn, self.name)
 

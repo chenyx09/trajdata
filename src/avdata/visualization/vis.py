@@ -12,7 +12,7 @@ from avdata.data_structures.map import Map
 def plot_agent_batch(
     batch: AgentBatch,
     batch_idx: int,
-    map_offset_frac: Tuple[float, float] = (0., 0.),
+    map_offset_frac: Tuple[float, float] = (0.0, 0.0),
     ax: Optional[Axes] = None,
     show: bool = True,
     close: bool = True,
@@ -40,7 +40,8 @@ def plot_agent_batch(
         ax.imshow(
             Map.to_img(
                 batch.maps[batch_idx].cpu(),
-                [[0, 1, 2], [3, 4], [5, 6]],
+                # [[0], [1], [2]]
+                # [[0, 1, 2], [3, 4], [5, 6]],
             ),
             origin="lower",
             extent=(

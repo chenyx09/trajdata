@@ -310,7 +310,7 @@ class DataFrameCache(SceneCache):
 
         map_file: Path = maps_path / f"{map_obj.metadata.name}.zarr"
         zarr.save(map_file, map_obj.data)
-        
+
         metadata_file: Path = maps_path / f"{map_obj.metadata.name}_metadata.dill"
         with open(metadata_file, "wb") as f:
             dill.dump(map_obj.metadata, f)
@@ -347,7 +347,7 @@ class DataFrameCache(SceneCache):
 
         top, bot, left, right = patch_sides
         channels, height, width = map_dims
-        
+
         # If we're off the map, just return zeros in the
         # desired size of the patch.
         if bot <= 0 or top >= height or right <= 0 or left >= width:
@@ -373,6 +373,7 @@ class DataFrameCache(SceneCache):
         resolution: int,
         offset_xy: Tuple[float, float],
         agent_heading: float,
+        return_rgb: bool,
         rot_pad_factor: float = 1.0,
     ) -> Tuple[np.ndarray, MapMetadata]:
         maps_path: Path = DataFrameCache.get_maps_path(
@@ -383,23 +384,30 @@ class DataFrameCache(SceneCache):
         with open(metadata_file, "rb") as f:
             map_info: MapMetadata = dill.load(f)
 
-        map_coords: np.ndarray = map_info.resolution * np.array([world_x, world_y])
+        map_coords: np.ndarray = map_info.map_from_world @ np.array(
+            [world_x, world_y, 1.0]
+        )
         map_x, map_y = round(map_coords[0].item()), round(map_coords[1].item())
 
         data_patch_size: int = ceil(
             desired_patch_size * map_info.resolution / resolution
         )
-        
+
         # Incorporating offsets.
-        if offset_xy != (0., 0.):
-            map_offset: Tuple[float, float] = (offset_xy[0] * data_patch_size // 2, -offset_xy[1] * data_patch_size // 2)
-            rotated_offset: np.ndarray = arr_utils.rotation_matrix(-agent_heading) @ map_offset
+        if offset_xy != (0.0, 0.0):
+            map_offset: Tuple[float, float] = (
+                offset_xy[0] * data_patch_size // 2,
+                -offset_xy[1] * data_patch_size // 2,
+            )
+            rotated_offset: np.ndarray = (
+                arr_utils.rotation_matrix(-agent_heading) @ map_offset
+            )
             map_x -= round(rotated_offset[0])
             map_y += round(rotated_offset[1])
-        
+
         # Ensuring the size is divisible by two so that the // 2 below does not
         # chop any information off.
-        data_with_rot_pad_size: int = ceil((rot_pad_factor * data_patch_size)/2)*2
+        data_with_rot_pad_size: int = ceil((rot_pad_factor * data_patch_size) / 2) * 2
 
         map_file: Path = maps_path / f"{map_info.name}.zarr"
         disk_data = zarr.open_array(map_file, mode="r")
@@ -419,11 +427,19 @@ class DataFrameCache(SceneCache):
             data_with_rot_pad_size,
             disk_data.shape,
         )
-        
-        if desired_patch_size == data_patch_size:
-            return data_patch
-        else:
-            rescaled_patch: np.ndarray = (
+
+        if return_rgb:
+            rgb_groups = map_info.layer_rgb_groups
+            data_patch = np.stack(
+                [
+                    np.amax(data_patch[rgb_groups[0]], axis=0),
+                    np.amax(data_patch[rgb_groups[1]], axis=0),
+                    np.amax(data_patch[rgb_groups[2]], axis=0),
+                ],
+            )
+
+        if desired_patch_size != data_patch_size:
+            data_patch = (
                 kornia.geometry.rescale(
                     torch.from_numpy(data_patch).unsqueeze(0),
                     desired_patch_size / data_patch_size,
@@ -435,4 +451,4 @@ class DataFrameCache(SceneCache):
                 .numpy()
             )
 
-            return rescaled_patch
+        return data_patch

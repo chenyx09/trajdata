@@ -5,7 +5,7 @@ import numpy as np
 
 from avdata import filtering
 from avdata.caching.df_cache import DataFrameCache
-from avdata.data_structures.agent import AgentMetadata
+from avdata.data_structures.agent import AgentMetadata, VariableExtent
 from avdata.data_structures.batch import AgentBatch, agent_collate_fn
 from avdata.data_structures.batch_element import AgentBatchElement
 from avdata.data_structures.scene import SceneTimeAgent
@@ -81,6 +81,15 @@ class SimulationScene:
 
             self.scene_info.agent_presence[self.scene_ts] = self.agents
         else:
+            for agent in self.agents:
+                if (
+                    isinstance(agent.extent, VariableExtent)
+                    and self.scene_ts > agent.last_timestep
+                ):
+                    agent.extent.data = np.append(
+                        agent.extent.data, agent.extent.data[[-1]], axis=0
+                    )
+
             self.scene_info.agent_presence.append(self.agents)
 
         return self.get_obs()
@@ -114,6 +123,9 @@ class SimulationScene:
         return agent_collate_fn(agent_data_list, return_dict=self.return_dict)
 
     def finalize(self) -> None:
+        # We only change the agent's last timestep here because we use it
+        # earlier to check if the agent has any future data from the original
+        # dataset.
         for agent in self.agents:
             agent.last_timestep = self.scene_ts
 
