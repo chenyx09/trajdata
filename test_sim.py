@@ -14,7 +14,7 @@ from avdata.visualization.vis import plot_agent_batch
 # @profile
 def main():
     dataset = UnifiedDataset(
-        desired_data=["nusc_mini-mini_val"],
+        desired_data=["lyft_sample"],
         only_types=[AgentType.VEHICLE],
         agent_interaction_distances=defaultdict(lambda: 50.0),
         incl_map=True,
@@ -25,7 +25,8 @@ def main():
             "return_rgb": True,
         },
         verbose=True,
-        desired_dt=0.05,
+        desired_dt=0.1,
+        # num_workers=4,
     )
 
     sim_env_name = "lyft_sample_sim"
@@ -42,7 +43,7 @@ def main():
         )
 
         obs: AgentBatch = sim_scene.reset()
-        for t in trange(1, 1001):
+        for t in trange(1, 51):
             new_xyh_dict: Dict[str, np.ndarray] = dict()
             for idx, agent_name in enumerate(obs.agent_name):
                 curr_yaw = obs.curr_agent_state[idx, -1]

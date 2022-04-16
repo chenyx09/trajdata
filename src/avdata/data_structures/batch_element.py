@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 from avdata.caching import SceneCache
-from avdata.data_structures.agent import AgentMetadata, AgentType
+from avdata.data_structures.agent import AgentMetadata, AgentType, FixedExtent
 from avdata.data_structures.map_patch import MapPatch
 from avdata.data_structures.scene import SceneTime, SceneTimeAgent
 
@@ -109,27 +109,21 @@ class AgentBatchElement:
         self,
         agent_info: AgentMetadata,
         history_sec: Tuple[Optional[float], Optional[float]],
-    ) -> np.ndarray:
-        agent_history_df: pd.DataFrame = self.cache.get_agent_history(
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        agent_history_np, agent_extent_history_np = self.cache.get_agent_history(
             agent_info, self.scene_ts, history_sec
         )
-        agent_extent: np.ndarray = agent_info.get_extents(
-            self.scene_ts - agent_history_df.shape[0] + 1, self.scene_ts
-        )
-        return agent_history_df.to_numpy(), agent_extent
+        return agent_history_np, agent_extent_history_np
 
     def get_agent_future(
         self,
         agent_info: AgentMetadata,
         future_sec: Tuple[Optional[float], Optional[float]],
     ) -> np.ndarray:
-        agent_future_df: pd.DataFrame = self.cache.get_agent_future(
+        agent_future_np, agent_extent_future_np = self.cache.get_agent_future(
             agent_info, self.scene_ts, future_sec
         )
-        agent_extent: np.ndarray = agent_info.get_extents(
-            self.scene_ts + 1, self.scene_ts + agent_future_df.shape[0]
-        )
-        return agent_future_df.to_numpy(), agent_extent
+        return agent_future_np, agent_extent_future_np
 
     # @profile
     def get_neighbor_history(
@@ -156,26 +150,16 @@ class AgentBatchElement:
         neighbor_types_np: np.ndarray = neighbor_types[nearby_mask]
 
         num_neighbors: int = len(nearby_agents)
-        all_agents_np, neighbor_history_lens_np = self.cache.get_agents_history(
-            self.scene_ts, nearby_agents, history_sec
-        )
-
-        neighbor_history_extents: List[np.ndarray] = [
-            agent.get_extents(
-                self.scene_ts - neighbor_history_lens_np[idx].item() + 1, self.scene_ts
-            )
-            for idx, agent in enumerate(nearby_agents)
-        ]
-
-        neighbor_histories: List[np.ndarray] = np.vsplit(
-            all_agents_np, neighbor_history_lens_np.cumsum()
-        )
+        (
+            neighbor_histories,
+            neighbor_history_extents,
+            neighbor_history_lens_np,
+        ) = self.cache.get_agents_history(self.scene_ts, nearby_agents, history_sec)
 
         return (
             num_neighbors,
             neighbor_types_np,
-            # The last one will always be empty because of what cumsum returns above.
-            neighbor_histories[:-1],
+            neighbor_histories,
             neighbor_history_extents,
             neighbor_history_lens_np,
         )
@@ -207,26 +191,16 @@ class AgentBatchElement:
         neighbor_types_np: np.ndarray = neighbor_types[nearby_mask]
 
         num_neighbors: int = len(nearby_agents)
-        all_agents_np, neighbor_future_lens_np = self.cache.get_agents_future(
-            scene_ts, nearby_agents, future_sec
-        )
-
-        neighbor_future_extents: List[np.ndarray] = [
-            agent.get_extents(
-                self.scene_ts + 1, self.scene_ts + neighbor_future_lens_np[idx]
-            )
-            for idx, agent in enumerate(nearby_agents)
-        ]
-
-        neighbor_futures: List[np.ndarray] = np.vsplit(
-            all_agents_np, neighbor_future_lens_np.cumsum()
-        )
+        (
+            neighbor_futures,
+            neighbor_future_extents,
+            neighbor_future_lens_np,
+        ) = self.cache.get_agents_future(scene_ts, nearby_agents, future_sec)
 
         return (
             num_neighbors,
             neighbor_types_np,
-            # The last one will always be empty because of what cumsum returns above.
-            neighbor_futures[:-1],
+            neighbor_futures,
             neighbor_future_extents,
             neighbor_future_lens_np,
         )

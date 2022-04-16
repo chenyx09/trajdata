@@ -122,7 +122,7 @@ class LyftDataset(RawDataset):
             agent_type=AgentType.VEHICLE,
             first_timestep=0,
             last_timestep=scene_info.length_timesteps - 1,
-            extent=FixedExtent(length=4.869, width=1.852, height=1.476),
+            extent=VariableExtent(),
         )
 
         agent_list: List[AgentMetadata] = [ego_agent_info]
@@ -180,6 +180,7 @@ class LyftDataset(RawDataset):
         )
         all_agent_data_df.index.names = ["agent_id", "scene_ts"]
         all_agent_data_df.sort_index(inplace=True)
+        all_agent_data_df.reset_index(level=1, inplace=True)
 
         ### Calculating agent classes
         agent_class: Dict[int, float] = (
@@ -195,7 +196,7 @@ class LyftDataset(RawDataset):
 
         # Doing this because the first row is always nan
         accelerations_np[0] = accelerations_np[1]
-        agent_ids: np.ndarray = all_agent_data_df.index.get_level_values(0).to_numpy()
+        agent_ids: np.ndarray = all_agent_data_df.index.to_numpy()
 
         # The point of the border mask is to catch data like this:
         # index    agent_id     vx    vy
@@ -210,17 +211,16 @@ class LyftDataset(RawDataset):
         accelerations_np[border_mask] = accelerations_np[border_mask + 1]
         all_agent_data_df[["ax", "ay"]] = accelerations_np
 
-        for agent_id, extents_df in all_agent_data_df.groupby("agent_id")[extent_cols]:
-            if len(extents_df) <= 1:
+        for agent_id, frames in all_agent_data_df.groupby("agent_id")["scene_ts"]:
+            if frames.shape[0] <= 1:
                 # There are some agents with only a single detection to them, we don't care about these.
                 continue
 
-            frames = extents_df.index.get_level_values(1)
-            start_frame: int = frames[0].item()
-            last_frame: int = frames[-1].item()
+            start_frame: int = frames.iat[0].item()
+            last_frame: int = frames.iat[-1].item()
 
-            if len(extents_df) < last_frame - start_frame + 1:
-                # TODO(bivanovic): Handle missing timesteps via linear interpolation
+            if frames.shape[0] < last_frame - start_frame + 1:
+                # TODO(bivanovic): Handle missing timesteps via linear interpolation.
                 raise ValueError("Lyft indeed can have missing frames :(")
 
             agent_type: AgentType = lyft_utils.lyft_type_to_unified_type(
@@ -232,14 +232,14 @@ class LyftDataset(RawDataset):
                 agent_type=agent_type,
                 first_timestep=start_frame,
                 last_timestep=last_frame,
-                extent=VariableExtent(extents_df.to_numpy()),
+                extent=VariableExtent(),
             )
 
             agent_list.append(agent_metadata)
             for frame in frames:
                 agent_presence[frame].append(agent_metadata)
 
-        # For now only saving non-prob columns since Lyft is effectively one-hot (see https://arxiv.org/abs/2104.12446)
+        # For now only saving non-prob columns since Lyft is effectively one-hot (see https://arxiv.org/abs/2104.12446).
         final_cols = [
             "x",
             "y",
@@ -248,7 +248,7 @@ class LyftDataset(RawDataset):
             "ax",
             "ay",
             "heading",
-        ]
+        ] + extent_cols
 
         # Changing the agent_id dtype to str
         all_agent_data_df.reset_index(inplace=True)

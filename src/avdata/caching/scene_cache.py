@@ -69,7 +69,7 @@ class SceneCache:
         agent_info: AgentMetadata,
         scene_ts: int,
         history_sec: Tuple[Optional[float], Optional[float]],
-    ) -> pd.DataFrame:
+    ) -> Tuple[np.ndarray, np.ndarray]:
         raise NotImplementedError()
 
     def get_agent_future(
@@ -77,7 +77,7 @@ class SceneCache:
         agent_info: AgentMetadata,
         scene_ts: int,
         future_sec: Tuple[Optional[float], Optional[float]],
-    ) -> pd.DataFrame:
+    ) -> Tuple[np.ndarray, np.ndarray]:
         raise NotImplementedError()
 
     def get_positions_at(
@@ -90,7 +90,7 @@ class SceneCache:
         scene_ts: int,
         agents: List[AgentMetadata],
         history_sec: Tuple[Optional[float], Optional[float]],
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> Tuple[List[np.ndarray], List[np.ndarray], np.ndarray]:
         raise NotImplementedError()
 
     def get_agents_future(
@@ -98,7 +98,7 @@ class SceneCache:
         scene_ts: int,
         agents: List[AgentMetadata],
         future_sec: Tuple[Optional[float], Optional[float]],
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> Tuple[List[np.ndarray], List[np.ndarray], np.ndarray]:
         raise NotImplementedError()
 
     # MAPS

@@ -139,6 +139,12 @@ class UnifiedDataset(Dataset):
                 or rebuild_maps
                 or not self.env_cache.env_is_cached(env.name)
             ) and any(env.name in dataset_tuple for dataset_tuple in matching_datasets):
+                if self.desired_dt is not None and self.desired_dt != env.metadata.dt:
+                    raise ValueError(
+                        f"{env.name} has yet to be cached, and setting a desired dt of {self.desired_dt}s "
+                        f"(which differs from its original dt of {env.metadata.dt}s) is not allowed."
+                    )
+
                 # Loading dataset objects in case we don't have
                 # their data already cached.
                 env.load_dataset_obj()
@@ -372,7 +378,6 @@ class UnifiedDataset(Dataset):
         for agent in scene_info.agents:
             agent.first_timestep *= dt_factor
             agent.last_timestep *= dt_factor
-            agent.extent.interpolate(dt_factor)
 
             for scene_ts in range(agent.first_timestep, agent.last_timestep + 1):
                 agent_presence[scene_ts].append(agent)

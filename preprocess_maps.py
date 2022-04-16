@@ -6,9 +6,8 @@ from avdata import UnifiedDataset
 # @profile
 def main():
     dataset = UnifiedDataset(
-        desired_data=["nusc_mini"],
+        desired_data=["nusc_mini", "lyft_sample"],
         rebuild_maps=True,
-        num_workers=os.cpu_count(),
     )
     print(f"Finished Caching Maps!")
 

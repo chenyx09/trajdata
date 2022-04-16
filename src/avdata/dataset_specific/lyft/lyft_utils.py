@@ -1,4 +1,4 @@
-from typing import Final
+from typing import Final, List
 
 import numpy as np
 import pandas as pd
@@ -47,18 +47,24 @@ def agg_ego_data(lyft_obj: ChunkedDataset, scene_metadata: SceneMetadata) -> Age
         ]
     )
 
+    ego_extents = FixedExtent(length=4.869, width=1.852, height=1.476).get_extents(
+        scene_frame_start, scene_frame_end - 1
+    )
+    extent_cols: List[str] = ["length", "width", "height"]
+
     ego_data_np = np.concatenate(
         [
             ego_translations,
             ego_velocities,
             ego_accelerations,
             np.expand_dims(ego_yaws, axis=1),
+            ego_extents,
         ],
         axis=1,
     )
     ego_data_df = pd.DataFrame(
         ego_data_np,
-        columns=["x", "y", "vx", "vy", "ax", "ay", "heading"],
+        columns=["x", "y", "vx", "vy", "ax", "ay", "heading"] + extent_cols,
         index=pd.MultiIndex.from_tuples(
             [("ego", idx) for idx in range(ego_data_np.shape[0])],
             names=["agent_id", "scene_ts"],
@@ -70,7 +76,7 @@ def agg_ego_data(lyft_obj: ChunkedDataset, scene_metadata: SceneMetadata) -> Age
         agent_type=AgentType.VEHICLE,
         first_timestep=0,
         last_timestep=ego_data_np.shape[0] - 1,
-        extent=FixedExtent(length=4.869, width=1.852, height=1.476),
+        extent=VariableExtent(),
     )
     return Agent(
         metadata=ego_metadata,

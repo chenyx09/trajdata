@@ -22,6 +22,9 @@ class SimulationDataFrameCache(DataFrameCache, SimulationCache):
         agent_names: List[str] = [agent.name for agent in scene_info.agents]
         in_index: np.ndarray = self.scene_data_df.index.isin(agent_names, level=0)
         self.scene_data_df: pd.DataFrame = self.scene_data_df.iloc[in_index].copy()
+        self.index_dict: Dict[Tuple[str, int], int] = {
+            val: idx for idx, val in enumerate(self.scene_data_df.index)
+        }
 
         # Important to first prune self.scene_data_df before interpolation (since it
         # will use the agents list from the scene_info object which was modified earlier
@@ -36,17 +39,18 @@ class SimulationDataFrameCache(DataFrameCache, SimulationCache):
         self.index_dict: Dict[Tuple[str, int], int] = {
             val: idx for idx, val in enumerate(self.scene_data_df.index)
         }
+        self._get_and_reorder_col_idxs()
 
     def get_agent_future(
         self,
         agent_info: AgentMetadata,
         scene_ts: int,
         future_sec: Tuple[Optional[float], Optional[float]],
-    ) -> pd.DataFrame:
+    ) -> Tuple[np.ndarray, np.ndarray]:
         if scene_ts >= agent_info.last_timestep:
             # Returning an empty DataFrame with the correct
-            # columns.
-            return self.scene_data_df.iloc[0:0]
+            # columns. 3 = Extent size.
+            return np.zeros((0, self.state_dim)), np.zeros((0, 3))
 
         return super().get_agent_future(agent_info, scene_ts, future_sec)
 
@@ -62,7 +66,8 @@ class SimulationDataFrameCache(DataFrameCache, SimulationCache):
 
         if np.all(np.greater(scene_ts, last_timesteps)):
             return (
-                np.zeros((0, self.scene_data_df.shape[1])),
+                [np.zeros((0, self.state_dim)) for agent in agents],
+                [np.zeros((0, 3)) for agent in agents],  # 3 = Extent size.
                 np.zeros_like(last_timesteps),
             )
 
@@ -92,6 +97,17 @@ class SimulationDataFrameCache(DataFrameCache, SimulationCache):
             sim_dict["ay"].append(ay)
 
             sim_dict["heading"].append(state[2])
+
+            if self.extent_cols:
+                sim_dict["length"].append(
+                    self.get_value(agent, self.scene_ts - 1, "length")
+                )
+                sim_dict["width"].append(
+                    self.get_value(agent, self.scene_ts - 1, "width")
+                )
+                sim_dict["height"].append(
+                    self.get_value(agent, self.scene_ts - 1, "height")
+                )
 
         sim_step_df = pd.DataFrame(sim_dict)
         sim_step_df.set_index(["agent_id", "scene_ts"], inplace=True)

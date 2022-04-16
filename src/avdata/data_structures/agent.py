@@ -14,7 +14,16 @@ class AgentType(IntEnum):
 
 
 class Extent:
-    def interpolate(self, dt_factor: int, method: str = "linear") -> None:
+    def get_extents(self, start_ts: int, end_ts: int) -> np.ndarray:
+        """Get the agent's extents within the specified scene timesteps.
+
+        Args:
+            start_ts (int): The first scene timestep to get extents for (inclusive)
+            end_ts (int): The last scene timestep to get extents for (inclusive)
+
+        Returns:
+            np.ndarray: The extents as a (T, 3)-shaped ndarray (length, width, height)
+        """
         raise NotImplementedError()
 
 
@@ -24,22 +33,16 @@ class FixedExtent(Extent):
     width: float
     height: float
 
-    def interpolate(self, dt_factor: int, method: str = "linear"):
-        pass
+    def get_extents(self, start_ts: int, end_ts: int) -> np.ndarray:
+        return np.repeat(
+            np.array([[self.length, self.width, self.height]]),
+            end_ts - start_ts + 1,
+            axis=0,
+        )
 
 
 class VariableExtent(Extent):
-    def __init__(self, extent_data: np.ndarray) -> None:
-        self.data = extent_data
-
-    def interpolate(self, dt_factor: int, method: str = "linear"):
-        new_extent_data = np.full(
-            ((self.data.shape[0] - 1) * dt_factor + 1, self.data.shape[1]),
-            fill_value=np.nan,
-        )
-        new_extent_data[::dt_factor] = self.data
-        interpolated_df = pd.DataFrame(new_extent_data).interpolate(method=method)
-        self.data = interpolated_df.to_numpy()
+    pass
 
 
 class AgentMetadata:
@@ -61,29 +64,6 @@ class AgentMetadata:
 
     def __repr__(self) -> str:
         return "/".join([self.type.name, self.name])
-
-    def get_extents(self, start_ts: int, end_ts: int) -> np.ndarray:
-        """Get the agent's extents within the specified scene timesteps.
-
-        Args:
-            start_ts (int): The first scene timestep to get extents for (inclusive)
-            end_ts (int): The last scene timestep to get extents for (inclusive)
-
-        Returns:
-            np.ndarray: The extents as a (T, 3)-shaped ndarray (length, width, height)
-        """
-        if isinstance(
-            self.extent, FixedExtent
-        ):  # TODO(bivanovic): Handle variable extents and implement it for Lyft.
-            return np.repeat(
-                np.array([[self.extent.length, self.extent.width, self.extent.height]]),
-                end_ts - start_ts + 1,
-                axis=0,
-            )
-        elif isinstance(self.extent, VariableExtent):
-            return self.extent.data[
-                start_ts - self.first_timestep : end_ts - self.first_timestep + 1
-            ]
 
 
 class Agent:

@@ -1,7 +1,7 @@
 import pickle
 from math import ceil, floor
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, Final, List, Optional, Tuple
 
 import dill
 import kornia
@@ -11,10 +11,13 @@ import torch
 import zarr
 
 from avdata.caching.scene_cache import SceneCache
-from avdata.data_structures.agent import AgentMetadata
+from avdata.data_structures.agent import AgentMetadata, FixedExtent
 from avdata.data_structures.map import Map, MapMetadata
 from avdata.data_structures.scene_metadata import SceneMetadata
 from avdata.utils import arr_utils
+
+STATE_COLS: Final[List[str]] = ["x", "y", "vx", "vy", "ax", "ay"]
+EXTENT_COLS: Final[List[str]] = ["length", "width", "height"]
 
 
 class DataFrameCache(SceneCache):
@@ -25,16 +28,29 @@ class DataFrameCache(SceneCache):
         Data cache primarily based on pandas DataFrames,
         with Feather for fast agent data serialization
         and pickle for miscellaneous supporting objects.
+        Maps are pre-rasterized and stored as Zarr arrays.
         """
         super().__init__(cache_path, scene_info, scene_ts)
 
         self.agent_data_path: Path = self.scene_dir / "agent_data.feather"
 
         self._load_agent_data()
-        self._compute_col_idxs()
+        self._get_and_reorder_col_idxs()
 
     # AGENT STATE DATA
-    def _compute_col_idxs(self) -> None:
+    def _get_and_reorder_col_idxs(self) -> None:
+        avail_extent_cols: List[str] = [
+            col for col in self.scene_data_df.columns if col in EXTENT_COLS
+        ]
+        avail_heading_cols: List[str] = (
+            ["heading"]
+            if "heading" in self.scene_data_df.columns
+            else ["sin_heading", "cos_heading"]
+        )
+        self.scene_data_df = self.scene_data_df[
+            STATE_COLS + avail_heading_cols + avail_extent_cols
+        ]
+
         self.column_dict: Dict[str, int] = {
             val: idx for idx, val in enumerate(self.scene_data_df.columns)
         }
@@ -42,6 +58,23 @@ class DataFrameCache(SceneCache):
         self.pos_cols = [self.column_dict["x"], self.column_dict["y"]]
         self.vel_cols = [self.column_dict["vx"], self.column_dict["vy"]]
         self.acc_cols = [self.column_dict["ax"], self.column_dict["ay"]]
+        if "sin_heading" in self.column_dict:
+            self.heading_cols = [
+                self.column_dict["sin_heading"],
+                self.column_dict["cos_heading"],
+            ]
+        else:
+            self.heading_cols = [self.column_dict["heading"]]
+
+        self.state_cols = (
+            self.pos_cols + self.vel_cols + self.acc_cols + self.heading_cols
+        )
+        self.state_dim = len(self.state_cols)
+
+        self.extent_cols: List[int] = list()
+        for extent_name in ["length", "width", "height"]:
+            if extent_name in self.column_dict:
+                self.extent_cols.append(self.column_dict[extent_name])
 
     def _load_agent_data(self) -> pd.DataFrame:
         self.scene_data_df: pd.DataFrame = pd.read_feather(
@@ -74,15 +107,20 @@ class DataFrameCache(SceneCache):
         ]
 
     def get_state(self, agent_id: str, scene_ts: int) -> np.ndarray:
-        return self.scene_data_df.iloc[self.index_dict[(agent_id, scene_ts)]].to_numpy()
+        # Setting copy=True so that the returned state is untouched by any
+        # future transformations (e.g., by a call to the transform_data function).
+        return self.scene_data_df.iloc[
+            self.index_dict[(agent_id, scene_ts)], : self.state_dim
+        ].to_numpy(copy=True)
 
     def transform_data(self, **kwargs) -> None:
         if "shift_mean_to" in kwargs:
-            # This standardizes the scene to be relative to the agent being predicted
-            self.scene_data_df -= kwargs["shift_mean_to"]
+            # This standardizes the scene to be relative to the agent being predicted.
+            self.scene_data_df.iloc[:, : self.state_dim] -= kwargs["shift_mean_to"]
 
         if "rotate_by" in kwargs:
-            # This rotates the scene so that the predicted agent's current heading aligns with the x-axis
+            # This rotates the scene so that the predicted agent's current
+            # heading aligns with the x-axis.
             agent_heading: float = kwargs["rotate_by"]
             self.rot_matrix: np.ndarray = np.array(
                 [
@@ -104,13 +142,14 @@ class DataFrameCache(SceneCache):
             self.scene_data_df["sin_heading"] = np.sin(self.scene_data_df["heading"])
             self.scene_data_df["cos_heading"] = np.cos(self.scene_data_df["heading"])
             self.scene_data_df.drop(columns=["heading"], inplace=True)
-            self._compute_col_idxs()
+            self._get_and_reorder_col_idxs()
 
     def interpolate_data(self, desired_dt: float, method: str = "linear") -> None:
         dt_ratio: float = self.scene_info.env_metadata.dt / desired_dt
         if not dt_ratio.is_integer():
             raise ValueError(
-                f"{self.scene_info.dt} is not divisible by {desired_dt} for {str(self.scene_info)}"
+                f"{str(self.scene_info)}'s dt of {self.scene_info.dt}s "
+                f"is not divisible by the desired dt {desired_dt}s."
             )
 
         dt_factor: int = int(dt_ratio)
@@ -169,7 +208,7 @@ class DataFrameCache(SceneCache):
         agent_info: AgentMetadata,
         scene_ts: int,
         history_sec: Tuple[Optional[float], Optional[float]],
-    ) -> pd.DataFrame:
+    ) -> Tuple[np.ndarray, np.ndarray]:
         # We don't have to check the mins here because our data_index filtering in dataset.py already
         # took care of it.
         first_index_incl: int
@@ -187,14 +226,26 @@ class DataFrameCache(SceneCache):
                 (agent_info.name, agent_info.first_timestep)
             ]
 
-        return self.scene_data_df.iloc[first_index_incl : last_index_incl + 1]
+        agent_history_df: pd.DataFrame = self.scene_data_df.iloc[
+            first_index_incl : last_index_incl + 1
+        ]
+
+        agent_extent_np: np.ndarray
+        if isinstance(agent_info.extent, FixedExtent):
+            agent_extent_np = agent_info.extent.get_extents(
+                self.scene_ts - agent_history_df.shape[0] + 1, self.scene_ts
+            )
+        else:
+            agent_extent_np = agent_history_df.iloc[:, self.extent_cols].to_numpy()
+
+        return agent_history_df.iloc[:, : self.state_dim].to_numpy(), agent_extent_np
 
     def get_agent_future(
         self,
         agent_info: AgentMetadata,
         scene_ts: int,
         future_sec: Tuple[Optional[float], Optional[float]],
-    ) -> pd.DataFrame:
+    ) -> Tuple[np.ndarray, np.ndarray]:
         # We don't have to check the mins here because our data_index filtering in dataset.py already
         # took care of it.
         first_index_incl: int = self.index_dict[(agent_info.name, scene_ts + 1)]
@@ -209,7 +260,19 @@ class DataFrameCache(SceneCache):
                 (agent_info.name, agent_info.last_timestep)
             ]
 
-        return self.scene_data_df.iloc[first_index_incl : last_index_incl + 1]
+        agent_future_df: pd.DataFrame = self.scene_data_df.iloc[
+            first_index_incl : last_index_incl + 1
+        ]
+
+        agent_extent_np: np.ndarray
+        if isinstance(agent_info.extent, FixedExtent):
+            agent_extent_np: np.ndarray = agent_info.extent.get_extents(
+                self.scene_ts + 1, self.scene_ts + agent_future_df.shape[0]
+            )
+        else:
+            agent_extent_np = agent_future_df.iloc[:, self.extent_cols].to_numpy()
+
+        return agent_future_df.iloc[:, : self.state_dim].to_numpy(), agent_extent_np
 
     def get_positions_at(
         self, scene_ts: int, agents: List[AgentMetadata]
@@ -222,7 +285,7 @@ class DataFrameCache(SceneCache):
         scene_ts: int,
         agents: List[AgentMetadata],
         history_sec: Tuple[Optional[float], Optional[float]],
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> Tuple[List[np.ndarray], List[np.ndarray], np.ndarray]:
         first_timesteps = np.array(
             [agent.first_timestep for agent in agents], dtype=np.long
         )
@@ -242,9 +305,36 @@ class DataFrameCache(SceneCache):
         )
 
         concat_idxs = arr_utils.vrange(first_index_incl, last_index_incl + 1)
+        neighbor_data_df: pd.DataFrame = self.scene_data_df.iloc[concat_idxs, :]
+
+        neighbor_history_lens_np = last_index_incl - first_index_incl + 1
+
+        neighbor_histories_np = neighbor_data_df.iloc[:, : self.state_dim].to_numpy()
+        # The last one will always be empty because of what cumsum returns.
+        neighbor_histories: List[np.ndarray] = np.vsplit(
+            neighbor_histories_np, neighbor_history_lens_np.cumsum()
+        )[:-1]
+
+        neighbor_extents: List[np.ndarray]
+        if self.extent_cols:
+            neighbor_extents_np = neighbor_data_df.iloc[:, self.extent_cols].to_numpy()
+            # The last one will always be empty because of what cumsum returns.
+            neighbor_extents = np.vsplit(
+                neighbor_extents_np, neighbor_history_lens_np.cumsum()
+            )[:-1]
+        else:
+            neighbor_extents = [
+                agent.extent.get_extents(
+                    self.scene_ts - neighbor_history_lens_np[idx].item() + 1,
+                    self.scene_ts,
+                )
+                for idx, agent in enumerate(agents)
+            ]
+
         return (
-            self.scene_data_df.iloc[concat_idxs, :].to_numpy(),
-            last_index_incl - first_index_incl + 1,
+            neighbor_histories,
+            neighbor_extents,
+            neighbor_history_lens_np,
         )
 
     def get_agents_future(
@@ -252,7 +342,7 @@ class DataFrameCache(SceneCache):
         scene_ts: int,
         agents: List[AgentMetadata],
         future_sec: Tuple[Optional[float], Optional[float]],
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> Tuple[List[np.ndarray], List[np.ndarray], np.ndarray]:
         last_timesteps = np.array(
             [agent.last_timestep for agent in agents], dtype=np.long
         )
@@ -282,9 +372,36 @@ class DataFrameCache(SceneCache):
         )
 
         concat_idxs = arr_utils.vrange(first_index_incl, last_index_incl + 1)
+        neighbor_data_df: pd.DataFrame = self.scene_data_df.iloc[concat_idxs, :]
+
+        neighbor_future_lens_np = last_index_incl - first_index_incl + 1
+
+        neighbor_futures_np = neighbor_data_df.iloc[:, : self.state_dim].to_numpy()
+        # The last one will always be empty because of what cumsum returns.
+        neighbor_futures: List[np.ndarray] = np.vsplit(
+            neighbor_futures_np, neighbor_future_lens_np.cumsum()
+        )[:-1]
+
+        neighbor_extents: List[np.ndarray]
+        if self.extent_cols:
+            neighbor_extents_np = neighbor_data_df.iloc[:, self.extent_cols].to_numpy()
+            # The last one will always be empty because of what cumsum returns.
+            neighbor_extents = np.vsplit(
+                neighbor_extents_np, neighbor_future_lens_np.cumsum()
+            )[:-1]
+        else:
+            neighbor_extents = [
+                agent.extent.get_extents(
+                    self.scene_ts - neighbor_future_lens_np[idx].item() + 1,
+                    self.scene_ts,
+                )
+                for idx, agent in enumerate(agents)
+            ]
+
         return (
-            self.scene_data_df.iloc[concat_idxs, :].to_numpy(),
-            last_index_incl - first_index_incl + 1,
+            neighbor_futures,
+            neighbor_extents,
+            neighbor_future_lens_np,
         )
 
     # MAPS

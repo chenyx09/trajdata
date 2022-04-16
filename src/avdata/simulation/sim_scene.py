@@ -81,15 +81,6 @@ class SimulationScene:
 
             self.scene_info.agent_presence[self.scene_ts] = self.agents
         else:
-            for agent in self.agents:
-                if (
-                    isinstance(agent.extent, VariableExtent)
-                    and self.scene_ts > agent.last_timestep
-                ):
-                    agent.extent.data = np.append(
-                        agent.extent.data, agent.extent.data[[-1]], axis=0
-                    )
-
             self.scene_info.agent_presence.append(self.agents)
 
         return self.get_obs()

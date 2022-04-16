@@ -350,17 +350,45 @@ def agent_collate_fn(
 
         neighbor_histories_t: Tensor = pad_sequence(
             neighbor_histories, batch_first=True, padding_value=np.nan
-        ).reshape((batch_size, max_num_neighbors, max_neigh_history_len, agent_history_t.shape[-1]))
+        ).reshape(
+            (
+                batch_size,
+                max_num_neighbors,
+                max_neigh_history_len,
+                agent_history_t.shape[-1],
+            )
+        )
         neighbor_history_extents_t: Tensor = pad_sequence(
             neighbor_history_extents, batch_first=True, padding_value=np.nan
-        ).reshape((batch_size, max_num_neighbors, max_neigh_history_len, agent_history_extent_t.shape[-1]))
+        ).reshape(
+            (
+                batch_size,
+                max_num_neighbors,
+                max_neigh_history_len,
+                agent_history_extent_t.shape[-1],
+            )
+        )
 
         neighbor_futures_t: Tensor = pad_sequence(
             neighbor_futures, batch_first=True, padding_value=np.nan
-        ).reshape((batch_size, max_num_neighbors, max_neigh_future_len, agent_future_t.shape[-1]))
+        ).reshape(
+            (
+                batch_size,
+                max_num_neighbors,
+                max_neigh_future_len,
+                agent_future_t.shape[-1],
+            )
+        )
         neighbor_future_extents_t: Tensor = pad_sequence(
             neighbor_future_extents, batch_first=True, padding_value=np.nan
-        ).reshape((batch_size, max_num_neighbors, max_neigh_future_len, agent_future_extent_t.shape[-1]))
+        ).reshape(
+            (
+                batch_size,
+                max_num_neighbors,
+                max_neigh_future_len,
+                agent_future_extent_t.shape[-1],
+            )
+        )
     else:
         neighbor_types_t: Tensor = torch.full((batch_size, 0), np.nan)
 
