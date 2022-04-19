@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import torch
 import zarr
+from avdata.augmentation.augmentation import Augmentation
 
 from avdata.caching.scene_cache import SceneCache
 from avdata.data_structures.agent import AgentMetadata, FixedExtent
@@ -22,7 +23,7 @@ EXTENT_COLS: Final[List[str]] = ["length", "width", "height"]
 
 class DataFrameCache(SceneCache):
     def __init__(
-        self, cache_path: Path, scene_info: SceneMetadata, scene_ts: int
+        self, cache_path: Path, scene_info: SceneMetadata, scene_ts: int, augmentations: Optional[List[Augmentation]] = None,
     ) -> None:
         """
         Data cache primarily based on pandas DataFrames,
@@ -30,12 +31,16 @@ class DataFrameCache(SceneCache):
         and pickle for miscellaneous supporting objects.
         Maps are pre-rasterized and stored as Zarr arrays.
         """
-        super().__init__(cache_path, scene_info, scene_ts)
+        super().__init__(cache_path, scene_info, scene_ts, augmentations)
 
         self.agent_data_path: Path = self.scene_dir / "agent_data.feather"
 
         self._load_agent_data()
         self._get_and_reorder_col_idxs()
+        
+        if augmentations:
+            for aug in augmentations:
+                aug.apply(self.scene_data_df)
 
     # AGENT STATE DATA
     def _get_and_reorder_col_idxs(self) -> None:

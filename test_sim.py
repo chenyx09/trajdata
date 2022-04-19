@@ -6,6 +6,7 @@ import numpy as np
 from tqdm import trange
 
 from avdata import AgentBatch, AgentType, UnifiedDataset
+from avdata.augmentation.low_vel_yaw_correction import LowSpeedYawCorrection
 from avdata.data_structures.scene_metadata import SceneMetadata
 from avdata.simulation import SimulationScene
 from avdata.visualization.vis import plot_agent_batch
@@ -13,8 +14,10 @@ from avdata.visualization.vis import plot_agent_batch
 
 # @profile
 def main():
+    low_speed_yaw = LowSpeedYawCorrection(speed_threshold=1.0)
+    
     dataset = UnifiedDataset(
-        desired_data=["lyft_sample"],
+        desired_data=["nusc_mini"],
         only_types=[AgentType.VEHICLE],
         agent_interaction_distances=defaultdict(lambda: 50.0),
         incl_map=True,
@@ -25,7 +28,8 @@ def main():
             "return_rgb": True,
         },
         verbose=True,
-        desired_dt=0.1,
+        augmentations=[low_speed_yaw],
+        # desired_dt=0.1,
         # num_workers=4,
     )
 

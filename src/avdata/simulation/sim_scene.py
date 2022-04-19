@@ -57,7 +57,7 @@ class SimulationScene:
         # data location).
         if self.dataset.cache_class == DataFrameCache:
             self.cache: SimulationCache = SimulationDataFrameCache(
-                dataset.cache_path, self.scene_info, init_timestep
+                dataset.cache_path, self.scene_info, init_timestep, dataset.augmentations
             )
 
     def reset(self) -> Union[AgentBatch, Dict[str, Any]]:

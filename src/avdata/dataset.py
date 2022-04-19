@@ -12,6 +12,7 @@ from torch.utils.data import Dataset
 from tqdm import tqdm
 
 from avdata import filtering
+from avdata.augmentation.augmentation import Augmentation
 from avdata.caching import DataFrameCache, EnvCache, SceneCache
 from avdata.data_structures import (
     AgentBatchElement,
@@ -54,6 +55,7 @@ class UnifiedDataset(Dataset):
         only_types: Optional[List[AgentType]] = None,
         no_types: Optional[List[AgentType]] = None,
         standardize_data: bool = True,
+        augmentations: Optional[List[Augmentation]] = None,
         data_dirs: Dict[str, str] = {
             # "nusc": "~/datasets/nuScenes",
             "nusc_mini": "~/datasets/nuScenes",
@@ -116,6 +118,7 @@ class UnifiedDataset(Dataset):
         self.only_types = None if only_types is None else set(only_types)
         self.no_types = None if no_types is None else set(no_types)
         self.standardize_data = standardize_data
+        self.augmentations = augmentations
         self.verbose = verbose
 
         # Ensuring scene description queries are all lowercase
@@ -402,7 +405,7 @@ class UnifiedDataset(Dataset):
         )
         self.enforce_desired_dt(scene_info)
 
-        scene_cache: SceneCache = self.cache_class(self.cache_path, scene_info, ts)
+        scene_cache: SceneCache = self.cache_class(self.cache_path, scene_info, ts, self.augmentations)
         if (
             self.desired_dt is not None
             and scene_info.env_metadata.dt != self.desired_dt

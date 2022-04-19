@@ -293,7 +293,7 @@ class LyftDataset(RawDataset):
             center_in_raster_ratio=np.array([0.5, 0.5]),
             set_origin_to_bottom=False,
         )
-        # 680.62, -2183.33
+        
         map_from_world: np.ndarray = render_context.raster_from_world(world_center, 0.0)
 
         rasterizer = MapSemanticRasterizer(

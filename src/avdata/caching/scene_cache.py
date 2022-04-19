@@ -3,6 +3,7 @@ from typing import Callable, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+from avdata.augmentation.augmentation import Augmentation
 
 from avdata.data_structures.agent import AgentMetadata
 from avdata.data_structures.map import Map, MapMetadata
@@ -11,7 +12,7 @@ from avdata.data_structures.scene_metadata import SceneMetadata
 
 class SceneCache:
     def __init__(
-        self, cache_path: Path, scene_info: SceneMetadata, scene_ts: int
+        self, cache_path: Path, scene_info: SceneMetadata, scene_ts: int, augmentations: Optional[List[Augmentation]] = None,
     ) -> None:
         """
         Creates and prepares the cache for online data loading.
@@ -20,6 +21,7 @@ class SceneCache:
         self.scene_info = scene_info
         self.dt = scene_info.dt
         self.scene_ts = scene_ts
+        self.augmentations = augmentations
 
         # Ensuring the scene cache folder exists
         self.scene_dir: Path = (

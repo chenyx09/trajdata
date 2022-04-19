@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 from avdata.caching import SceneCache
-from avdata.data_structures.agent import AgentMetadata, AgentType, FixedExtent
+from avdata.data_structures.agent import AgentMetadata, AgentType
 from avdata.data_structures.map_patch import MapPatch
 from avdata.data_structures.scene import SceneTime, SceneTimeAgent
 
