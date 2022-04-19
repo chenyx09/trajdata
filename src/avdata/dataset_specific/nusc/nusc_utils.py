@@ -59,7 +59,7 @@ def agg_agent_data(
 
     translation_list = [np.array(agent_data["translation"][:2])[np.newaxis]]
     agent_size = agent_data["size"]
-    # yaw_list = [Quaternion(agent_data["rotation"]).yaw_pitch_roll[0]]
+    yaw_list = [Quaternion(agent_data["rotation"]).yaw_pitch_roll[0]]
 
     prev_idx: int = curr_scene_index
     curr_sample_ann_token: str = agent_data["next"]
@@ -67,6 +67,7 @@ def agg_agent_data(
         agent_data = nusc_obj.get("sample_annotation", curr_sample_ann_token)
 
         translation = np.array(agent_data["translation"][:2])
+        heading = Quaternion(agent_data["rotation"]).yaw_pitch_roll[0]
         curr_idx: int = frame_idx_dict[agent_data["sample_token"]]
         if curr_idx > prev_idx + 1:
             fill_time = np.arange(prev_idx + 1, curr_idx)
@@ -80,11 +81,18 @@ def agg_agent_data(
                 xp=[prev_idx, curr_idx],
                 fp=[translation_list[-1][0, 1], translation[1]],
             )
+            headings: np.ndarray = np.interp(
+                x=fill_time,
+                xp=[prev_idx, curr_idx],
+                # TODO(bivanovic): Not accounting for angle wrap here
+                fp=[yaw_list[-1], heading],
+            )
             translation_list.append(np.stack([xs, ys], axis=1))
+            yaw_list.extend(headings.tolist())
 
         translation_list.append(translation[np.newaxis])
         # size_list.append(agent_data['size'])
-        # yaw_list.append(Quaternion(agent_data["rotation"]).yaw_pitch_roll[0])
+        yaw_list.append(heading)
 
         prev_idx = curr_idx
         curr_sample_ann_token = agent_data["next"]
@@ -105,14 +113,38 @@ def agg_agent_data(
         / NUSC_DT
     )
 
-    # yaws_np = np.expand_dims(np.stack(yaw_list, axis=0), axis=1)
+    anno_yaws_np = np.expand_dims(np.stack(yaw_list, axis=0), axis=1)
     yaws_np = np.expand_dims(
         np.arctan2(velocities_np[:, 1], velocities_np[:, 0]), axis=1
     )
     # sizes_np = np.stack(size_list, axis=0)
 
+    # import matplotlib.pyplot as plt
+    
+    # fig, ax = plt.subplots()
+    # ax.plot(translations_np[:, 0], translations_np[:, 1], color="blue")
+    # ax.quiver(
+    #     translations_np[:, 0],
+    #     translations_np[:, 1],
+    #     np.cos(anno_yaws_np),
+    #     np.sin(anno_yaws_np),
+    #     color="green",
+    #     label="annotated heading"
+    # )
+    # ax.quiver(
+    #     translations_np[:, 0],
+    #     translations_np[:, 1],
+    #     np.cos(yaws_np),
+    #     np.sin(yaws_np),
+    #     color="orange",
+    #     label="velocity heading"
+    # )
+    # ax.scatter([translations_np[0, 0]], [translations_np[0, 1]], color="red", label="Start", zorder=20)
+    # ax.legend(loc='best')
+    # plt.show()
+
     agent_data_np = np.concatenate(
-        [translations_np, velocities_np, accelerations_np, yaws_np], axis=1
+        [translations_np, velocities_np, accelerations_np, anno_yaws_np], axis=1
     )
     last_timestep = curr_scene_index + agent_data_np.shape[0] - 1
     agent_data_df = pd.DataFrame(

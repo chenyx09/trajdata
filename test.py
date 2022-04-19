@@ -25,7 +25,7 @@ def main():
         incl_robot_future=True,
         incl_map=True,
         map_params={"px_per_m": 2, "map_size_px": 50},
-        augmentations=[low_speed_yaw, noise_hists],
+        # augmentations=[low_speed_yaw, noise_hists],
         num_workers=4,
         verbose=True,
     )
