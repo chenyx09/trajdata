@@ -12,7 +12,7 @@ from torch.utils.data import Dataset
 from tqdm import tqdm
 
 from avdata import filtering
-from avdata.augmentation.augmentation import Augmentation
+from avdata.augmentation.augmentation import Augmentation, BatchAugmentation
 from avdata.caching import DataFrameCache, EnvCache, SceneCache
 from avdata.data_structures import (
     AgentBatchElement,
@@ -215,10 +215,23 @@ class UnifiedDataset(Dataset):
     def get_collate_fn(
         self, centric: str = "agent", return_dict: bool = False
     ) -> Callable:
+
+        batch_augments: Optional[List[BatchAugmentation]] = None
+        if self.augmentations:
+            batch_augments = [
+                batch_aug
+                for batch_aug in self.augmentations
+                if isinstance(batch_aug, BatchAugmentation)
+            ]
+
         if centric == "agent":
-            collate_fn = partial(agent_collate_fn, return_dict=return_dict)
+            collate_fn = partial(
+                agent_collate_fn, return_dict=return_dict, batch_augments=batch_augments
+            )
         elif centric == "scene":
-            collate_fn = partial(scene_collate_fn, return_dict=return_dict)
+            collate_fn = partial(
+                scene_collate_fn, return_dict=return_dict, batch_augments=batch_augments
+            )
 
         return collate_fn
 
@@ -405,7 +418,9 @@ class UnifiedDataset(Dataset):
         )
         self.enforce_desired_dt(scene_info)
 
-        scene_cache: SceneCache = self.cache_class(self.cache_path, scene_info, ts, self.augmentations)
+        scene_cache: SceneCache = self.cache_class(
+            self.cache_path, scene_info, ts, self.augmentations
+        )
         if (
             self.desired_dt is not None
             and scene_info.env_metadata.dt != self.desired_dt

@@ -213,10 +213,11 @@ class AgentBatchElement:
         # self.scene_ts - 1 because we want to get the current timestep (scene_ts) too
         # and get_agent_future(...) gets data starting from the timestep AFTER the
         # given one.
-        robot_curr_and_fut_df: pd.DataFrame = self.cache.get_agent_future(
-            robot_info, self.scene_ts - 1, future_sec
-        )
-        return robot_curr_and_fut_df.to_numpy()
+        (
+            robot_curr_and_fut_np,
+            robot_curr_and_fut_extents_np,
+        ) = self.cache.get_agent_future(robot_info, self.scene_ts - 1, future_sec)
+        return robot_curr_and_fut_np
 
     def get_agent_map_patch(self, patch_params: Dict[str, int]) -> MapPatch:
         world_x, world_y = self.curr_agent_state_np[:2]

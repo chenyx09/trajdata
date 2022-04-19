@@ -1,13 +1,15 @@
 from copy import deepcopy
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 
 from avdata import filtering
+from avdata.augmentation import BatchAugmentation
 from avdata.caching.df_cache import DataFrameCache
 from avdata.data_structures.agent import AgentMetadata, VariableExtent
-from avdata.data_structures.batch import AgentBatch, agent_collate_fn
+from avdata.data_structures.batch import AgentBatch
 from avdata.data_structures.batch_element import AgentBatchElement
+from avdata.data_structures.collation import agent_collate_fn
 from avdata.data_structures.scene import SceneTimeAgent
 from avdata.data_structures.scene_metadata import SceneMetadata
 from avdata.dataset import UnifiedDataset
@@ -57,8 +59,19 @@ class SimulationScene:
         # data location).
         if self.dataset.cache_class == DataFrameCache:
             self.cache: SimulationCache = SimulationDataFrameCache(
-                dataset.cache_path, self.scene_info, init_timestep, dataset.augmentations
+                dataset.cache_path,
+                self.scene_info,
+                init_timestep,
+                dataset.augmentations,
             )
+
+        self.batch_augments: Optional[List[BatchAugmentation]] = None
+        if dataset.augmentations:
+            self.batch_augments = [
+                batch_aug
+                for batch_aug in dataset.augmentations
+                if isinstance(batch_aug, BatchAugmentation)
+            ]
 
     def reset(self) -> Union[AgentBatch, Dict[str, Any]]:
         self.scene_ts: int = self.init_scene_ts
@@ -111,7 +124,11 @@ class SimulationScene:
             # AgentBatchElement transforms (standardizes) the cache.
             self.cache.reset()
 
-        return agent_collate_fn(agent_data_list, return_dict=self.return_dict)
+        return agent_collate_fn(
+            agent_data_list,
+            return_dict=self.return_dict,
+            batch_augments=self.batch_augments,
+        )
 
     def finalize(self) -> None:
         # We only change the agent's last timestep here because we use it

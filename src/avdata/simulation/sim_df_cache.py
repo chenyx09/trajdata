@@ -6,8 +6,8 @@ from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
-from avdata.augmentation.augmentation import Augmentation
 
+from avdata.augmentation.augmentation import Augmentation
 from avdata.caching.df_cache import DataFrameCache
 from avdata.data_structures.agent import AgentMetadata
 from avdata.data_structures.scene_metadata import SceneMetadata
@@ -16,7 +16,11 @@ from avdata.simulation.sim_cache import SimulationCache
 
 class SimulationDataFrameCache(DataFrameCache, SimulationCache):
     def __init__(
-        self, cache_path: Path, scene_info: SceneMetadata, scene_ts: int, augmentations: Optional[List[Augmentation]] = None,
+        self,
+        cache_path: Path,
+        scene_info: SceneMetadata,
+        scene_ts: int,
+        augmentations: Optional[List[Augmentation]] = None,
     ) -> None:
         super().__init__(cache_path, scene_info, scene_ts, augmentations)
 

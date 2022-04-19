@@ -3,8 +3,8 @@ from typing import Callable, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-from avdata.augmentation.augmentation import Augmentation
 
+from avdata.augmentation.augmentation import Augmentation
 from avdata.data_structures.agent import AgentMetadata
 from avdata.data_structures.map import Map, MapMetadata
 from avdata.data_structures.scene_metadata import SceneMetadata
@@ -12,7 +12,11 @@ from avdata.data_structures.scene_metadata import SceneMetadata
 
 class SceneCache:
     def __init__(
-        self, cache_path: Path, scene_info: SceneMetadata, scene_ts: int, augmentations: Optional[List[Augmentation]] = None,
+        self,
+        cache_path: Path,
+        scene_info: SceneMetadata,
+        scene_ts: int,
+        augmentations: Optional[List[Augmentation]] = None,
     ) -> None:
         """
         Creates and prepares the cache for online data loading.

@@ -6,7 +6,7 @@ import numpy as np
 from tqdm import trange
 
 from avdata import AgentBatch, AgentType, UnifiedDataset
-from avdata.augmentation.low_vel_yaw_correction import LowSpeedYawCorrection
+from avdata.augmentation import LowSpeedYawCorrection
 from avdata.data_structures.scene_metadata import SceneMetadata
 from avdata.simulation import SimulationScene
 from avdata.visualization.vis import plot_agent_batch
@@ -15,7 +15,7 @@ from avdata.visualization.vis import plot_agent_batch
 # @profile
 def main():
     low_speed_yaw = LowSpeedYawCorrection(speed_threshold=1.0)
-    
+
     dataset = UnifiedDataset(
         desired_data=["nusc_mini"],
         only_types=[AgentType.VEHICLE],
