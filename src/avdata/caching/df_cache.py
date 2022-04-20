@@ -190,9 +190,7 @@ class DataFrameCache(SceneCache):
         interpolated_df = interpolated_df.astype(self.scene_data_df.dtypes.to_dict())
 
         scene_data: np.ndarray = self.scene_data_df.to_numpy()
-        unwrapped_heading: np.ndarray = self.scene_data_df.groupby(level=0, sort=False)[
-            "heading"
-        ].apply(lambda df: pd.Series(np.unwrap(df)))
+        unwrapped_heading: np.ndarray = np.unwrap(self.scene_data_df["heading"])
 
         # Getting the data initially in the new df, making sure to unwrap angles above
         # in preparation for interpolation.

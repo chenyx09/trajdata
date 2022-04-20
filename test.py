@@ -5,13 +5,12 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from avdata import AgentBatch, AgentType, UnifiedDataset
-from avdata.augmentation import LowSpeedYawCorrection, NoiseHistories
+from avdata.augmentation import NoiseHistories
 from avdata.visualization.vis import plot_agent_batch
 
 
 # @profile
 def main():
-    low_speed_yaw = LowSpeedYawCorrection(speed_threshold=1.0)
     noise_hists = NoiseHistories()
 
     dataset = UnifiedDataset(
@@ -25,7 +24,7 @@ def main():
         incl_robot_future=True,
         incl_map=True,
         map_params={"px_per_m": 2, "map_size_px": 50},
-        # augmentations=[low_speed_yaw, noise_hists],
+        augmentations=[noise_hists],
         num_workers=4,
         verbose=True,
     )
