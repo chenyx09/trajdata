@@ -78,7 +78,9 @@ class SimulationScene:
         return self.get_obs()
 
     def step(
-        self, new_xyh_dict: Dict[str, np.ndarray]
+        self,
+        new_xyh_dict: Dict[str, np.ndarray],
+        return_obs=True,
     ) -> Union[AgentBatch, Dict[str, Any]]:
         self.scene_ts += 1
 
@@ -96,9 +98,10 @@ class SimulationScene:
         else:
             self.scene_info.agent_presence.append(self.agents)
 
-        return self.get_obs()
+        if return_obs:
+            return self.get_obs()
 
-    def get_obs(self) -> Union[AgentBatch, Dict[str, Any]]:
+    def get_obs(self, collate=True) -> Union[AgentBatch, Dict[str, Any]]:
         agent_data_list: List[AgentBatchElement] = list()
         for agent in self.agents:
             scene_time_agent = SceneTimeAgent(
@@ -124,11 +127,14 @@ class SimulationScene:
             # AgentBatchElement transforms (standardizes) the cache.
             self.cache.reset()
 
-        return agent_collate_fn(
-            agent_data_list,
-            return_dict=self.return_dict,
-            batch_augments=self.batch_augments,
-        )
+        if collate:
+            return agent_collate_fn(
+                agent_data_list,
+                return_dict=self.return_dict,
+                batch_augments=self.batch_augments,
+            )
+        else:
+            return agent_data_list
 
     def finalize(self) -> None:
         # We only change the agent's last timestep here because we use it

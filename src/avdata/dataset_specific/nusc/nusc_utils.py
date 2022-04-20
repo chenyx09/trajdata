@@ -120,7 +120,7 @@ def agg_agent_data(
     # sizes_np = np.stack(size_list, axis=0)
 
     # import matplotlib.pyplot as plt
-    
+
     # fig, ax = plt.subplots()
     # ax.plot(translations_np[:, 0], translations_np[:, 1], color="blue")
     # ax.quiver(
