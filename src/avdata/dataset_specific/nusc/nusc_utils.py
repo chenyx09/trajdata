@@ -13,6 +13,7 @@ from avdata.data_structures import (
     SceneMetadata,
     VariableExtent,
 )
+from avdata.utils import arr_utils
 
 NUSC_DT: Final[float] = 0.5
 
@@ -81,11 +82,12 @@ def agg_agent_data(
                 xp=[prev_idx, curr_idx],
                 fp=[translation_list[-1][0, 1], translation[1]],
             )
-            headings: np.ndarray = np.interp(
-                x=fill_time,
-                xp=[prev_idx, curr_idx],
-                # TODO(bivanovic): Not accounting for angle wrap here
-                fp=[yaw_list[-1], heading],
+            headings: np.ndarray = arr_utils.angle_wrap(
+                np.interp(
+                    x=fill_time,
+                    xp=[prev_idx, curr_idx],
+                    fp=np.unwrap([yaw_list[-1], heading]),
+                )
             )
             translation_list.append(np.stack([xs, ys], axis=1))
             yaw_list.extend(headings.tolist())
@@ -114,9 +116,9 @@ def agg_agent_data(
     )
 
     anno_yaws_np = np.expand_dims(np.stack(yaw_list, axis=0), axis=1)
-    yaws_np = np.expand_dims(
-        np.arctan2(velocities_np[:, 1], velocities_np[:, 0]), axis=1
-    )
+    # yaws_np = np.expand_dims(
+    #     np.arctan2(velocities_np[:, 1], velocities_np[:, 0]), axis=1
+    # )
     # sizes_np = np.stack(size_list, axis=0)
 
     # import matplotlib.pyplot as plt
