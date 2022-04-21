@@ -1,6 +1,7 @@
 from typing import Optional, Tuple
 
 import matplotlib.pyplot as plt
+import torch
 from matplotlib.axes import Axes
 from torch import Tensor
 
@@ -12,7 +13,6 @@ from avdata.data_structures.map import Map
 def plot_agent_batch(
     batch: AgentBatch,
     batch_idx: int,
-    map_offset_frac: Tuple[float, float] = (0.0, 0.0),
     ax: Optional[Axes] = None,
     show: bool = True,
     close: bool = True,
@@ -28,27 +28,40 @@ def plot_agent_batch(
     center_xy: Tensor = batch.agent_hist[batch_idx, -1, :2].cpu()
     future_xy: Tensor = batch.agent_fut[batch_idx, :, :2].cpu()
 
-    map_res: float = (
-        batch.maps_resolution[batch_idx].item()
-        if batch.maps_resolution is not None
-        else 1.0
-    )
-
     if batch.maps is not None:
+        agent_from_world_tf: Tensor = batch.agents_from_world_tf[batch_idx].cpu()
+        world_from_raster_tf: Tensor = torch.linalg.inv(
+            batch.rasters_from_world_tf[batch_idx].cpu()
+        )
+
+        agent_from_raster_tf: Tensor = agent_from_world_tf @ world_from_raster_tf
+
         patch_size: int = batch.maps[batch_idx].shape[-1]
-        world_extent: float = patch_size / map_res
+
+        left_extent: float = (agent_from_raster_tf @ torch.tensor([0.0, 0.0, 1.0]))[
+            0
+        ].item()
+        right_extent: float = (
+            agent_from_raster_tf @ torch.tensor([patch_size, 0.0, 1.0])
+        )[0].item()
+        bottom_extent: float = (
+            agent_from_raster_tf @ torch.tensor([0.0, patch_size, 1.0])
+        )[1].item()
+        top_extent: float = (agent_from_raster_tf @ torch.tensor([0.0, 0.0, 1.0]))[
+            1
+        ].item()
+
         ax.imshow(
             Map.to_img(
                 batch.maps[batch_idx].cpu(),
                 # [[0], [1], [2]]
                 # [[0, 1, 2], [3, 4], [5, 6]],
             ),
-            origin="lower",
             extent=(
-                center_xy[0] - (map_offset_frac[0] + 1) * world_extent // 2,
-                center_xy[0] - (map_offset_frac[0] - 1) * world_extent // 2,
-                center_xy[1] - (map_offset_frac[1] + 1) * world_extent // 2,
-                center_xy[1] - (map_offset_frac[1] - 1) * world_extent // 2,
+                left_extent,
+                right_extent,
+                bottom_extent,
+                top_extent,
             ),
             alpha=0.3,
         )

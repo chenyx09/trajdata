@@ -23,7 +23,7 @@ def main():
         agent_interaction_distances=defaultdict(lambda: 30.0),
         incl_robot_future=True,
         incl_map=True,
-        map_params={"px_per_m": 2, "map_size_px": 50},
+        map_params={"px_per_m": 2, "map_size_px": 224, "offset_frac_xy": (-0.5, 0.0)},
         augmentations=[noise_hists],
         num_workers=4,
         verbose=True,

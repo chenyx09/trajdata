@@ -75,18 +75,10 @@ def main():
 
             obs = sim_scene.step(new_xyh_dict)
 
-        plot_agent_batch(
-            obs, 0, dataset.map_params["offset_frac_xy"], show=False, close=False
-        )
-        plot_agent_batch(
-            obs, 1, dataset.map_params["offset_frac_xy"], show=False, close=False
-        )
-        plot_agent_batch(
-            obs, 2, dataset.map_params["offset_frac_xy"], show=False, close=False
-        )
-        plot_agent_batch(
-            obs, 3, dataset.map_params["offset_frac_xy"], show=True, close=True
-        )
+        plot_agent_batch(obs, 0, show=False, close=False)
+        plot_agent_batch(obs, 1, show=False, close=False)
+        plot_agent_batch(obs, 2, show=False, close=False)
+        plot_agent_batch(obs, 3, show=True, close=True)
 
         sim_scene.finalize()
         sim_scene.save()

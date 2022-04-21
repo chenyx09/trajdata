@@ -45,12 +45,26 @@ class AgentBatchElement:
 
         self.standardize_data = standardize_data
         if self.standardize_data:
+            agent_pos: np.ndarray = self.curr_agent_state_np[:2]
             agent_heading: float = self.curr_agent_state_np[-1]
+
+            cos_agent, sin_agent = np.cos(agent_heading), np.sin(agent_heading)
+            world_from_agent_tf: np.ndarray = np.array(
+                [
+                    [cos_agent, -sin_agent, agent_pos[0]],
+                    [sin_agent, cos_agent, agent_pos[1]],
+                    [0.0, 0.0, 1.0],
+                ]
+            )
+            self.agent_from_world_tf: np.ndarray = np.linalg.inv(world_from_agent_tf)
+
             cache.transform_data(
                 shift_mean_to=self.curr_agent_state_np,
                 rotate_by=agent_heading,
                 sincos_heading=True,
             )
+        else:
+            self.agent_from_world_tf: np.ndarray = np.eye(3)
 
         ### AGENT-SPECIFIC DATA ###
         self.agent_history_np, self.agent_history_extent_np = self.get_agent_history(
@@ -228,7 +242,7 @@ class AgentBatchElement:
 
         if self.standardize_data:
             heading = self.curr_agent_state_np[-1]
-            patch_data = self.cache.load_map_patch(
+            patch_data, raster_from_world_tf = self.cache.load_map_patch(
                 world_x,
                 world_y,
                 desired_patch_size,
@@ -240,7 +254,7 @@ class AgentBatchElement:
             )
         else:
             heading = 0.0
-            patch_data = self.cache.load_map_patch(
+            patch_data, raster_from_world_tf = self.cache.load_map_patch(
                 world_x,
                 world_y,
                 desired_patch_size,
@@ -255,6 +269,7 @@ class AgentBatchElement:
             rot_angle=heading,
             crop_size=desired_patch_size,
             resolution=resolution,
+            raster_from_world_tf=raster_from_world_tf,
         )
 
 
