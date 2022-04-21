@@ -14,8 +14,6 @@ from avdata.visualization.vis import plot_agent_batch
 
 # @profile
 def main():
-    low_speed_yaw = LowSpeedYawCorrection(speed_threshold=1.0)
-
     dataset = UnifiedDataset(
         desired_data=["nusc_mini"],
         only_types=[AgentType.VEHICLE],
@@ -28,12 +26,11 @@ def main():
             "return_rgb": True,
         },
         verbose=True,
-        augmentations=[low_speed_yaw],
         # desired_dt=0.1,
         # num_workers=4,
     )
 
-    sim_env_name = "lyft_sample_sim"
+    sim_env_name = "nusc_mini_sim"
     all_sim_scenes: List[SceneMetadata] = list()
     desired_scene: SceneMetadata
     for idx, desired_scene in enumerate(dataset.scene_index):
