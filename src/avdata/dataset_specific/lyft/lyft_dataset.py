@@ -1,3 +1,4 @@
+from collections import defaultdict
 from math import ceil
 from pathlib import Path
 from random import Random
@@ -6,13 +7,13 @@ from typing import Dict, List, Optional, Tuple, Type
 import numpy as np
 import pandas as pd
 from l5kit.configs.config import load_metadata
-from l5kit.data import ChunkedDataset, LocalDataManager, labels
+from l5kit.data import ChunkedDataset, LocalDataManager
+from l5kit.data.map_api import MapAPI
 from l5kit.rasterization import RenderContext
-from scipy.stats import mode
 
 from avdata.caching import EnvCache, SceneCache
 from avdata.data_structures import AgentMetadata, EnvMetadata, SceneMetadata, SceneTag
-from avdata.data_structures.agent import Agent, AgentType, FixedExtent, VariableExtent
+from avdata.data_structures.agent import Agent, AgentType, VariableExtent
 from avdata.data_structures.map import Map, MapMetadata
 from avdata.dataset_specific.lyft import lyft_utils
 from avdata.dataset_specific.lyft.rasterizer import MapSemanticRasterizer
@@ -35,8 +36,27 @@ class LyftDataset(RawDataset):
             scene_split_map = {
                 f"scene-{idx:04d}": scene_split[idx] for idx in range(len(scene_split))
             }
-        elif env_name == "lyft":
-            pass
+        elif env_name == "lyft_train":
+            dataset_parts: List[Tuple[str, ...]] = [
+                ("train",),
+                ("palo_alto",),
+            ]
+
+            scene_split_map = defaultdict(lambda: "train")
+        elif env_name == "lyft_train_full":
+            dataset_parts: List[Tuple[str, ...]] = [
+                ("train",),
+                ("palo_alto",),
+            ]
+
+            scene_split_map = defaultdict(lambda: "train")
+        elif env_name == "lyft_val":
+            dataset_parts: List[Tuple[str, ...]] = [
+                ("val",),
+                ("palo_alto",),
+            ]
+
+            scene_split_map = defaultdict(lambda: "val")
 
         return EnvMetadata(
             name=env_name,
@@ -269,10 +289,26 @@ class LyftDataset(RawDataset):
         # We have to do this ../.. stuff because the data_dir for lyft is scenes/sample.zarr
         dm = LocalDataManager((self.metadata.data_dir / ".." / "..").resolve())
 
-        world_right, world_top = self.dataset_obj.agents["centroid"].max(axis=0) * 1.15
-        world_left, world_bottom = (
-            self.dataset_obj.agents["centroid"].min(axis=0) * 1.15
-        )
+        dataset_meta = load_metadata(dm.require("meta.json"))
+        semantic_map_filepath = dm.require("semantic_map/semantic_map.pb")
+        world_to_ecef = np.array(dataset_meta["world_to_ecef"], dtype=np.float64)
+        mapAPI = MapAPI(semantic_map_filepath, world_to_ecef)
+
+        mins = np.stack(
+            [
+                map_elem["bounds"][:, 0].min(axis=0)
+                for map_elem in mapAPI.bounds_info.values()
+            ]
+        ).min(axis=0)
+        maxs = np.stack(
+            [
+                map_elem["bounds"][:, 1].max(axis=0)
+                for map_elem in mapAPI.bounds_info.values()
+            ]
+        ).max(axis=0)
+
+        world_right, world_top = maxs
+        world_left, world_bottom = mins
 
         world_center: np.ndarray = np.array(
             [(world_left + world_right) / 2, (world_bottom + world_top) / 2]
@@ -284,9 +320,6 @@ class LyftDataset(RawDataset):
             ]
         )
 
-        dataset_meta = load_metadata(dm.require("meta.json"))
-        world_to_ecef = np.array(dataset_meta["world_to_ecef"], dtype=np.float64)
-        semantic_map_filepath = dm.require("semantic_map/semantic_map.pb")
         render_context = RenderContext(
             raster_size_px=raster_size_px,
             pixel_size_m=np.array([1 / resolution, 1 / resolution]),

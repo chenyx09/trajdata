@@ -23,4 +23,21 @@ def get_raw_datasets(data_dirs: Dict[str, str]) -> List[RawDataset]:
             LyftDataset("lyft_sample", data_dirs["lyft_sample"], parallelizable=True)
         )
 
+    if "lyft_train" in data_dirs:
+        raw_datasets.append(
+            LyftDataset("lyft_train", data_dirs["lyft_train"], parallelizable=True)
+        )
+
+    if "lyft_train_full" in data_dirs:
+        raw_datasets.append(
+            LyftDataset(
+                "lyft_train_full", data_dirs["lyft_train_full"], parallelizable=True
+            )
+        )
+
+    if "lyft_val" in data_dirs:
+        raw_datasets.append(
+            LyftDataset("lyft_val", data_dirs["lyft_val"], parallelizable=True)
+        )
+
     return raw_datasets
