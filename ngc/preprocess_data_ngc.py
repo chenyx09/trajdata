@@ -7,11 +7,11 @@ from avdata import UnifiedDataset
 def main():
     dataset = UnifiedDataset(
         desired_data=[
-            "nusc",
-            "nusc_mini",
-            "lyft_sample",
-            "lyft_train",
-            "lyft_train_full",
+            # "nusc",
+            # "nusc_mini",
+            # "lyft_sample",
+            # "lyft_train",
+            # "lyft_train_full",
             "lyft_val",
         ],
         data_dirs={
@@ -22,7 +22,7 @@ def main():
             "lyft_train_full": "/workspace/datasets/lyft/lyft_prediction/scenes/train_full.zarr",
             "lyft_val": "/workspace/datasets/lyft/lyft_prediction/scenes/validate.zarr",
         },
-        cache_location="/workspace/unified_data_cache",
+        cache_location="/results",
         rebuild_cache=True,
         rebuild_maps=True,
         num_workers=os.cpu_count(),

@@ -153,7 +153,7 @@ class UnifiedDataset(Dataset):
 
                 # Loading dataset objects in case we don't have
                 # their data already cached.
-                env.load_dataset_obj()
+                env.load_dataset_obj(verbose=self.verbose)
 
                 if rebuild_maps or not self.cache_class.are_maps_cached(
                     self.cache_path, env.name
@@ -307,11 +307,12 @@ class UnifiedDataset(Dataset):
                     self.get_agent_data(scene_info, corresponding_env)
                 )
 
-            # No more need for the original dataset objects and freeing up
-            # this memory allows the parallel processing below to run very fast.
-            for env in self.envs:
-                if not env.parallelizable:
-                    env.del_dataset_obj()
+        # No more need for the original dataset objects and freeing up
+        # this memory allows the parallel processing below to run very fast.
+        # The dataset objects for any envs used below will be loaded in each
+        # process.
+        for env in self.envs:
+            env.del_dataset_obj()
 
         if parallel_scenes:
             # Scenes for which it's faster to process them in parallel
@@ -320,7 +321,8 @@ class UnifiedDataset(Dataset):
             # and effectively act as a window into the data on disk.
             # E.g., NuScenes objects load a lot of data into RAM, so
             # they are not parallelizable and should be processed
-            # serially (thankfully it is quite fast to do so).
+            # serially after loading the dataset object once 
+            # (thankfully it is quite fast to do so).
             with ProcessPool(num_workers) as pool:
                 filled_scenes_list += list(
                     tqdm(
@@ -337,11 +339,6 @@ class UnifiedDataset(Dataset):
                         disable=not self.verbose,
                     )
                 )
-
-            # No more need for the original dataset objects.
-            for env in self.envs:
-                if env.parallelizable:
-                    env.del_dataset_obj()
 
         return filled_scenes_list
 
@@ -363,13 +360,21 @@ class UnifiedDataset(Dataset):
             )
 
         else:
+            if raw_dataset.parallelizable:
+                # Leaving verbose False here so that we don't spam
+                # stdout with loading messages.
+                raw_dataset.load_dataset_obj(verbose=False)
+            
             agent_list, agent_presence = raw_dataset.get_agent_info(
                 scene_info, self.env_cache.path, self.cache_class
             )
+            
+            if raw_dataset.parallelizable:
+                raw_dataset.del_dataset_obj()
 
             scene_info.update_agent_info(agent_list, agent_presence)
             self.env_cache.save_scene_metadata(scene_info)
-
+            
         self.enforce_desired_dt(scene_info)
 
         return scene_info

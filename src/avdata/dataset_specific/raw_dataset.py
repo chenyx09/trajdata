@@ -21,7 +21,7 @@ class RawDataset:
     def get_matching_scene_tags(self, query: Set[str]) -> List[SceneTag]:
         return [scene_tag for scene_tag in self.scene_tags if scene_tag.contains(query)]
 
-    def load_dataset_obj(self) -> None:
+    def load_dataset_obj(self, verbose: bool = False) -> None:
         raise NotImplementedError()
 
     def del_dataset_obj(self) -> None:

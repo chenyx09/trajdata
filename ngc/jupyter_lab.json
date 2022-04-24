@@ -3,7 +3,7 @@
         
     ],
     "aceId":257,
-    "aceInstance":"dgx1v.16g.1.norm",
+    "aceInstance":"dgx1v.16g.8.norm",
     "dockerImageName":"nvidian/nvr-av/avdata:1.0",
     "aceName":"nv-us-west-2",
     "systemLabels":[

@@ -66,8 +66,9 @@ class LyftDataset(RawDataset):
             scene_split_map=scene_split_map,
         )
 
-    def load_dataset_obj(self) -> None:
-        print(f"Loading {self.name} dataset...", flush=True)
+    def load_dataset_obj(self, verbose: bool = False) -> None:
+        if verbose:
+            print(f"Loading {self.name} dataset...", flush=True)
 
         self.dataset_obj = ChunkedDataset(str(self.metadata.data_dir)).open()
 

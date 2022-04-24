@@ -1,12 +1,10 @@
 from collections import defaultdict
-from tabnanny import verbose
 from typing import Dict, List
 
 import numpy as np
 from tqdm import trange
 
 from avdata import AgentBatch, AgentType, UnifiedDataset
-from avdata.augmentation import LowSpeedYawCorrection
 from avdata.data_structures.scene_metadata import SceneMetadata
 from avdata.simulation import SimulationScene
 from avdata.visualization.vis import plot_agent_batch
