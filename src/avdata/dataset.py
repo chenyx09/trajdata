@@ -26,7 +26,12 @@ from avdata.data_structures import (
 )
 from avdata.data_structures.agent import AgentMetadata
 from avdata.dataset_specific import RawDataset
-from avdata.parallel import ParallelDatasetPreprocessor, scene_metadata_collate_fn
+from avdata.parallel import (
+    ParallelDatasetPreprocessor,
+    TemporaryCache,
+    parallel_apply,
+    scene_metadata_collate_fn,
+)
 from avdata.utils import env_utils, string_utils
 
 
@@ -160,15 +165,20 @@ class UnifiedDataset(Dataset):
                 ):
                     env.cache_maps(self.cache_path, self.cache_class)
 
-        self.scene_index: List[SceneMetadata] = self.preprocess_scene_metadata(
-            matching_datasets, scene_description_contains, num_workers
+        temp_cache: TemporaryCache = TemporaryCache()
+        self.scene_index: List[Path] = self.preprocess_scene_metadata(
+            matching_datasets, scene_description_contains, num_workers, temp_cache
         )
         if self.verbose:
-            print(self.scene_index)
+            print(len(self.scene_index), "scenes in the scene index.")
 
         self.data_index = list()
         if self.centric == "scene":
-            for scene_info in self.scene_index:
+            for scene_info_path in tqdm(
+                self.scene_index, desc="Creating Data Index", disable=not self.verbose
+            ):
+                scene_info: SceneMetadata = TemporaryCache.load(scene_info_path)
+
                 for ts in range(scene_info.length_timesteps):
                     # This is where we remove scene timesteps that would have no remaining agents after filtering.
                     if filtering.all_agents_excluded_types(
@@ -193,7 +203,11 @@ class UnifiedDataset(Dataset):
                     self.data_index.append((scene_info.env_name, scene_info.name, ts))
 
         elif self.centric == "agent":
-            for scene_info in self.scene_index:
+            for scene_info_path in tqdm(
+                self.scene_index, desc="Creating Data Index", disable=not self.verbose
+            ):
+                scene_info: SceneMetadata = TemporaryCache.load(scene_info_path)
+
                 filtered_agents: List[AgentMetadata] = filtering.agent_types(
                     scene_info.agents, self.no_types, self.only_types
                 )
@@ -210,6 +224,8 @@ class UnifiedDataset(Dataset):
                         (scene_info.env_name, scene_info.name, ts, agent_info.name)
                         for ts in valid_ts
                     ]
+
+        temp_cache.cleanup()
 
         manager = Manager()
         self.data_index = manager.list(self.data_index)
@@ -256,7 +272,8 @@ class UnifiedDataset(Dataset):
         scene_tags: List[SceneTag],
         scene_description_contains: Optional[List[str]],
         num_workers: int,
-    ) -> List[SceneMetadata]:
+        temp_cache: TemporaryCache,
+    ) -> List[Path]:
         scenes_list: List[SceneMetadata] = list()
         for scene_tag in tqdm(
             scene_tags, desc="Loading Scene Metadata", disable=not self.verbose
@@ -292,7 +309,7 @@ class UnifiedDataset(Dataset):
             serial_scenes = scenes_list
             parallel_scenes = list()
 
-        filled_scenes_list: List[SceneMetadata] = list()
+        filled_scene_paths: List[Path] = list()
         if serial_scenes:
             # Scenes for which it's faster to process them serially. See
             # the longer comment below for a more thorough explanation.
@@ -303,9 +320,10 @@ class UnifiedDataset(Dataset):
                 disable=not self.verbose,
             ):
                 corresponding_env = self.envs_dict[scene_info.env_name]
-                filled_scenes_list.append(
-                    self.get_agent_data(scene_info, corresponding_env)
+                filled_scene_info: SceneMetadata = self.get_agent_data(
+                    scene_info, corresponding_env
                 )
+                filled_scene_paths.append(temp_cache.cache(filled_scene_info))
 
         # No more need for the original dataset objects and freeing up
         # this memory allows the parallel processing below to run very fast.
@@ -314,23 +332,56 @@ class UnifiedDataset(Dataset):
         for env in self.envs:
             env.del_dataset_obj()
 
+        # Scenes for which it's faster to process them in parallel
+        # Note this really only applies to scenes whose raw datasets
+        # are "parallelizable" AKA take up a small amount of memory
+        # and effectively act as a window into the data on disk.
+        # E.g., NuScenes objects load a lot of data into RAM, so
+        # they are not parallelizable and should be processed
+        # serially after loading the dataset object once
+        # (thankfully it is quite fast to do so).
         if parallel_scenes:
-            # Scenes for which it's faster to process them in parallel
-            # Note this really only applies to scenes whose raw datasets
-            # are "parallelizable" AKA take up a small amount of memory
-            # and effectively act as a window into the data on disk.
-            # E.g., NuScenes objects load a lot of data into RAM, so
-            # they are not parallelizable and should be processed
-            # serially after loading the dataset object once
-            # (thankfully it is quite fast to do so).
+            # Doing this temp caching so we pass absolutely no data back and forth
+            # to avoid https://github.com/pytorch/pytorch/issues/13246 from
+            # completely filling our memory. In particular, what's being
+            # cached here is just the "unfilled" SceneMetadata object (i.e.,
+            # the object without any agents list or agent_presence info).
+            scene_info_paths: List[str] = parallel_apply(
+                partial(temp_cache.cache, ret_str=True),
+                parallel_scenes,
+                num_workers=num_workers,
+                desc="Temporarily Caching Scene Metadata",
+                disable=not self.verbose,
+            )
+
+            # scene_info: SceneMetadata
+            # for scene_info in tqdm(
+            #     parallel_scenes,
+            #     desc="Temporarily Caching Scene Metadata",
+            #     disable=not self.verbose,
+            # ):
+            #     scene_info_paths.append(temp_cache.cache(scene_info, ret_str=True))
+
+            # Here we're using PyTorch's parallel dataloading as a
+            # general parallel processing interface (it uses all the same
+            # multiprocessing package under the hood anyways, but it has
+            # some good logic for keeping workers occupied which seems
+            # like it'd be good to reuse).
             parallel_preprocessor = ParallelDatasetPreprocessor(
-                parallel_scenes, self.envs_dict, self.env_cache, self.cache_class
+                scene_info_paths,
+                {
+                    env_name: str(env.metadata.data_dir)
+                    for env_name, env in self.envs_dict.items()
+                },
+                str(self.env_cache.path),
+                self.cache_class,
             )
 
             dataloader = DataLoader(
                 parallel_preprocessor,
                 batch_size=1,
                 num_workers=num_workers,
+                shuffle=False,
                 collate_fn=scene_metadata_collate_fn,
             )
 
@@ -339,9 +390,9 @@ class UnifiedDataset(Dataset):
                 desc=f"Calculating Agent Data ({num_workers} CPUs)",
                 disable=not self.verbose,
             ):
-                filled_scenes_list += filled_scene
+                filled_scene_paths += filled_scene
 
-        return filled_scenes_list
+        return filled_scene_paths
 
     def get_agent_data(
         self,

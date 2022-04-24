@@ -28,7 +28,7 @@ def main():
         num_workers=64,
         verbose=True,
     )
-    
+
     print(f"Total Data Samples: {len(dataset):,}")
 
 
