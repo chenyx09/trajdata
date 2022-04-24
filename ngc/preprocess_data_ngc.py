@@ -7,11 +7,11 @@ from avdata import UnifiedDataset
 def main():
     dataset = UnifiedDataset(
         desired_data=[
-            # "nusc",
-            # "nusc_mini",
-            # "lyft_sample",
-            # "lyft_train",
-            # "lyft_train_full",
+            "nusc",
+            "nusc_mini",
+            "lyft_sample",
+            "lyft_train",
+            "lyft_train_full",
             "lyft_val",
         ],
         data_dirs={
@@ -25,9 +25,10 @@ def main():
         cache_location="/results",
         rebuild_cache=True,
         rebuild_maps=True,
-        num_workers=os.cpu_count(),
+        num_workers=64,
         verbose=True,
     )
+    
     print(f"Total Data Samples: {len(dataset):,}")
 
 

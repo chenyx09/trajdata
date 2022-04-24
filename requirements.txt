@@ -18,6 +18,5 @@ isort==5.10.1
 pytest==7.1.1
 pytest-xdist==2.5.0
 
-pathos==0.2.8
 zarr==2.11.0
 kornia==0.6.4

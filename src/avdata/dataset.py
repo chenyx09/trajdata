@@ -7,8 +7,7 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
-from pathos.pools import ProcessPool
-from torch.utils.data import Dataset
+from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
 from avdata import filtering
@@ -27,6 +26,7 @@ from avdata.data_structures import (
 )
 from avdata.data_structures.agent import AgentMetadata
 from avdata.dataset_specific import RawDataset
+from avdata.parallel import ParallelDatasetPreprocessor, scene_metadata_collate_fn
 from avdata.utils import env_utils, string_utils
 
 
@@ -321,24 +321,25 @@ class UnifiedDataset(Dataset):
             # and effectively act as a window into the data on disk.
             # E.g., NuScenes objects load a lot of data into RAM, so
             # they are not parallelizable and should be processed
-            # serially after loading the dataset object once 
+            # serially after loading the dataset object once
             # (thankfully it is quite fast to do so).
-            with ProcessPool(num_workers) as pool:
-                filled_scenes_list += list(
-                    tqdm(
-                        pool.uimap(
-                            self.get_agent_data,
-                            parallel_scenes,
-                            list(
-                                self.envs_dict[scene_info.env_name]
-                                for scene_info in parallel_scenes
-                            ),
-                        ),
-                        total=len(parallel_scenes),
-                        desc=f"Calculating Agent Data ({num_workers} CPUs)",
-                        disable=not self.verbose,
-                    )
-                )
+            parallel_preprocessor = ParallelDatasetPreprocessor(
+                parallel_scenes, self.envs_dict, self.env_cache, self.cache_class
+            )
+
+            dataloader = DataLoader(
+                parallel_preprocessor,
+                batch_size=1,
+                num_workers=num_workers,
+                collate_fn=scene_metadata_collate_fn,
+            )
+
+            for filled_scene in tqdm(
+                dataloader,
+                desc=f"Calculating Agent Data ({num_workers} CPUs)",
+                disable=not self.verbose,
+            ):
+                filled_scenes_list += filled_scene
 
         return filled_scenes_list
 
@@ -360,21 +361,13 @@ class UnifiedDataset(Dataset):
             )
 
         else:
-            if raw_dataset.parallelizable:
-                # Leaving verbose False here so that we don't spam
-                # stdout with loading messages.
-                raw_dataset.load_dataset_obj(verbose=False)
-            
             agent_list, agent_presence = raw_dataset.get_agent_info(
                 scene_info, self.env_cache.path, self.cache_class
             )
-            
-            if raw_dataset.parallelizable:
-                raw_dataset.del_dataset_obj()
 
             scene_info.update_agent_info(agent_list, agent_presence)
             self.env_cache.save_scene_metadata(scene_info)
-            
+
         self.enforce_desired_dt(scene_info)
 
         return scene_info

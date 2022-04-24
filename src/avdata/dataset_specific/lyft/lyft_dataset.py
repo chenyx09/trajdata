@@ -1,8 +1,9 @@
 from collections import defaultdict
+from functools import partial
 from math import ceil
 from pathlib import Path
 from random import Random
-from typing import Dict, List, Optional, Tuple, Type
+from typing import Any, Dict, List, Optional, Tuple, Type
 
 import numpy as np
 import pandas as pd
@@ -19,6 +20,14 @@ from avdata.dataset_specific.lyft import lyft_utils
 from avdata.dataset_specific.lyft.rasterizer import MapSemanticRasterizer
 from avdata.dataset_specific.raw_dataset import RawDataset
 from avdata.dataset_specific.scene_records import LyftSceneRecord
+
+
+def const_lambda(const_val: Any) -> Any:
+    return const_val
+
+
+def get_mode_val(series: pd.Series) -> float:
+    return series.mode().iloc[0].item()
 
 
 class LyftDataset(RawDataset):
@@ -42,21 +51,21 @@ class LyftDataset(RawDataset):
                 ("palo_alto",),
             ]
 
-            scene_split_map = defaultdict(lambda: "train")
+            scene_split_map = defaultdict(partial(const_lambda, const_val="train"))
         elif env_name == "lyft_train_full":
             dataset_parts: List[Tuple[str, ...]] = [
                 ("train",),
                 ("palo_alto",),
             ]
 
-            scene_split_map = defaultdict(lambda: "train")
+            scene_split_map = defaultdict(partial(const_lambda, const_val="train"))
         elif env_name == "lyft_val":
             dataset_parts: List[Tuple[str, ...]] = [
                 ("val",),
                 ("palo_alto",),
             ]
 
-            scene_split_map = defaultdict(lambda: "val")
+            scene_split_map = defaultdict(partial(const_lambda, const_val="val"))
 
         return EnvMetadata(
             name=env_name,
@@ -206,7 +215,7 @@ class LyftDataset(RawDataset):
         ### Calculating agent classes
         agent_class: Dict[int, float] = (
             all_agent_data_df.groupby("agent_id")["class_id"]
-            .agg(lambda x: x.mode().iloc[0].item())
+            .agg(get_mode_val)
             .to_dict()
         )
 

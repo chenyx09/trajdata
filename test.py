@@ -14,7 +14,7 @@ def main():
     noise_hists = NoiseHistories()
 
     dataset = UnifiedDataset(
-        desired_data=["nusc_mini"],
+        desired_data=["lyft_sample"],
         centric="agent",
         desired_dt=0.1,
         history_sec=(1.5, 1.5),
