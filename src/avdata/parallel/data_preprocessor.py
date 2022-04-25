@@ -42,7 +42,7 @@ class ParallelDatasetPreprocessor(Dataset):
         env_cache: EnvCache = EnvCache(env_cache_path)
 
         scene_info_path: str = str(self.scene_info_paths[idx], encoding="utf-8")
-        scene_info: SceneMetadata = TemporaryCache.load(scene_info_path)
+        scene_info: SceneMetadata = EnvCache.load(scene_info_path)
 
         env_idx: int = np.argmax(
             self.env_names_arr == np.array(scene_info.env_name).astype(np.string_)
@@ -71,9 +71,6 @@ class ParallelDatasetPreprocessor(Dataset):
         # first cache creation).
         # TODO(bivanovic): Update this if the above changes in the future.
 
-        return (
-            env_cache.path
-            / scene_info.env_name
-            / scene_info.name
-            / "scene_metadata.dill"
+        return EnvCache.scene_metadata_path(
+            env_cache.path, scene_info.env_name, scene_info.name
         )

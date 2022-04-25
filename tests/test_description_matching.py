@@ -9,7 +9,7 @@ class TestDescriptionMatching(unittest.TestCase):
             desired_data=["nusc_mini"], scene_description_contains=["night"]
         )
 
-        for scene_info in dataset.scene_index:
+        for scene_info in dataset.scenes():
             self.assertIn("night", scene_info.description)
 
     def test_intersection(self):
@@ -17,7 +17,7 @@ class TestDescriptionMatching(unittest.TestCase):
             desired_data=["nusc_mini"], scene_description_contains=["intersection"]
         )
 
-        for scene_info in dataset.scene_index:
+        for scene_info in dataset.scenes():
             self.assertIn("intersection", scene_info.description)
 
     def test_intersection_more_initial(self):
@@ -26,7 +26,7 @@ class TestDescriptionMatching(unittest.TestCase):
             scene_description_contains=["intersection"],
         )
 
-        for scene_info in dataset.scene_index:
+        for scene_info in dataset.scenes():
             self.assertIn("intersection", scene_info.description)
 
 

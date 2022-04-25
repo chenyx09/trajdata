@@ -24,14 +24,14 @@ def main():
             "return_rgb": True,
         },
         verbose=True,
-        # desired_dt=0.1,
+        # desired_dt=0.1, # TODO(bivanovic): FIX THIS STUFF
         # num_workers=4,
     )
 
     sim_env_name = "nusc_mini_sim"
     all_sim_scenes: List[SceneMetadata] = list()
     desired_scene: SceneMetadata
-    for idx, desired_scene in enumerate(dataset.scene_index):
+    for idx, desired_scene in enumerate(dataset.scenes()):
         sim_scene: SimulationScene = SimulationScene(
             env_name=sim_env_name,
             scene_name=f"sim_scene-{idx:04d}",

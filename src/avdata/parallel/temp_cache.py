@@ -30,10 +30,3 @@ class TemporaryCache:
     @staticmethod
     def get_file_path(scene_info: SceneMetadata) -> Path:
         return f"{scene_info.env_name}_{scene_info.name}.dill"
-
-    @staticmethod
-    def load(scene_info_path: Union[Path, str]) -> SceneMetadata:
-        with open(scene_info_path, "rb") as handle:
-            scene_info: SceneMetadata = dill.load(handle)
-
-        return scene_info
