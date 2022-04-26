@@ -4,6 +4,7 @@ ARG PYTHON_VERSION=3.8
 RUN apt-get update
 RUN apt-get install htop -y
 RUN apt-get install screen -y
+RUN apt-get install psmisc -y
 
 RUN pip install --upgrade pip
 

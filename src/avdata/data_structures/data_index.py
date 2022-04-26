@@ -6,29 +6,25 @@ import numpy as np
 class DataIndex:
     """The data index is effectively a big list of tuples taking the form:
 
-    (env_name: str, scene_name: str, timestep: int, agent_name: str)
+    (scene_path: str, scene_elem_index: int)
     """
 
-    def __init__(self, data_index: List[Tuple]) -> None:
-        self.len = len(data_index)
+    def __init__(self, index_elems: List[Tuple[str, int]]) -> None:
+        scene_paths, scene_index_lens = zip(*index_elems)
 
-        # TODO(bivanovic): Handle scene data index too (which doesn't have agent_names)
-        # TODO: Something is very slow here... Might be better to just numpy array all
-        #       of this and then astype it?
-        env_names, scene_names, timesteps, agent_names = zip(*data_index)
+        self.cumulative_lengths: np.ndarray = np.cumsum(scene_index_lens)
+        self.len: int = self.cumulative_lengths[-1]
 
-        self.env_names = np.array(env_names).astype(np.string_)
-        self.scene_names = np.array(scene_names).astype(np.string_)
-        self.timesteps = np.array(timesteps)
-        self.agent_names = np.array(agent_names).astype(np.string_)
+        self.scene_paths: np.ndarray = np.array(scene_paths).astype(np.string_)
 
     def __len__(self) -> int:
         return self.len
 
-    def __getitem__(self, index: int) -> Tuple:
-        env_name: str = str(self.env_names[index], encoding="utf-8")
-        scene_name: str = str(self.scene_names[index], encoding="utf-8")
-        timestep: int = self.timesteps[index].item()
-        agent_name: str = str(self.agent_names[index], encoding="utf-8")
+    def __getitem__(self, index: int) -> Tuple[str, int]:
+        scene_idx: int = np.searchsorted(
+            self.cumulative_lengths, index, side="right"
+        ).item()
 
-        return (env_name, scene_name, timestep, agent_name)
+        scene_path: str = str(self.scene_paths[scene_idx], encoding="utf-8")
+        scene_elem_index: int = index - self.cumulative_lengths[scene_idx - 1].item()
+        return (scene_path, scene_elem_index)
