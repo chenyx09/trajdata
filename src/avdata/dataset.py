@@ -349,7 +349,7 @@ class UnifiedDataset(Dataset):
         )
 
     def get_collate_fn(
-        self, centric: str = "agent", return_dict: bool = False
+        self, return_dict: bool = False
     ) -> Callable:
 
         batch_augments: Optional[List[BatchAugmentation]] = None
@@ -360,11 +360,11 @@ class UnifiedDataset(Dataset):
                 if isinstance(batch_aug, BatchAugmentation)
             ]
 
-        if centric == "agent":
+        if self.centric == "agent":
             collate_fn = partial(
                 agent_collate_fn, return_dict=return_dict, batch_augments=batch_augments
             )
-        elif centric == "scene":
+        elif self.centric == "scene":
             collate_fn = partial(
                 scene_collate_fn, return_dict=return_dict, batch_augments=batch_augments
             )
