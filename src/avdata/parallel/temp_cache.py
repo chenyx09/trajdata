@@ -1,6 +1,6 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Union
+from typing import Optional, Union
 
 import dill
 
@@ -8,9 +8,13 @@ from avdata.data_structures.scene_metadata import SceneMetadata
 
 
 class TemporaryCache:
-    def __init__(self) -> None:
-        self.temp_dir: TemporaryDirectory = TemporaryDirectory()
-        self.path: Path = Path(self.temp_dir.name)
+    def __init__(self, temp_dir: Optional[str] = None) -> None:
+        self.temp_dir: Optional[TemporaryDirectory] = None
+        if temp_dir is None:
+            self.temp_dir: TemporaryDirectory = TemporaryDirectory()
+            self.path: Path = Path(self.temp_dir.name)
+        else:
+            self.path: Path = Path(temp_dir)
 
     def cache(
         self, scene_info: SceneMetadata, ret_str: bool = False

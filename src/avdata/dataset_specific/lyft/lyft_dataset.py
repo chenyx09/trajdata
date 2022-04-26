@@ -241,9 +241,11 @@ class LyftDataset(RawDataset):
         accelerations_np[border_mask] = accelerations_np[border_mask + 1]
         all_agent_data_df[["ax", "ay"]] = accelerations_np
 
+        agents_to_remove: List[int] = list()
         for agent_id, frames in all_agent_data_df.groupby("agent_id")["scene_ts"]:
             if frames.shape[0] <= 1:
                 # There are some agents with only a single detection to them, we don't care about these.
+                agents_to_remove.append(agent_id)
                 continue
 
             start_frame: int = frames.iat[0].item()
@@ -279,6 +281,9 @@ class LyftDataset(RawDataset):
             "ay",
             "heading",
         ] + extent_cols
+
+        # Removing agents with only one detection.
+        all_agent_data_df.drop(index=agents_to_remove, inplace=True)
 
         # Changing the agent_id dtype to str
         all_agent_data_df.reset_index(inplace=True)

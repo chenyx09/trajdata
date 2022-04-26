@@ -23,7 +23,7 @@ def parallel_iapply(
 ) -> Iterable:
     with Pool(processes=num_workers) as pool:
         for fn_output in tqdm(
-            pool.imap_unordered(element_fn, element_list),
+            pool.imap(element_fn, element_list),
             desc=desc,
             total=len(element_list),
             disable=disable,

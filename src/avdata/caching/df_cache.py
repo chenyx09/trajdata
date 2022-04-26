@@ -260,6 +260,10 @@ class DataFrameCache(SceneCache):
     ) -> Tuple[np.ndarray, np.ndarray]:
         # We don't have to check the mins here because our data_index filtering in dataset.py already
         # took care of it.
+        if scene_ts >= agent_info.last_timestep:
+            # Extent shape = 3
+            return np.zeros((0, self.state_dim)), np.zeros((0, 3))
+
         first_index_incl: int = self.index_dict[(agent_info.name, scene_ts + 1)]
         last_index_incl: int
         if future_sec[1] is not None:

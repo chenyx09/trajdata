@@ -24,8 +24,8 @@ def main():
             "return_rgb": True,
         },
         verbose=True,
-        # desired_dt=0.1, # TODO(bivanovic): FIX THIS STUFF
-        # num_workers=4,
+        desired_dt=0.1,
+        num_workers=4,
     )
 
     sim_env_name = "nusc_mini_sim"
