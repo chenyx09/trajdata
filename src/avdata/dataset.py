@@ -348,9 +348,7 @@ class UnifiedDataset(Dataset):
             (index_elems_len if ret_len_only else index_elems),
         )
 
-    def get_collate_fn(
-        self, return_dict: bool = False
-    ) -> Callable:
+    def get_collate_fn(self, return_dict: bool = False) -> Callable:
 
         batch_augments: Optional[List[BatchAugmentation]] = None
         if self.augmentations:

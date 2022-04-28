@@ -1,9 +1,9 @@
-from pathlib import Path
-from typing import Dict
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
 from avdata.caching.scene_cache import SceneCache
+from avdata.simulation.sim_metrics import SimMetric
 
 
 class SimulationCache(SceneCache):
@@ -17,4 +17,9 @@ class SimulationCache(SceneCache):
         raise NotImplementedError()
 
     def save_sim_scene(self) -> None:
+        raise NotImplementedError()
+
+    def calculate_metrics(
+        self, metrics: List[SimMetric], ts_range: Optional[Tuple[int, int]] = None
+    ) -> Dict[str, Dict[str, float]]:
         raise NotImplementedError()
