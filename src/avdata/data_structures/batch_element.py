@@ -112,7 +112,11 @@ class AgentBatchElement:
             self.robot_future_np: np.ndarray = self.get_robot_current_and_future(
                 scene_time_agent.robot, future_sec
             )
-            self.robot_future_len: int = self.robot_future_np.shape[0]
+            
+            # -1 because this is meant to hold the number of future steps
+            # (whereas the above returns the current + future, yielding
+            # one more timestep).
+            self.robot_future_len: int = self.robot_future_np.shape[0] - 1
 
         ### MAP ###
         self.map_patch: Optional[MapPatch] = None
