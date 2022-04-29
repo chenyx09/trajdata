@@ -351,7 +351,7 @@ def agent_collate_fn(
         neighbor_types_t: Tensor = torch.full((batch_size, 0), np.nan)
 
         neighbor_histories_t: Tensor = torch.full(
-            (batch_size, 0, max_neigh_history_len, curr_agent_state_t.shape[-1]), np.nan
+            (batch_size, 0, max_neigh_history_len, agent_history_t.shape[-1]), np.nan
         )
         neighbor_history_extents_t: Tensor = torch.full(
             (batch_size, 0, max_neigh_history_len, agent_history_extent_t.shape[-1]),
@@ -359,7 +359,7 @@ def agent_collate_fn(
         )
 
         neighbor_futures_t: Tensor = torch.full(
-            (batch_size, 0, max_neigh_future_len, curr_agent_state_t.shape[-1]), np.nan
+            (batch_size, 0, max_neigh_future_len, agent_future_t.shape[-1]), np.nan
         )
         neighbor_future_extents_t: Tensor = torch.full(
             (batch_size, 0, max_neigh_future_len, agent_future_extent_t.shape[-1]),
