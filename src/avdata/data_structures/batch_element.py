@@ -3,10 +3,9 @@ from math import sqrt
 from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
-import pandas as pd
 
 from avdata.caching import SceneCache
-from avdata.data_structures.agent import AgentMetadata, AgentType
+from avdata.data_structures.agent import AgentMetadata, AgentType, FixedExtent
 from avdata.data_structures.map_patch import MapPatch
 from avdata.data_structures.scene import SceneTime, SceneTimeAgent
 
@@ -112,7 +111,7 @@ class AgentBatchElement:
             self.robot_future_np: np.ndarray = self.get_robot_current_and_future(
                 scene_time_agent.robot, future_sec
             )
-            
+
             # -1 because this is meant to hold the number of future steps
             # (whereas the above returns the current + future, yielding
             # one more timestep).
@@ -228,13 +227,22 @@ class AgentBatchElement:
         robot_info: AgentMetadata,
         future_sec: Tuple[Optional[float], Optional[float]],
     ) -> np.ndarray:
-        # self.scene_ts - 1 because we want to get the current timestep (scene_ts) too
-        # and get_agent_future(...) gets data starting from the timestep AFTER the
-        # given one.
+        robot_curr_np: np.ndarray = self.cache.get_state(robot_info.name, self.scene_ts)
+        # # TODO(bivanovic): This should be fine in general, but it is making
+        # # the assumption that all robots have a fixed extent (reasonable
+        # # since usually robots will know their own dimensions).
+        # robot_extent_np: np.ndarray = robot_info.extent.get_extents(
+        #     self.scene_ts, self.scene_ts
+        # )
+
         (
-            robot_curr_and_fut_np,
-            robot_curr_and_fut_extents_np,
-        ) = self.cache.get_agent_future(robot_info, self.scene_ts - 1, future_sec)
+            robot_fut_np,
+            _,  # robot_fut_extents_np,
+        ) = self.cache.get_agent_future(robot_info, self.scene_ts, future_sec)
+
+        robot_curr_and_fut_np: np.ndarray = np.concatenate(
+            (robot_curr_np[np.newaxis, :], robot_fut_np), axis=0
+        )
         return robot_curr_and_fut_np
 
     def get_agent_map_patch(self, patch_params: Dict[str, int]) -> MapPatch:
