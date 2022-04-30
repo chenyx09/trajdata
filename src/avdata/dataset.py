@@ -58,8 +58,8 @@ class UnifiedDataset(Dataset):
         augmentations: Optional[List[Augmentation]] = None,
         data_dirs: Dict[str, str] = {
             # "nusc": "~/datasets/nuScenes",
-            "nusc_mini": "~/datasets/nuScenes",
-            "lyft_sample": "~/datasets/lyft/scenes/sample.zarr",
+            "nusc_mini": "/home/yuxiaoc/repos/Trajectron-plus-plus/experiments/nuScenes/v1.0-mini",
+            "lyft_sample": "/home/yuxiaoc/repos/l5kit/prediction-dataset/scenes/sample.zarr",
         },
         cache_type: str = "dataframe",
         cache_location: str = "~/.unified_data_cache",
