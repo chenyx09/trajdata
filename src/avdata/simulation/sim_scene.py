@@ -1,5 +1,5 @@
 from copy import deepcopy
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 
@@ -16,6 +16,7 @@ from avdata.dataset import UnifiedDataset
 from avdata.simulation.sim_cache import SimulationCache
 from avdata.simulation.sim_df_cache import SimulationDataFrameCache
 from avdata.simulation.sim_metrics import SimMetric
+from avdata.simulation.sim_stats import SimStatistic
 
 
 class SimulationScene:
@@ -140,6 +141,13 @@ class SimulationScene:
     def get_metrics(self, metrics: List[SimMetric]) -> Dict[str, Dict[str, float]]:
         return self.cache.calculate_metrics(
             metrics, ts_range=(self.init_scene_ts + 1, self.scene_ts)
+        )
+
+    def get_stats(
+        self, stats: List[SimStatistic]
+    ) -> Dict[str, Dict[str, Tuple[np.ndarray, np.ndarray]]]:
+        return self.cache.calculate_stats(
+            stats, ts_range=(self.init_scene_ts + 1, self.scene_ts)
         )
 
     def finalize(self) -> None:

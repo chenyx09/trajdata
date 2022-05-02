@@ -5,7 +5,7 @@ import pandas as pd
 
 
 class SimMetric:
-    def __init__(self, name: str):
+    def __init__(self, name: str) -> None:
         self.name = name
 
     def __call__(self, gt_df: pd.DataFrame, sim_df: pd.DataFrame) -> Dict[str, float]:
@@ -13,7 +13,7 @@ class SimMetric:
 
 
 class ADE(SimMetric):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__("ade")
 
     def __call__(self, gt_df: pd.DataFrame, sim_df: pd.DataFrame) -> Dict[str, float]:
@@ -23,7 +23,7 @@ class ADE(SimMetric):
 
 
 class FDE(SimMetric):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__("fde")
 
     def __call__(self, gt_df: pd.DataFrame, sim_df: pd.DataFrame) -> Dict[str, float]:

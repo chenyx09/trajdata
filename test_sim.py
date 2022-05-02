@@ -1,12 +1,12 @@
 from collections import defaultdict
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 import numpy as np
 from tqdm import trange
 
 from avdata import AgentBatch, AgentType, UnifiedDataset
 from avdata.data_structures.scene_metadata import SceneMetadata
-from avdata.simulation import SimulationScene, sim_metrics
+from avdata.simulation import SimulationScene, sim_metrics, sim_stats, sim_vis
 from avdata.visualization.vis import plot_agent_batch
 
 
@@ -16,13 +16,13 @@ def main():
         desired_data=["nusc_mini"],
         only_types=[AgentType.VEHICLE],
         agent_interaction_distances=defaultdict(lambda: 50.0),
-        incl_map=True,
-        map_params={
-            "px_per_m": 2,
-            "map_size_px": 224,
-            "offset_frac_xy": (0.0, 0.0),
-            "return_rgb": True,
-        },
+        # incl_map=True,
+        # map_params={
+        #     "px_per_m": 2,
+        #     "map_size_px": 224,
+        #     "offset_frac_xy": (0.0, 0.0),
+        #     "return_rgb": True,
+        # },
         verbose=True,
         desired_dt=0.1,
         num_workers=4,
@@ -44,8 +44,15 @@ def main():
             freeze_agents=True,
         )
 
+        vel_hist = sim_stats.VelocityHistogram(bins=np.linspace(0, 40, 41))
+        lon_acc_hist = sim_stats.LongitudinalAccHistogram(bins=np.linspace(0, 10, 11))
+        lat_acc_hist = sim_stats.LateralAccHistogram(bins=np.linspace(0, 10, 11))
+        jerk_hist = sim_stats.JerkHistogram(
+            bins=np.linspace(0, 40, 41), dt=sim_scene.scene_info.dt
+        )
+
         obs: AgentBatch = sim_scene.reset()
-        for t in trange(1, 101):
+        for t in trange(1, sim_scene.scene_info.length_timesteps):
             new_xyh_dict: Dict[str, np.ndarray] = dict()
             for idx, agent_name in enumerate(obs.agent_name):
                 curr_yaw = obs.curr_agent_state[idx, -1]
@@ -74,6 +81,11 @@ def main():
             obs = sim_scene.step(new_xyh_dict)
             metrics: Dict[str, Dict[str, float]] = sim_scene.get_metrics([ade, fde])
             print(metrics)
+
+        stats: Dict[
+            str, Dict[str, Tuple[np.ndarray, np.ndarray]]
+        ] = sim_scene.get_stats([vel_hist, lon_acc_hist, lat_acc_hist, jerk_hist])
+        sim_vis.plot_sim_stats(stats)
 
         plot_agent_batch(obs, 0, show=False, close=False)
         plot_agent_batch(obs, 1, show=False, close=False)

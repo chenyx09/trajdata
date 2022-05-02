@@ -13,6 +13,7 @@ from avdata.data_structures.agent import AgentMetadata
 from avdata.data_structures.scene_metadata import SceneMetadata
 from avdata.simulation.sim_cache import SimulationCache
 from avdata.simulation.sim_metrics import SimMetric
+from avdata.simulation.sim_stats import SimStatistic
 
 
 class SimulationDataFrameCache(DataFrameCache, SimulationCache):
@@ -139,15 +140,15 @@ class SimulationDataFrameCache(DataFrameCache, SimulationCache):
 
     def calculate_metrics(
         self, metrics: List[SimMetric], ts_range: Optional[Tuple[int, int]] = None
-    ) -> Dict[str, float]:
+    ) -> Dict[str, Dict[str, float]]:
         """Calculate metrics about the simulated scene.
 
         Args:
-            metrics (List[Callable]): The metrics to compute.
+            metrics (List[SimMetric]): The metrics to compute.
             ts_range (Optional[Tuple[int, int]], optional): Optional specification of which timesteps to constrain metric computation within (both inclusive). Defaults to None which means all available timesteps.
 
         Returns:
-            Dict[str, float]: A mapping from present agent names to their associated metric value.
+            Dict[str, Dict[str, float]]: A mapping from metric names to a dict of present agent names and their associated metric value.
         """
         index_scene_ts: pd.Index = self.original_scene_df.index.get_level_values(1)
         if ts_range is not None:
@@ -169,3 +170,38 @@ class SimulationDataFrameCache(DataFrameCache, SimulationCache):
             metrics_dict[metric.name] = metric(gt_df, sim_df)
 
         return metrics_dict
+
+    def calculate_stats(
+        self, metrics: List[SimStatistic], ts_range: Optional[Tuple[int, int]] = None
+    ) -> Dict[str, Dict[str, Tuple[np.ndarray, np.ndarray]]]:
+        """Calculate statistics about the simulated scene.
+
+        Args:
+            stats (List[SimStatistic]): The statistics to compute.
+            ts_range (Optional[Tuple[int, int]], optional): Optional specification of which timesteps to constrain metric computation within (both inclusive). Defaults to None which means all available timesteps.
+
+        Returns:
+            Dict[str, np.ndarray]: A mapping from present agent names to their associated statistic.
+        """
+        og_index_scene_ts: pd.Index = self.original_scene_df.index.get_level_values(1)
+        sim_index_scene_ts: pd.Index = self.scene_data_df.index.get_level_values(1)
+        if ts_range is not None:
+            from_ts, to_ts = ts_range
+        else:
+            from_ts, to_ts = 0, max(og_index_scene_ts.max(), sim_index_scene_ts.max())
+
+        gt_ts_range_mask: np.ndarray = (og_index_scene_ts >= from_ts) & (
+            og_index_scene_ts <= to_ts
+        )
+        gt_df: pd.DataFrame = self.original_scene_df.iloc[gt_ts_range_mask]
+
+        sim_ts_range_mask: np.ndarray = (sim_index_scene_ts >= from_ts) & (
+            sim_index_scene_ts <= to_ts
+        )
+        sim_df: pd.DataFrame = self.scene_data_df.iloc[sim_ts_range_mask]
+
+        stats_dict: Dict[str, Dict[str, Tuple[np.ndarray, np.ndarray]]] = dict()
+        for metric in metrics:
+            stats_dict[metric.name] = {"gt": metric(gt_df), "sim": metric(sim_df)}
+
+        return stats_dict
