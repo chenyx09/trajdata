@@ -145,32 +145,43 @@ class UnifiedDataset(Dataset):
                 flush=True,
             )
 
+        all_scenes_list: List[SceneMetadata] = list()
         for env in self.envs:
-            if (
-                self.rebuild_cache
-                or rebuild_maps
-                or not self.env_cache.env_is_cached(env.name)
-            ) and any(env.name in dataset_tuple for dataset_tuple in matching_datasets):
-                # if self.desired_dt is not None and self.desired_dt != env.metadata.dt:
-                #     raise ValueError(
-                #         f"{env.name} has yet to be cached, and setting a desired dt of {self.desired_dt}s "
-                #         f"(which differs from its original dt of {env.metadata.dt}s) is not allowed."
-                #     )
+            if any(env.name in dataset_tuple for dataset_tuple in matching_datasets):
+                all_cached: bool = False
+                if self.env_cache.env_is_cached(env.name):
+                    scenes_list: List[SceneMetadata] = self.get_desired_scenes_from_env(
+                        matching_datasets, scene_description_contains, env
+                    )
 
-                # Loading dataset objects in case we don't have
-                # their data already cached.
-                env.load_dataset_obj(verbose=self.verbose)
+                    all_cached: bool = all(
+                        self.env_cache.scene_is_cached(
+                            scene_info.env_name, scene_info.name
+                        )
+                        for scene_info in scenes_list
+                    )
 
-                if rebuild_maps or not self.cache_class.are_maps_cached(
-                    self.cache_path, env.name
-                ):
-                    env.cache_maps(self.cache_path, self.cache_class)
+                if not all_cached or self.rebuild_cache or rebuild_maps:
+                    # Loading dataset objects in case we don't have
+                    # the desired data already cached.
+                    env.load_dataset_obj(verbose=self.verbose)
+
+                    if rebuild_maps or not self.cache_class.are_maps_cached(
+                        self.cache_path, env.name
+                    ):
+                        env.cache_maps(self.cache_path, self.cache_class)
+
+                    scenes_list: List[SceneMetadata] = self.get_desired_scenes_from_env(
+                        matching_datasets, scene_description_contains, env
+                    )
+
+                all_scenes_list += scenes_list
 
         temp_cache: TemporaryCache = TemporaryCache()
 
         # List of (Original cached path, Temporary cached path)
         scene_paths: List[Tuple[Path, Path]] = self.preprocess_scene_metadata(
-            matching_datasets, scene_description_contains, num_workers, temp_cache
+            all_scenes_list, num_workers, temp_cache
         )
         if self.verbose:
             print(len(scene_paths), "scenes in the scene index.")
@@ -349,7 +360,6 @@ class UnifiedDataset(Dataset):
         )
 
     def get_collate_fn(self, return_dict: bool = False) -> Callable:
-
         batch_augments: Optional[List[BatchAugmentation]] = None
         if self.augmentations:
             batch_augments = [
@@ -382,26 +392,30 @@ class UnifiedDataset(Dataset):
 
         return matching_scene_tags
 
-    def preprocess_scene_metadata(
+    def get_desired_scenes_from_env(
         self,
         scene_tags: List[SceneTag],
         scene_description_contains: Optional[List[str]],
+        env: RawDataset,
+    ) -> List[SceneMetadata]:
+        scenes_list: List[SceneMetadata] = list()
+        for scene_tag in scene_tags:
+            if env.name in scene_tag:
+                scenes_list += env.get_matching_scenes(
+                    scene_tag,
+                    scene_description_contains,
+                    self.env_cache,
+                    self.rebuild_cache,
+                )
+
+        return scenes_list
+
+    def preprocess_scene_metadata(
+        self,
+        scenes_list: List[SceneMetadata],
         num_workers: int,
         temp_cache: TemporaryCache,
     ) -> List[Path]:
-        scenes_list: List[SceneMetadata] = list()
-        for scene_tag in tqdm(
-            scene_tags, desc="Loading Scene Metadata", disable=not self.verbose
-        ):
-            for env in self.envs:
-                if env.name in scene_tag:
-                    scenes_list += env.get_matching_scenes(
-                        scene_tag,
-                        scene_description_contains,
-                        self.env_cache,
-                        self.rebuild_cache,
-                    )
-
         all_cached: bool = not self.rebuild_cache and all(
             self.env_cache.scene_is_cached(scene_info.env_name, scene_info.name)
             for scene_info in scenes_list

@@ -228,16 +228,10 @@ class AgentBatchElement:
         future_sec: Tuple[Optional[float], Optional[float]],
     ) -> np.ndarray:
         robot_curr_np: np.ndarray = self.cache.get_state(robot_info.name, self.scene_ts)
-        # # TODO(bivanovic): This should be fine in general, but it is making
-        # # the assumption that all robots have a fixed extent (reasonable
-        # # since usually robots will know their own dimensions).
-        # robot_extent_np: np.ndarray = robot_info.extent.get_extents(
-        #     self.scene_ts, self.scene_ts
-        # )
-
+        # robot_fut_extents_np,
         (
             robot_fut_np,
-            _,  # robot_fut_extents_np,
+            _,
         ) = self.cache.get_agent_future(robot_info, self.scene_ts, future_sec)
 
         robot_curr_and_fut_np: np.ndarray = np.concatenate(
