@@ -1,8 +1,6 @@
 from collections import defaultdict
-from copy import deepcopy
-from math import floor
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -10,7 +8,7 @@ import pandas as pd
 from avdata.augmentation.augmentation import Augmentation
 from avdata.caching.df_cache import DataFrameCache
 from avdata.data_structures.agent import AgentMetadata
-from avdata.data_structures.scene_metadata import SceneMetadata
+from avdata.data_structures.scene_metadata import Scene
 from avdata.simulation.sim_cache import SimulationCache
 from avdata.simulation.sim_metrics import SimMetric
 from avdata.simulation.sim_stats import SimStatistic
@@ -20,13 +18,13 @@ class SimulationDataFrameCache(DataFrameCache, SimulationCache):
     def __init__(
         self,
         cache_path: Path,
-        scene_info: SceneMetadata,
+        scene: Scene,
         scene_ts: int,
         augmentations: Optional[List[Augmentation]] = None,
     ) -> None:
-        super().__init__(cache_path, scene_info, scene_ts, augmentations)
+        super().__init__(cache_path, scene, scene_ts, augmentations)
 
-        agent_names: List[str] = [agent.name for agent in scene_info.agents]
+        agent_names: List[str] = [agent.name for agent in scene.agents]
         in_index: np.ndarray = self.scene_data_df.index.isin(agent_names, level=0)
         self.scene_data_df: pd.DataFrame = self.scene_data_df.iloc[in_index].copy()
         self.index_dict: Dict[Tuple[str, int], int] = {
@@ -36,8 +34,8 @@ class SimulationDataFrameCache(DataFrameCache, SimulationCache):
         # Important to first prune self.scene_data_df before interpolation (since it
         # will use the agents list from the scene_info object which was modified earlier
         # in the SimulationScene init.
-        if scene_info.env_metadata.dt != scene_info.dt:
-            self.interpolate_data(scene_info.dt)
+        if scene.env_metadata.dt != scene.dt:
+            self.interpolate_data(scene.dt)
 
         # This will remain untouched through simulation, only present for
         # metrics computation later.
@@ -130,12 +128,12 @@ class SimulationDataFrameCache(DataFrameCache, SimulationCache):
         self.persistent_data_df.sort_index(inplace=True)
         self.reset()
 
-    def save_sim_scene(self, sim_scene_info: SceneMetadata) -> None:
+    def save_sim_scene(self, sim_scene: Scene) -> None:
         history_idxs = (
             self.persistent_data_df.index.get_level_values("scene_ts") <= self.scene_ts
         )
         DataFrameCache.save_agent_data(
-            self.persistent_data_df[history_idxs], self.path, sim_scene_info
+            self.persistent_data_df[history_idxs], self.path, sim_scene
         )
 
     def calculate_metrics(

@@ -5,24 +5,15 @@ import pandas as pd
 from nuscenes.nuscenes import NuScenes
 from pyquaternion import Quaternion
 
-from avdata.data_structures import (
-    Agent,
-    AgentMetadata,
-    AgentType,
-    FixedExtent,
-    SceneMetadata,
-    VariableExtent,
-)
+from avdata.data_structures import Agent, AgentMetadata, AgentType, FixedExtent, Scene
 from avdata.utils import arr_utils
 
 NUSC_DT: Final[float] = 0.5
 
 
-def frame_iterator(
-    nusc_obj: NuScenes, scene_metadata: SceneMetadata
-) -> Dict[str, Union[str, int]]:
+def frame_iterator(nusc_obj: NuScenes, scene: Scene) -> Dict[str, Union[str, int]]:
     """Loops through all frames in a scene and yields them for the caller to deal with the information."""
-    curr_scene_token: str = scene_metadata.data_access_info["first_sample_token"]
+    curr_scene_token: str = scene.data_access_info["first_sample_token"]
     while curr_scene_token:
         frame = nusc_obj.get("sample", curr_scene_token)
 
@@ -190,10 +181,10 @@ def nusc_type_to_unified_type(nusc_type: str) -> AgentType:
         return AgentType.UNKNOWN
 
 
-def agg_ego_data(nusc_obj: NuScenes, scene_metadata: SceneMetadata) -> Agent:
+def agg_ego_data(nusc_obj: NuScenes, scene: Scene) -> Agent:
     translation_list: List[np.ndarray] = list()
     yaw_list: List[float] = list()
-    for frame_info in frame_iterator(nusc_obj, scene_metadata):
+    for frame_info in frame_iterator(nusc_obj, scene):
         ego_pose = get_ego_pose(nusc_obj, frame_info)
         yaw_list.append(Quaternion(ego_pose["rotation"]).yaw_pitch_roll[0])
         translation_list.append(ego_pose["translation"][:2])

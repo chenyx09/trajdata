@@ -31,7 +31,7 @@ class AgentBatchElement:
     ) -> None:
         self.cache: SceneCache = cache
         self.data_index: int = data_index
-        self.dt: float = scene_time_agent.metadata.dt
+        self.dt: float = scene_time_agent.scene.dt
         self.scene_ts: int = scene_time_agent.ts
 
         agent_info: AgentMetadata = scene_time_agent.agent

@@ -11,7 +11,7 @@ from avdata.data_structures.batch import AgentBatch
 from avdata.data_structures.batch_element import AgentBatchElement
 from avdata.data_structures.collation import agent_collate_fn
 from avdata.data_structures.scene import SceneTimeAgent
-from avdata.data_structures.scene_metadata import Scene, SceneMetadata
+from avdata.data_structures.scene_metadata import Scene
 from avdata.dataset import UnifiedDataset
 from avdata.simulation.sim_cache import SimulationCache
 from avdata.simulation.sim_df_cache import SimulationDataFrameCache
