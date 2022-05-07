@@ -31,6 +31,7 @@ class RawDataset:
         raise NotImplementedError()
 
     def del_dataset_obj(self) -> None:
+        del self.dataset_obj
         self.dataset_obj = None
 
     def _get_matching_scenes_from_cache(

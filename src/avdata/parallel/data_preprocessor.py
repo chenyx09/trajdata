@@ -1,5 +1,3 @@
-from multiprocessing import Queue
-import pickle
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Type
 
@@ -20,8 +18,7 @@ def scene_paths_collate_fn(filled_scenes: List) -> List:
 class ParallelDatasetPreprocessor(Dataset):
     def __init__(
         self,
-        scene_info_q: Queue,
-        num_scenes: int,
+        scene_info_list: List[SceneMetadata],
         envs_dir_dict: Dict[str, str],
         env_cache_path: str,
         temp_cache_path: str,
@@ -35,12 +32,19 @@ class ParallelDatasetPreprocessor(Dataset):
         self.cache_class = cache_class
         self.rebuild_cache = rebuild_cache
 
-        self.scene_info_q = scene_info_q
+        env_names: List[str] = list(envs_dir_dict.keys())
 
-        self.env_names_arr = np.array(list(envs_dir_dict.keys())).astype(np.string_)
+        self.scene_idxs = np.array(
+            [scene_info.raw_data_idx for scene_info in scene_info_list], dtype=int
+        )
+        self.env_name_idxs = np.array(
+            [env_names.index(scene_info.env_name) for scene_info in scene_info_list],
+            dtype=int,
+        )
+        self.env_names_arr = np.array(env_names).astype(np.string_)
         self.data_dir_arr = np.array(list(envs_dir_dict.values())).astype(np.string_)
 
-        self.data_len: int = num_scenes
+        self.data_len: int = len(scene_info_list)
 
     def __len__(self) -> int:
         return self.data_len
@@ -49,13 +53,14 @@ class ParallelDatasetPreprocessor(Dataset):
         env_cache_path: Path = Path(str(self.env_cache_path, encoding="utf-8"))
         env_cache: EnvCache = EnvCache(env_cache_path)
 
-        scene_info: SceneMetadata = pickle.loads(self.scene_info_q.get())
-
-        env_idx: int = np.argmax(
-            self.env_names_arr == np.array(scene_info.env_name).astype(np.string_)
-        ).item()
+        env_idx: int = self.env_name_idxs[idx]
+        env_name: str = str(self.env_names_arr[env_idx], encoding="utf-8")
         raw_dataset = get_raw_dataset(
-            scene_info.env_name, str(self.data_dir_arr[env_idx], encoding="utf-8")
+            env_name, str(self.data_dir_arr[env_idx], encoding="utf-8")
+        )
+
+        scene_info = SceneMetadata(
+            env_name, None, raw_dataset.metadata.dt, self.scene_idxs[idx]
         )
 
         # Leaving verbose False here so that we don't spam
