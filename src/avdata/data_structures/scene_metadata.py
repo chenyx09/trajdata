@@ -1,11 +1,16 @@
+from collections import namedtuple
 from typing import Any, List, Optional, Set, Type
 
 from avdata.data_structures.agent import AgentMetadata
 from avdata.data_structures.environment import EnvMetadata
 
+# Holds scene metadata (e.g., name, dt), but without the memory
+# footprint of all the actual underlying scene data.
+SceneMetadata = namedtuple("SceneMetadata", ["env_name", "name", "dt", "raw_data_idx"])
 
-class SceneMetadata:
-    """Holds scene metadata, e.g., name, location, original data split, but without the memory footprint of all the actual underlying scene data."""
+
+class Scene:
+    """Holds the data for a particular scene."""
 
     def __init__(
         self,

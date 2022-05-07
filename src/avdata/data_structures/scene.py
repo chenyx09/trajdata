@@ -9,13 +9,6 @@ from avdata.data_structures.agent import Agent, AgentMetadata, AgentType
 from avdata.data_structures.scene_metadata import SceneMetadata
 
 
-class Scene:
-    """Holds the data for a particular scene."""
-
-    def __init__(self, metadata: SceneMetadata) -> None:
-        self.metadata = metadata
-
-
 class SceneTime:
     """Holds the data for a particular scene at a particular timestep."""
 

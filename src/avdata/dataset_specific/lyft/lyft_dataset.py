@@ -13,7 +13,13 @@ from l5kit.data.map_api import MapAPI
 from l5kit.rasterization import RenderContext
 
 from avdata.caching import EnvCache, SceneCache
-from avdata.data_structures import AgentMetadata, EnvMetadata, SceneMetadata, SceneTag
+from avdata.data_structures import (
+    AgentMetadata,
+    EnvMetadata,
+    Scene,
+    SceneMetadata,
+    SceneTag,
+)
 from avdata.data_structures.agent import Agent, AgentType, VariableExtent
 from avdata.data_structures.map import Map, MapMetadata
 from avdata.dataset_specific.lyft import lyft_utils
@@ -103,24 +109,42 @@ class LyftDataset(RawDataset):
 
             if scene_split in scene_tag and scene_desc_contains is None:
                 scene_metadata = SceneMetadata(
-                    self.metadata,
-                    scene_name,
-                    "palo_alto",
-                    scene_split,
-                    scene_length,
-                    all_scene_frames[idx],
+                    env_name=self.metadata.name,
+                    name=scene_name,
+                    dt=self.metadata.dt,
+                    raw_data_idx=idx,
                 )
                 scenes_list.append(scene_metadata)
 
         self.cache_all_scenes_list(env_cache, all_scenes_list)
         return scenes_list
 
+    def get_scene(self, scene_info: SceneMetadata) -> Scene:
+        _, _, _, data_idx = scene_info
+        scene_frames: np.ndarray = self.dataset_obj.scenes["frame_index_interval"][
+            data_idx
+        ]
+        scene_name: str = f"scene-{data_idx:04d}"
+        scene_split: str = self.metadata.scene_split_map[scene_name]
+        scene_length: int = (
+            scene_frames[1] - scene_frames[0]
+        ).item()  # Doing .item() otherwise it'll be a numpy.int64
+
+        return Scene(
+            self.metadata,
+            scene_name,
+            "palo_alto",
+            scene_split,
+            scene_length,
+            scene_frames,
+        )
+
     def _get_matching_scenes_from_cache(
         self,
         scene_tag: SceneTag,
         scene_desc_contains: Optional[List[str]],
         env_cache: EnvCache,
-    ) -> List[SceneMetadata]:
+    ) -> List[Scene]:
         all_scenes_list: List[LyftSceneRecord] = env_cache.load_env_scenes_list(
             self.name
         )
@@ -131,7 +155,7 @@ class LyftDataset(RawDataset):
             scene_split: str = self.metadata.scene_split_map[scene_name]
 
             if scene_split in scene_tag and scene_desc_contains is None:
-                scene_metadata = SceneMetadata(
+                scene_metadata = Scene(
                     self.metadata,
                     scene_name,
                     "palo_alto",
@@ -145,25 +169,25 @@ class LyftDataset(RawDataset):
 
     # @profile
     def get_agent_info(
-        self, scene_info: SceneMetadata, cache_path: Path, cache_class: Type[SceneCache]
+        self, scene: Scene, cache_path: Path, cache_class: Type[SceneCache]
     ) -> Tuple[List[AgentMetadata], List[List[AgentMetadata]]]:
         ego_agent_info: AgentMetadata = AgentMetadata(
             name="ego",
             agent_type=AgentType.VEHICLE,
             first_timestep=0,
-            last_timestep=scene_info.length_timesteps - 1,
+            last_timestep=scene.length_timesteps - 1,
             extent=VariableExtent(),
         )
 
         agent_list: List[AgentMetadata] = [ego_agent_info]
         agent_presence: List[List[AgentMetadata]] = [
-            [ego_agent_info] for _ in range(scene_info.length_timesteps)
+            [ego_agent_info] for _ in range(scene.length_timesteps)
         ]
 
-        ego_agent: Agent = lyft_utils.agg_ego_data(self.dataset_obj, scene_info)
+        ego_agent: Agent = lyft_utils.agg_ego_data(self.dataset_obj, scene)
 
-        scene_frame_start = scene_info.data_access_info[0]
-        scene_frame_end = scene_info.data_access_info[1]
+        scene_frame_start = scene.data_access_info[0]
+        scene_frame_end = scene.data_access_info[1]
 
         agent_indices = self.dataset_obj.frames[scene_frame_start:scene_frame_end][
             "agent_index_interval"
@@ -177,7 +201,7 @@ class LyftDataset(RawDataset):
         # This is so we later know what is the first scene timestep that an agent appears in the scene.
         num_agents_per_ts = agent_indices[:, 1] - agent_indices[:, 0]
         agent_frame_ids = np.repeat(
-            np.arange(scene_info.length_timesteps), num_agents_per_ts
+            np.arange(scene.length_timesteps), num_agents_per_ts
         )
 
         agent_translations = lyft_agents["centroid"]
@@ -293,7 +317,7 @@ class LyftDataset(RawDataset):
         cache_class.save_agent_data(
             pd.concat([ego_agent.data, all_agent_data_df.loc[:, final_cols]]),
             cache_path,
-            scene_info,
+            scene,
         )
 
         return agent_list, agent_presence

@@ -68,3 +68,4 @@ class AsyncExecutor:
     def wait(self):
         self.pool.close()
         self.pool.join()
+        self.pbar.close()

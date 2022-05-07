@@ -10,6 +10,7 @@ def main():
         rebuild_cache=True,
         rebuild_maps=True,
         num_workers=os.cpu_count(),
+        verbose=True,
     )
     print(f"Total Data Samples: {len(dataset):,}")
 

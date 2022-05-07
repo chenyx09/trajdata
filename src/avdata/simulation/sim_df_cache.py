@@ -98,13 +98,13 @@ class SimulationDataFrameCache(DataFrameCache, SimulationCache):
             sim_dict["x"].append(state[0])
             sim_dict["y"].append(state[1])
 
-            vx: float = (state[0] - prev_state[0]) / self.scene_info.dt
-            vy: float = (state[1] - prev_state[1]) / self.scene_info.dt
+            vx: float = (state[0] - prev_state[0]) / self.scene.dt
+            vy: float = (state[1] - prev_state[1]) / self.scene.dt
             sim_dict["vx"].append(vx)
             sim_dict["vy"].append(vy)
 
-            ax: float = (vx - prev_state[2]) / self.scene_info.dt
-            ay: float = (vy - prev_state[3]) / self.scene_info.dt
+            ax: float = (vx - prev_state[2]) / self.scene.dt
+            ay: float = (vy - prev_state[3]) / self.scene.dt
             sim_dict["ax"].append(ax)
             sim_dict["ay"].append(ay)
 
@@ -123,7 +123,7 @@ class SimulationDataFrameCache(DataFrameCache, SimulationCache):
 
         sim_step_df = pd.DataFrame(sim_dict)
         sim_step_df.set_index(["agent_id", "scene_ts"], inplace=True)
-        if self.scene_ts < self.scene_info.length_timesteps:
+        if self.scene_ts < self.scene.length_timesteps:
             self.persistent_data_df.drop(index=self.scene_ts, level=1, inplace=True)
 
         self.persistent_data_df = pd.concat([self.persistent_data_df, sim_step_df])

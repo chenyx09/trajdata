@@ -8,8 +8,8 @@ def main():
             # "nusc_mini",
             # "lyft_sample",
             # "lyft_train",
-            "lyft_train_full",
-            # "lyft_val",
+            # "lyft_train_full",
+            "lyft_val",
         ],
         data_dirs={
             "nusc": "/workspace/datasets/nuScenes",

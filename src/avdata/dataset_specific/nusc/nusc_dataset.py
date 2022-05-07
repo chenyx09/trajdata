@@ -18,7 +18,7 @@ from avdata.data_structures.agent import (
 )
 from avdata.data_structures.environment import EnvMetadata
 from avdata.data_structures.map import MapMetadata
-from avdata.data_structures.scene_metadata import SceneMetadata
+from avdata.data_structures.scene_metadata import Scene, SceneMetadata
 from avdata.data_structures.scene_tag import SceneTag
 from avdata.dataset_specific.nusc import nusc_utils
 from avdata.dataset_specific.raw_dataset import RawDataset
@@ -84,7 +84,7 @@ class NuscDataset(RawDataset):
         all_scenes_list: List[NuscSceneRecord] = list()
 
         scenes_list: List[SceneMetadata] = list()
-        for scene_record in self.dataset_obj.scene:
+        for idx, scene_record in enumerate(self.dataset_obj.scene):
             scene_name: str = scene_record["name"]
             scene_desc: str = scene_record["description"].lower()
             scene_location: str = self.dataset_obj.get(
@@ -105,13 +105,10 @@ class NuscDataset(RawDataset):
                     continue
 
                 scene_metadata = SceneMetadata(
-                    self.metadata,
-                    scene_name,
-                    scene_location,
-                    scene_split,
-                    scene_length,
-                    scene_record,
-                    scene_desc,
+                    env_name=self.metadata.name,
+                    name=scene_name,
+                    dt=self.metadata.dt,
+                    raw_data_idx=idx,
                 )
                 scenes_list.append(scene_metadata)
 
@@ -123,7 +120,7 @@ class NuscDataset(RawDataset):
         scene_tag: SceneTag,
         scene_desc_contains: Optional[List[str]],
         env_cache: EnvCache,
-    ) -> List[SceneMetadata]:
+    ) -> List[Scene]:
         all_scenes_list: List[NuscSceneRecord] = env_cache.load_env_scenes_list(
             self.name
         )
@@ -139,7 +136,7 @@ class NuscDataset(RawDataset):
                 ):
                     continue
 
-                scene_metadata = SceneMetadata(
+                scene_metadata = Scene(
                     self.metadata,
                     scene_name,
                     scene_location,
@@ -152,26 +149,48 @@ class NuscDataset(RawDataset):
 
         return scenes_list
 
+    def get_scene(self, scene_info: SceneMetadata) -> Scene:
+        _, _, _, data_idx = scene_info
+
+        scene_record = self.dataset_obj.scene[data_idx]
+        scene_name: str = scene_record["name"]
+        scene_desc: str = scene_record["description"].lower()
+        scene_location: str = self.dataset_obj.get("log", scene_record["log_token"])[
+            "location"
+        ]
+        scene_split: str = self.metadata.scene_split_map[scene_name]
+        scene_length: int = scene_record["nbr_samples"]
+
+        return Scene(
+            self.metadata,
+            scene_name,
+            scene_location,
+            scene_split,
+            scene_length,
+            scene_record,
+            scene_desc,
+        )
+
     def get_agent_info(
-        self, scene_info: SceneMetadata, cache_path: Path, cache: SceneCache
+        self, scene: Scene, cache_path: Path, cache: SceneCache
     ) -> Tuple[List[AgentMetadata], List[List[AgentMetadata]]]:
         ego_agent_info: AgentMetadata = AgentMetadata(
             name="ego",
             agent_type=AgentType.VEHICLE,
             first_timestep=0,
-            last_timestep=scene_info.length_timesteps - 1,
+            last_timestep=scene.length_timesteps - 1,
             extent=FixedExtent(length=4.084, width=1.730, height=1.562),
         )
 
         agent_presence: List[List[AgentMetadata]] = [
-            [ego_agent_info] for _ in range(scene_info.length_timesteps)
+            [ego_agent_info] for _ in range(scene.length_timesteps)
         ]
 
         agent_data_list: List[pd.DataFrame] = list()
         existing_agents: Dict[str, AgentMetadata] = dict()
 
         all_frames: List[Dict[str, Union[str, int]]] = list(
-            nusc_utils.frame_iterator(self.dataset_obj, scene_info)
+            nusc_utils.frame_iterator(self.dataset_obj, scene)
         )
         frame_idx_dict: Dict[str, int] = {
             frame_dict["token"]: idx for idx, frame_dict in enumerate(all_frames)
@@ -198,14 +217,14 @@ class NuscDataset(RawDataset):
 
                 agent_data_list.append(agent.data)
 
-        ego_agent: Agent = nusc_utils.agg_ego_data(self.dataset_obj, scene_info)
+        ego_agent: Agent = nusc_utils.agg_ego_data(self.dataset_obj, scene)
         agent_data_list.append(ego_agent.data)
 
         agent_list: List[AgentMetadata] = [ego_agent_info] + list(
             existing_agents.values()
         )
 
-        cache.save_agent_data(pd.concat(agent_data_list), cache_path, scene_info)
+        cache.save_agent_data(pd.concat(agent_data_list), cache_path, scene)
 
         return agent_list, agent_presence
 

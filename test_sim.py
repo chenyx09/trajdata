@@ -5,7 +5,7 @@ import numpy as np
 from tqdm import trange
 
 from avdata import AgentBatch, AgentType, UnifiedDataset
-from avdata.data_structures.scene_metadata import SceneMetadata
+from avdata.data_structures.scene_metadata import Scene
 from avdata.simulation import SimulationScene, sim_metrics, sim_stats, sim_vis
 from avdata.visualization.vis import plot_agent_batch
 
@@ -32,13 +32,13 @@ def main():
     fde = sim_metrics.FDE()
 
     sim_env_name = "nusc_mini_sim"
-    all_sim_scenes: List[SceneMetadata] = list()
-    desired_scene: SceneMetadata
+    all_sim_scenes: List[Scene] = list()
+    desired_scene: Scene
     for idx, desired_scene in enumerate(dataset.scenes()):
         sim_scene: SimulationScene = SimulationScene(
             env_name=sim_env_name,
             scene_name=f"sim_scene-{idx:04d}",
-            scene_info=desired_scene,
+            scene=desired_scene,
             dataset=dataset,
             init_timestep=0,
             freeze_agents=True,
