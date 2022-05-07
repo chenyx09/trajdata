@@ -24,6 +24,11 @@
             "containerMountPoint":"/workspace/avdata",
             "id":"aWUsWZ_5SA6caFr30uWmmw",
             "mountMode":"RW"
+        },
+        {
+            "containerMountPoint":"/workspace/av_cache",
+            "id":"p9wWSygMTMaF4MlbwFxJlA",
+            "mountMode":"RW"
         }
     ],
     "replicaCount":1,
@@ -34,7 +39,7 @@
         
     ],
     "name":"ml-model.notamodel-avdata-processing",
-    "command":"jupyter lab --ip=0.0.0.0 --allow-root --no-browser --NotebookApp.token='' --notebook-dir=/ --NotebookApp.allow_origin='*' & date; nvidia-smi; sleep 1d",
+    "command":"pip install -e .; jupyter lab --ip=0.0.0.0 --allow-root --no-browser --NotebookApp.token='' --notebook-dir=/ --NotebookApp.allow_origin='*' & date; nvidia-smi; sleep 1d",
     "runPolicy":{
         "minTimesliceSeconds":1,
         "totalRuntimeSeconds":86400,

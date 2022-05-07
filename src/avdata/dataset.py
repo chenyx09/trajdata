@@ -5,9 +5,8 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional, Set, Tuple
 
 import numpy as np
-import pandas as pd
 from torch.utils.data import DataLoader, Dataset
-from tqdm import tqdm
+from tqdm import tqdm, trange
 
 from avdata import filtering
 from avdata.augmentation.augmentation import Augmentation, BatchAugmentation
@@ -29,10 +28,10 @@ from avdata.dataset_specific import RawDataset
 from avdata.parallel import (
     ParallelDatasetPreprocessor,
     TemporaryCache,
-    parallel_apply,
     parallel_iapply,
     scene_metadata_collate_fn,
 )
+from avdata.parallel.parallel_utils import AsyncExecutor, pickle_objects
 from avdata.utils import agent_utils, env_utils, scene_utils, string_utils
 
 
@@ -149,7 +148,7 @@ class UnifiedDataset(Dataset):
         for env in self.envs:
             if any(env.name in dataset_tuple for dataset_tuple in matching_datasets):
                 all_cached: bool = False
-                if self.env_cache.env_is_cached(env.name):
+                if self.env_cache.env_is_cached(env.name) and not self.rebuild_cache:
                     scenes_list: List[SceneMetadata] = self.get_desired_scenes_from_env(
                         matching_datasets, scene_description_contains, env
                     )
@@ -504,13 +503,21 @@ class UnifiedDataset(Dataset):
             # completely filling our memory. In particular, what's being
             # cached here is just the "unfilled" SceneMetadata object (i.e.,
             # the object without any agents list or agent_presence info).
-            scene_info_paths: List[str] = parallel_apply(
-                partial(temp_cache.cache, ret_str=True),
-                parallel_scenes,
-                num_workers=num_workers,
-                desc="Temporarily Caching Scene Metadata",
+            num_scenes: int = len(parallel_scenes)
+            num_feeder_workers: int = 1
+            num_task_workers: int = num_workers - 1
+            scene_cache_processes = AsyncExecutor(
+                num_feeder_workers,
+                num_scenes,
+                desc=f"Filling Worker Queue ({num_feeder_workers} CPUs)",
+                position=0,
                 disable=not self.verbose,
             )
+            num_tasks_per_worker = 5
+            for idx in range(0, num_scenes, num_tasks_per_worker):
+                scene_cache_processes.schedule(
+                    pickle_objects, (parallel_scenes[idx : idx + num_tasks_per_worker],)
+                )
 
             # Here we're using PyTorch's parallel dataloading as a
             # general parallel processing interface (it uses all the same
@@ -518,7 +525,8 @@ class UnifiedDataset(Dataset):
             # some good logic for keeping workers occupied which seems
             # like it'd be good to reuse).
             parallel_preprocessor = ParallelDatasetPreprocessor(
-                scene_info_paths,
+                scene_cache_processes.results_queue,
+                len(parallel_scenes),
                 {
                     env_name: str(env.metadata.data_dir)
                     for env_name, env in self.envs_dict.items()
@@ -533,17 +541,20 @@ class UnifiedDataset(Dataset):
             dataloader = DataLoader(
                 parallel_preprocessor,
                 batch_size=1,
-                num_workers=num_workers,
+                num_workers=num_task_workers,
                 shuffle=False,
                 collate_fn=scene_metadata_collate_fn,
             )
 
             for filled_scene in tqdm(
                 dataloader,
-                desc=f"Calculating Agent Data ({num_workers} CPUs)",
+                desc=f"Calculating Agent Data ({num_task_workers} CPUs)",
+                position=1,
                 disable=not self.verbose,
             ):
                 filled_scene_paths += filled_scene
+
+            scene_cache_processes.wait()
 
         return filled_scene_paths
 

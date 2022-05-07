@@ -1,6 +1,7 @@
+import time
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Optional, Union
+from typing import List, Optional, Union
 
 import dill
 
@@ -27,6 +28,17 @@ class TemporaryCache:
             return str(tmp_file_path)
         else:
             return tmp_file_path
+
+    def cache_scenes(self, scene_infos: List[SceneMetadata]) -> List[str]:
+        paths: List[str] = list()
+        for scene_info in scene_infos:
+            tmp_file_path: Path = self.path / TemporaryCache.get_file_path(scene_info)
+            with open(tmp_file_path, "wb") as f:
+                dill.dump(scene_info, f)
+
+            paths.append(str(tmp_file_path))
+
+        return paths
 
     def cleanup(self) -> None:
         self.temp_dir.cleanup()

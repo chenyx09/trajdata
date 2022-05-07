@@ -1,4 +1,6 @@
+import pickle
 from pathlib import Path
+from queue import Queue
 from typing import Dict, List, Optional, Tuple, Type
 
 import numpy as np
@@ -20,7 +22,8 @@ def scene_metadata_collate_fn(
 class ParallelDatasetPreprocessor(Dataset):
     def __init__(
         self,
-        scene_info_paths: List[str],
+        scene_info_path_q: Queue,
+        num_scenes: int,
         envs_dir_dict: Dict[str, str],
         env_cache_path: str,
         temp_cache_path: str,
@@ -34,12 +37,12 @@ class ParallelDatasetPreprocessor(Dataset):
         self.cache_class = cache_class
         self.rebuild_cache = rebuild_cache
 
-        self.scene_info_paths = np.array(scene_info_paths).astype(np.string_)
+        self.scene_info_paths = scene_info_path_q
 
         self.env_names_arr = np.array(list(envs_dir_dict.keys())).astype(np.string_)
         self.data_dir_arr = np.array(list(envs_dir_dict.values())).astype(np.string_)
 
-        self.data_len: int = len(scene_info_paths)
+        self.data_len: int = num_scenes
 
     def __len__(self) -> int:
         return self.data_len
@@ -51,8 +54,11 @@ class ParallelDatasetPreprocessor(Dataset):
         temp_cache_path: str = str(self.temp_cache_path, encoding="utf-8")
         temp_cache: TemporaryCache = TemporaryCache(temp_cache_path)
 
-        scene_info_path: str = str(self.scene_info_paths[idx], encoding="utf-8")
-        scene_info: SceneMetadata = EnvCache.load(scene_info_path)
+        # scene_info_path: str = self.scene_info_paths.get()
+        scene_info: SceneMetadata = pickle.loads(self.scene_info_paths.get())
+
+        # Don't need the temporary file anymore.
+        # Path(scene_info_path).unlink()
 
         env_idx: int = np.argmax(
             self.env_names_arr == np.array(scene_info.env_name).astype(np.string_)
