@@ -77,3 +77,21 @@ def transform_matrices(angles: Tensor, translations: Tensor) -> Tensor:
         ],
         dim=-2,
     )
+
+
+def agent_aware_diff(values: np.ndarray, agent_ids: np.ndarray) -> np.ndarray:
+    values_diff: np.ndarray = np.diff(values, axis=0, prepend=values[[1]] - values[[0]])
+
+    # The point of the border mask is to catch data like this:
+    # index    agent_id     vx    vy
+    #     0           1    7.3   9.1
+    #     1           2    0.0   0.0
+    #                  ...
+    # As implemented, we're not touching the very last row (we don't care anyways
+    # for agents detected only once at a single timestep) and we would currently only
+    # return index 0 (since we chop off the top with the 1: in the slice below), but
+    # we want to return 1 so that's why the + 1 at the end.
+    border_mask: np.ndarray = np.nonzero(agent_ids[1:-1] != agent_ids[:-2])[0] + 1
+    values_diff[border_mask] = values_diff[border_mask + 1]
+
+    return values_diff

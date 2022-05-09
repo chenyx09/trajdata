@@ -103,7 +103,9 @@ class SimulationScene:
         if return_obs:
             return self.get_obs()
 
-    def get_obs(self, collate: bool = True, get_map: bool = True) -> Union[AgentBatch, Dict[str, Any]]:
+    def get_obs(
+        self, collate: bool = True, get_map: bool = True
+    ) -> Union[AgentBatch, Dict[str, Any]]:
         agent_data_list: List[AgentBatchElement] = list()
         for agent in self.agents:
             scene_time_agent = SceneTimeAgent(

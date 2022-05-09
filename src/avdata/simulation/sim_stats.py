@@ -3,6 +3,8 @@ from typing import List, Tuple
 import numpy as np
 import pandas as pd
 
+from avdata.utils import arr_utils
+
 
 class SimStatistic:
     def __init__(self, name: str) -> None:
@@ -55,6 +57,9 @@ class JerkHistogram(SimStatistic):
 
     def __call__(self, scene_df: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
         accels: np.ndarray = np.linalg.norm(scene_df[["ax", "ay"]], axis=1)
-        jerk: np.ndarray = np.gradient(accels, self.dt)
+        jerk: np.ndarray = (
+            arr_utils.agent_aware_diff(accels, scene_df.index.get_level_values(0))
+            / self.dt
+        )
 
         return np.histogram(jerk, bins=self.bins)
