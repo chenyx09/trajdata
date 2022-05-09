@@ -103,7 +103,7 @@ class SimulationScene:
         if return_obs:
             return self.get_obs()
 
-    def get_obs(self, collate=True) -> Union[AgentBatch, Dict[str, Any]]:
+    def get_obs(self, collate: bool = True, get_map: bool = True) -> Union[AgentBatch, Dict[str, Any]]:
         agent_data_list: List[AgentBatchElement] = list()
         for agent in self.agents:
             scene_time_agent = SceneTimeAgent(
@@ -119,7 +119,7 @@ class SimulationScene:
                     future_sec=self.dataset.future_sec,
                     agent_interaction_distances=self.dataset.agent_interaction_distances,
                     incl_robot_future=False,
-                    incl_map=self.dataset.incl_map,
+                    incl_map=get_map and self.dataset.incl_map,
                     map_params=self.dataset.map_params,
                     standardize_data=self.dataset.standardize_data,
                 )
