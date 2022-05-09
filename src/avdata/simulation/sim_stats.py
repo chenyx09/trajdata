@@ -1,7 +1,9 @@
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
+import torch
+from torch import Tensor
 
 from avdata.utils import arr_utils
 
@@ -63,3 +65,44 @@ class JerkHistogram(SimStatistic):
         )
 
         return np.histogram(jerk, bins=self.bins)
+
+
+def calc_stats(
+    positions: Tensor, heading: Tensor, dt: float, bins: Dict[str, Tensor]
+) -> Dict[str, Tensor]:
+    """Calculate scene statistics for a simulated scene.
+
+    Args:
+        positions (Tensor): N x T x 2 tensor of agent positions (in world coordinates).
+        heading (Tensor): N x T x 1 tensor of agent headings (in world coordinates).
+        dt (float): The data's delta timestep.
+        bins (Dict[str, Tensor]): A mapping from statistic name to a Tensor of bin edges.
+
+    Returns:
+        Dict[str, Tensor]: A mapping of value names to histograms.
+    """
+
+    velocity: Tensor = (
+        torch.diff(positions, dim=1, prepend=positions[:, [1]] - positions[:, [0]]) / dt
+    )
+    velocity_norm: Tensor = torch.linalg.vector_norm(velocity, dim=-1)
+
+    accel: Tensor = (
+        torch.diff(positions, dim=1, prepend=velocity[:, [1]] - velocity[:, [0]]) / dt
+    )
+    accel_norm: Tensor = torch.linalg.vector_norm(accel, dim=-1)
+
+    lon_acc: Tensor = accel_norm * torch.cos(heading.squeeze(-1))
+    lat_acc: Tensor = accel_norm * torch.sin(heading.squeeze(-1))
+
+    jerk: Tensor = (
+        torch.diff(accel_norm, dim=1, prepend=accel_norm[:, [1]] - accel_norm[:, [0]])
+        / dt
+    )
+
+    return {
+        "velocity": torch.histogram(velocity_norm, bins["velocity"]),
+        "lon_accel": torch.histogram(lon_acc, bins["lon_accel"]),
+        "lat_accel": torch.histogram(lat_acc, bins["lat_accel"]),
+        "jerk": torch.histogram(jerk, bins["jerk"]),
+    }
