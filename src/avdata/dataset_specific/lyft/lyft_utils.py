@@ -10,16 +10,16 @@ from avdata.data_structures import (
     AgentMetadata,
     AgentType,
     FixedExtent,
-    SceneMetadata,
+    Scene,
     VariableExtent,
 )
 
 LYFT_DT: Final[float] = 0.1
 
 
-def agg_ego_data(lyft_obj: ChunkedDataset, scene_metadata: SceneMetadata) -> Agent:
-    scene_frame_start = scene_metadata.data_access_info[0]
-    scene_frame_end = scene_metadata.data_access_info[1]
+def agg_ego_data(lyft_obj: ChunkedDataset, scene: Scene) -> Agent:
+    scene_frame_start = scene.data_access_info[0]
+    scene_frame_end = scene.data_access_info[1]
 
     ego_translations = lyft_obj.frames[scene_frame_start:scene_frame_end][
         "ego_translation"
@@ -41,10 +41,7 @@ def agg_ego_data(lyft_obj: ChunkedDataset, scene_metadata: SceneMetadata) -> Age
 
     ego_rotations = lyft_obj.frames[scene_frame_start:scene_frame_end]["ego_rotation"]
     ego_yaws = np.array(
-        [
-            rotation33_as_yaw(ego_rotations[i])
-            for i in range(scene_metadata.length_timesteps)
-        ]
+        [rotation33_as_yaw(ego_rotations[i]) for i in range(scene.length_timesteps)]
     )
 
     ego_extents = FixedExtent(length=4.869, width=1.852, height=1.476).get_extents(

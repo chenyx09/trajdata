@@ -4,6 +4,7 @@ import numpy as np
 
 from avdata.caching.scene_cache import SceneCache
 from avdata.simulation.sim_metrics import SimMetric
+from avdata.simulation.sim_stats import SimStatistic
 
 
 class SimulationCache(SceneCache):
@@ -22,4 +23,9 @@ class SimulationCache(SceneCache):
     def calculate_metrics(
         self, metrics: List[SimMetric], ts_range: Optional[Tuple[int, int]] = None
     ) -> Dict[str, Dict[str, float]]:
+        raise NotImplementedError()
+
+    def calculate_stats(
+        self, stats: List[SimStatistic], ts_range: Optional[Tuple[int, int]] = None
+    ) -> Dict[str, Dict[str, Tuple[np.ndarray, np.ndarray]]]:
         raise NotImplementedError()

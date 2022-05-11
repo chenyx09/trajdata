@@ -1,4 +1,3 @@
-import os
 from collections import defaultdict
 
 from torch.utils.data import DataLoader
@@ -38,7 +37,7 @@ def main():
         batch_size=4,
         shuffle=True,
         collate_fn=dataset.get_collate_fn(),
-        # num_workers=os.cpu_count(),
+        num_workers=4,
     )
 
     batch: AgentBatch

@@ -1,8 +1,14 @@
 from pathlib import Path
-from typing import List, NamedTuple, Optional, Set, Tuple, Type
+from typing import List, NamedTuple, Optional, Set, Tuple, Type, Union
 
 from avdata.caching import EnvCache, SceneCache
-from avdata.data_structures import AgentMetadata, EnvMetadata, SceneMetadata, SceneTag
+from avdata.data_structures import (
+    AgentMetadata,
+    EnvMetadata,
+    Scene,
+    SceneMetadata,
+    SceneTag,
+)
 
 
 class RawDataset:
@@ -25,6 +31,7 @@ class RawDataset:
         raise NotImplementedError()
 
     def del_dataset_obj(self) -> None:
+        del self.dataset_obj
         self.dataset_obj = None
 
     def _get_matching_scenes_from_cache(
@@ -32,7 +39,7 @@ class RawDataset:
         scene_tag: SceneTag,
         scene_desc_contains: Optional[List[str]],
         env_cache: EnvCache,
-    ) -> List[SceneMetadata]:
+    ) -> List[Scene]:
         raise NotImplementedError()
 
     def _get_matching_scenes_from_obj(
@@ -54,7 +61,7 @@ class RawDataset:
         scene_desc_contains: Optional[List[str]],
         env_cache: EnvCache,
         rebuild_cache: bool,
-    ) -> List[SceneMetadata]:
+    ) -> Union[List[Scene], List[SceneMetadata]]:
         if self.dataset_obj is None and not rebuild_cache:
             return self._get_matching_scenes_from_cache(
                 scene_tag, scene_desc_contains, env_cache
@@ -64,8 +71,11 @@ class RawDataset:
                 scene_tag, scene_desc_contains, env_cache
             )
 
+    def get_scene(self, scene_info: SceneMetadata) -> Scene:
+        raise NotImplementedError()
+
     def get_agent_info(
-        self, scene_info: SceneMetadata, cache_path: Path, cache_class: Type[SceneCache]
+        self, scene: Scene, cache_path: Path, cache_class: Type[SceneCache]
     ) -> Tuple[List[AgentMetadata], List[List[AgentMetadata]]]:
         raise NotImplementedError()
 

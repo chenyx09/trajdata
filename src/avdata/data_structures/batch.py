@@ -39,11 +39,21 @@ class AgentBatch:
     agents_from_world_tf: Tensor
 
     def to(self, device) -> None:
-        excl_vals = {"data_idx", "agent_name", "agent_type", "neigh_types", "num_neigh"}
+        excl_vals = {
+            "data_idx",
+            "agent_name",
+            "agent_type",
+            "agent_hist_len",
+            "agent_fut_len",
+            "neigh_hist_len",
+            "neigh_fut_len",
+            "neigh_types",
+            "num_neigh" "robot_fut_len",
+        }
         for val in vars(self).keys():
             tensor_val = getattr(self, val)
             if val not in excl_vals and tensor_val is not None:
-                tensor_val.to(device)
+                setattr(self, val, tensor_val.to(device))
 
     def agent_types(self) -> List[AgentType]:
         unique_types: Tensor = torch.unique(self.agent_type)

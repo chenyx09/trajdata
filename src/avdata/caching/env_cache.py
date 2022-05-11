@@ -3,7 +3,7 @@ from typing import List, NamedTuple, Union
 
 import dill
 
-from avdata.data_structures.scene_metadata import SceneMetadata
+from avdata.data_structures.scene_metadata import Scene
 
 
 class EnvCache:
@@ -20,23 +20,23 @@ class EnvCache:
     def scene_metadata_path(base_path: Path, env_name: str, scene_name: str) -> Path:
         return base_path / env_name / scene_name / "scene_metadata.dill"
 
-    def load_scene_metadata(self, env_name: str, scene_name: str) -> SceneMetadata:
+    def load_scene(self, env_name: str, scene_name: str) -> Scene:
         scene_file: Path = EnvCache.scene_metadata_path(self.path, env_name, scene_name)
         with open(scene_file, "rb") as f:
-            scene_metadata: SceneMetadata = dill.load(f)
+            scene: Scene = dill.load(f)
 
-        return scene_metadata
+        return scene
 
-    def save_scene_metadata(self, scene_info: SceneMetadata) -> None:
+    def save_scene(self, scene: Scene) -> None:
         scene_file: Path = EnvCache.scene_metadata_path(
-            self.path, scene_info.env_name, scene_info.name
+            self.path, scene.env_name, scene.name
         )
 
         scene_cache_dir: Path = scene_file.parent
         scene_cache_dir.mkdir(parents=True, exist_ok=True)
 
         with open(scene_file, "wb") as f:
-            dill.dump(scene_info, f)
+            dill.dump(scene, f)
 
     def load_env_scenes_list(self, env_name: str) -> List[NamedTuple]:
         env_cache_dir: Path = self.path / env_name
@@ -54,8 +54,8 @@ class EnvCache:
             dill.dump(scenes_list, f)
 
     @staticmethod
-    def load(scene_info_path: Union[Path, str]) -> SceneMetadata:
+    def load(scene_info_path: Union[Path, str]) -> Scene:
         with open(scene_info_path, "rb") as handle:
-            scene_info: SceneMetadata = dill.load(handle)
+            scene: Scene = dill.load(handle)
 
-        return scene_info
+        return scene

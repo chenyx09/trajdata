@@ -1,10 +1,10 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Optional, Union
+from typing import List, Optional, Union
 
 import dill
 
-from avdata.data_structures.scene_metadata import SceneMetadata
+from avdata.data_structures.scene_metadata import Scene
 
 
 class TemporaryCache:
@@ -16,21 +16,30 @@ class TemporaryCache:
         else:
             self.path: Path = Path(temp_dir)
 
-    def cache(
-        self, scene_info: SceneMetadata, ret_str: bool = False
-    ) -> Union[Path, str]:
-        tmp_file_path: Path = self.path / TemporaryCache.get_file_path(scene_info)
+    def cache(self, scene: Scene, ret_str: bool = False) -> Union[Path, str]:
+        tmp_file_path: Path = self.path / TemporaryCache.get_file_path(scene)
         with open(tmp_file_path, "wb") as f:
-            dill.dump(scene_info, f)
+            dill.dump(scene, f)
 
         if ret_str:
             return str(tmp_file_path)
         else:
             return tmp_file_path
 
+    def cache_scenes(self, scenes: List[Scene]) -> List[str]:
+        paths: List[str] = list()
+        for scene in scenes:
+            tmp_file_path: Path = self.path / TemporaryCache.get_file_path(scene)
+            with open(tmp_file_path, "wb") as f:
+                dill.dump(scene, f)
+
+            paths.append(str(tmp_file_path))
+
+        return paths
+
     def cleanup(self) -> None:
         self.temp_dir.cleanup()
 
     @staticmethod
-    def get_file_path(scene_info: SceneMetadata) -> Path:
+    def get_file_path(scene_info: Scene) -> Path:
         return f"{scene_info.env_name}_{scene_info.name}.dill"

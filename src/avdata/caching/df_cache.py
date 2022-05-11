@@ -14,7 +14,7 @@ from avdata.augmentation.augmentation import Augmentation, DatasetAugmentation
 from avdata.caching.scene_cache import SceneCache
 from avdata.data_structures.agent import AgentMetadata, FixedExtent
 from avdata.data_structures.map import Map, MapMetadata
-from avdata.data_structures.scene_metadata import SceneMetadata
+from avdata.data_structures.scene_metadata import Scene
 from avdata.utils import arr_utils
 
 STATE_COLS: Final[List[str]] = ["x", "y", "vx", "vy", "ax", "ay"]
@@ -25,7 +25,7 @@ class DataFrameCache(SceneCache):
     def __init__(
         self,
         cache_path: Path,
-        scene_info: SceneMetadata,
+        scene: Scene,
         scene_ts: int,
         augmentations: Optional[List[Augmentation]] = None,
     ) -> None:
@@ -35,7 +35,7 @@ class DataFrameCache(SceneCache):
         and pickle for miscellaneous supporting objects.
         Maps are pre-rasterized and stored as Zarr arrays.
         """
-        super().__init__(cache_path, scene_info, scene_ts, augmentations)
+        super().__init__(cache_path, scene, scene_ts, augmentations)
 
         self.agent_data_path: Path = self.scene_dir / "agent_data.feather"
 
@@ -102,9 +102,9 @@ class DataFrameCache(SceneCache):
     def save_agent_data(
         agent_data: pd.DataFrame,
         cache_path: Path,
-        scene_info: SceneMetadata,
+        scene: Scene,
     ) -> None:
-        scene_cache_dir: Path = cache_path / scene_info.env_name / scene_info.name
+        scene_cache_dir: Path = cache_path / scene.env_name / scene.name
         scene_cache_dir.mkdir(parents=True, exist_ok=True)
 
         index_dict: Dict[Tuple[str, int], int] = {
@@ -159,17 +159,17 @@ class DataFrameCache(SceneCache):
             self._get_and_reorder_col_idxs()
 
     def interpolate_data(self, desired_dt: float, method: str = "linear") -> None:
-        dt_ratio: float = self.scene_info.env_metadata.dt / desired_dt
+        dt_ratio: float = self.scene.env_metadata.dt / desired_dt
         if not dt_ratio.is_integer():
             raise ValueError(
-                f"{str(self.scene_info)}'s dt of {self.scene_info.dt}s "
+                f"{str(self.scene)}'s dt of {self.scene.dt}s "
                 f"is not divisible by the desired dt {desired_dt}s."
             )
 
         dt_factor: int = int(dt_ratio)
 
         agent_info_dict: Dict[str, AgentMetadata] = {
-            agent.name: agent for agent in self.scene_info.agents
+            agent.name: agent for agent in self.scene.agents
         }
         new_index: pd.MultiIndex = pd.MultiIndex.from_tuples(
             [
@@ -509,11 +509,9 @@ class DataFrameCache(SceneCache):
         return_rgb: bool,
         rot_pad_factor: float = 1.0,
     ) -> Tuple[np.ndarray, np.ndarray]:
-        maps_path: Path = DataFrameCache.get_maps_path(
-            self.path, self.scene_info.env_name
-        )
+        maps_path: Path = DataFrameCache.get_maps_path(self.path, self.scene.env_name)
 
-        metadata_file: Path = maps_path / f"{self.scene_info.location}_metadata.dill"
+        metadata_file: Path = maps_path / f"{self.scene.location}_metadata.dill"
         with open(metadata_file, "rb") as f:
             map_info: MapMetadata = dill.load(f)
 

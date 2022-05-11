@@ -6,14 +6,7 @@ import pandas as pd
 from avdata import filtering
 from avdata.caching import SceneCache
 from avdata.data_structures.agent import Agent, AgentMetadata, AgentType
-from avdata.data_structures.scene_metadata import SceneMetadata
-
-
-class Scene:
-    """Holds the data for a particular scene."""
-
-    def __init__(self, metadata: SceneMetadata) -> None:
-        self.metadata = metadata
+from avdata.data_structures.scene_metadata import Scene
 
 
 class SceneTime:
@@ -21,12 +14,12 @@ class SceneTime:
 
     def __init__(
         self,
-        metadata: SceneMetadata,
+        scene: Scene,
         scene_ts: int,
         agents: List[AgentMetadata],
         cache: SceneCache,
     ) -> None:
-        self.metadata = metadata
+        self.scene = scene
         self.ts = scene_ts
         self.agents = agents
         self.cache = cache
@@ -34,31 +27,31 @@ class SceneTime:
     @classmethod
     def from_cache(
         cls,
-        scene_info: SceneMetadata,
+        scene: Scene,
         scene_ts: int,
         cache: SceneCache,
         only_types: Optional[Set[AgentType]] = None,
         no_types: Optional[Set[AgentType]] = None,
     ):
-        agents_present: List[AgentMetadata] = scene_info.agent_presence[scene_ts]
+        agents_present: List[AgentMetadata] = scene.agent_presence[scene_ts]
         filtered_agents: List[AgentMetadata] = filtering.agent_types(
             agents_present, no_types, only_types
         )
 
-        data_df: pd.DataFrame = cache.load_all_agent_data(scene_info)
+        data_df: pd.DataFrame = cache.load_all_agent_data(scene)
 
         agents: List[Agent] = list()
         for agent_info in filtered_agents:
             agents.append(Agent(agent_info, data_df.loc[agent_info.name]))
 
-        return cls(scene_info, scene_ts, agents, cache)
+        return cls(scene, scene_ts, agents, cache)
 
     def get_agent_distances_to(self, agent: Agent) -> np.ndarray:
         agent_pos = np.array(
             [[agent.data.at[self.ts, "x"], agent.data.at[self.ts, "y"]]]
         )
 
-        data_df: pd.DataFrame = self.cache.load_agent_xy_at_time(self.ts, self.metadata)
+        data_df: pd.DataFrame = self.cache.load_agent_xy_at_time(self.ts, self.scene)
 
         agent_ids = [a.name for a in self.agents]
         curr_poses = data_df.loc[agent_ids, ["x", "y"]].values
@@ -70,14 +63,14 @@ class SceneTimeAgent:
 
     def __init__(
         self,
-        metadata: SceneMetadata,
+        scene: Scene,
         scene_ts: int,
         agents: List[AgentMetadata],
         agent: AgentMetadata,
         cache: SceneCache,
         robot: Optional[AgentMetadata] = None,
     ) -> None:
-        self.metadata = metadata
+        self.scene = scene
         self.ts = scene_ts
         self.agents = agents
         self.agent = agent
@@ -87,7 +80,7 @@ class SceneTimeAgent:
     @classmethod
     def from_cache(
         cls,
-        scene_info: SceneMetadata,
+        scene: Scene,
         scene_ts: int,
         agent_id: str,
         cache: SceneCache,
@@ -95,7 +88,7 @@ class SceneTimeAgent:
         no_types: Optional[Set[AgentType]] = None,
         incl_robot_future: bool = False,
     ):
-        agents_present: List[AgentMetadata] = scene_info.agent_presence[scene_ts]
+        agents_present: List[AgentMetadata] = scene.agent_presence[scene_ts]
         filtered_agents: List[AgentMetadata] = filtering.agent_types(
             agents_present, no_types, only_types
         )
@@ -106,7 +99,7 @@ class SceneTimeAgent:
             ego_metadata = next((a for a in filtered_agents if a.name == "ego"), None)
 
             return cls(
-                scene_info,
+                scene,
                 scene_ts,
                 agents=filtered_agents,
                 agent=agent_metadata,
@@ -115,7 +108,7 @@ class SceneTimeAgent:
             )
         else:
             return cls(
-                scene_info,
+                scene,
                 scene_ts,
                 agents=filtered_agents,
                 agent=agent_metadata,

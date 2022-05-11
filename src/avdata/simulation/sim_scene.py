@@ -1,5 +1,5 @@
 from copy import deepcopy
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 
@@ -11,11 +11,12 @@ from avdata.data_structures.batch import AgentBatch
 from avdata.data_structures.batch_element import AgentBatchElement
 from avdata.data_structures.collation import agent_collate_fn
 from avdata.data_structures.scene import SceneTimeAgent
-from avdata.data_structures.scene_metadata import SceneMetadata
+from avdata.data_structures.scene_metadata import Scene
 from avdata.dataset import UnifiedDataset
 from avdata.simulation.sim_cache import SimulationCache
 from avdata.simulation.sim_df_cache import SimulationDataFrameCache
 from avdata.simulation.sim_metrics import SimMetric
+from avdata.simulation.sim_stats import SimStatistic
 
 
 class SimulationScene:
@@ -23,7 +24,7 @@ class SimulationScene:
         self,
         env_name: str,
         scene_name: str,
-        scene_info: SceneMetadata,
+        scene: Scene,
         dataset: UnifiedDataset,
         init_timestep: int = 0,
         freeze_agents: bool = True,
@@ -31,7 +32,7 @@ class SimulationScene:
     ) -> None:
         self.env_name: str = env_name
         self.scene_name: str = scene_name
-        self.scene_info: SceneMetadata = deepcopy(scene_info)
+        self.scene_info: Scene = deepcopy(scene)
         self.dataset: UnifiedDataset = dataset
         self.init_scene_ts: int = init_timestep
         self.freeze_agents: bool = freeze_agents
@@ -102,7 +103,9 @@ class SimulationScene:
         if return_obs:
             return self.get_obs()
 
-    def get_obs(self, collate=True) -> Union[AgentBatch, Dict[str, Any]]:
+    def get_obs(
+        self, collate: bool = True, get_map: bool = True
+    ) -> Union[AgentBatch, Dict[str, Any]]:
         agent_data_list: List[AgentBatchElement] = list()
         for agent in self.agents:
             scene_time_agent = SceneTimeAgent(
@@ -118,7 +121,7 @@ class SimulationScene:
                     future_sec=self.dataset.future_sec,
                     agent_interaction_distances=self.dataset.agent_interaction_distances,
                     incl_robot_future=False,
-                    incl_map=self.dataset.incl_map,
+                    incl_map=get_map and self.dataset.incl_map,
                     map_params=self.dataset.map_params,
                     standardize_data=self.dataset.standardize_data,
                 )
@@ -142,6 +145,13 @@ class SimulationScene:
             metrics, ts_range=(self.init_scene_ts + 1, self.scene_ts)
         )
 
+    def get_stats(
+        self, stats: List[SimStatistic]
+    ) -> Dict[str, Dict[str, Tuple[np.ndarray, np.ndarray]]]:
+        return self.cache.calculate_stats(
+            stats, ts_range=(self.init_scene_ts + 1, self.scene_ts)
+        )
+
     def finalize(self) -> None:
         # We only change the agent's last timestep here because we use it
         # earlier to check if the agent has any future data from the original
@@ -160,5 +170,5 @@ class SimulationScene:
         self.scene_info.name = self.scene_name
 
     def save(self) -> None:
-        self.dataset.env_cache.save_scene_metadata(self.scene_info)
+        self.dataset.env_cache.save_scene(self.scene_info)
         self.cache.save_sim_scene(self.scene_info)

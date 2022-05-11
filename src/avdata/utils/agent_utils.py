@@ -1,7 +1,7 @@
 from typing import Type
 
 from avdata.caching import EnvCache, SceneCache
-from avdata.data_structures import SceneMetadata
+from avdata.data_structures import Scene, SceneMetadata
 from avdata.dataset_specific import RawDataset
 
 
@@ -11,25 +11,18 @@ def get_agent_data(
     env_cache: EnvCache,
     rebuild_cache: bool,
     cache_class: Type[SceneCache],
-) -> SceneMetadata:
+) -> Scene:
     if not rebuild_cache and env_cache.scene_is_cached(
         scene_info.env_name, scene_info.name
     ):
-        cached_scene_info: SceneMetadata = env_cache.load_scene_metadata(
-            scene_info.env_name, scene_info.name
-        )
+        return env_cache.load_scene(scene_info.env_name, scene_info.name)
 
-        scene_info.update_agent_info(
-            cached_scene_info.agents,
-            cached_scene_info.agent_presence,
-        )
+    scene: Scene = raw_dataset.get_scene(scene_info)
+    agent_list, agent_presence = raw_dataset.get_agent_info(
+        scene, env_cache.path, cache_class
+    )
 
-    else:
-        agent_list, agent_presence = raw_dataset.get_agent_info(
-            scene_info, env_cache.path, cache_class
-        )
+    scene.update_agent_info(agent_list, agent_presence)
+    env_cache.save_scene(scene)
 
-        scene_info.update_agent_info(agent_list, agent_presence)
-        env_cache.save_scene_metadata(scene_info)
-
-    return scene_info
+    return scene
