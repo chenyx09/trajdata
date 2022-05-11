@@ -1,0 +1,44 @@
+{
+    "userLabels":[
+        
+    ],
+    "aceId":257,
+    "aceInstance":"dgx1v.16g.8.norm",
+    "dockerImageName":"nvidian/nvr-av/avdata:1.0",
+    "aceName":"nv-us-west-2",
+    "systemLabels":[
+        
+    ],
+    "datasetMounts":[
+        {
+            "containerMountPoint":"/workspace/datasets/lyft",
+            "id":90893
+        },
+        {
+            "containerMountPoint":"/workspace/datasets/nuScenes",
+            "id":78251
+        }
+    ],
+    "workspaceMounts":[
+        {
+            "containerMountPoint":"/workspace/avdata",
+            "id":"aWUsWZ_5SA6caFr30uWmmw",
+            "mountMode":"RW"
+        }
+    ],
+    "replicaCount":1,
+    "publishedContainerPorts":[
+        8888
+    ],
+    "reservedLabels":[
+        
+    ],
+    "name":"ml-model.notamodel-avdata-processing",
+    "command":"jupyter lab --ip=0.0.0.0 --allow-root --no-browser --NotebookApp.token='' --notebook-dir=/ --NotebookApp.allow_origin='*' & date; nvidia-smi; sleep 1d",
+    "runPolicy":{
+        "minTimesliceSeconds":1,
+        "totalRuntimeSeconds":86400,
+        "preemptClass":"RUNONCE"
+    },
+    "resultContainerMountPoint":"/results"
+}

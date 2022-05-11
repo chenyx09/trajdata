@@ -5,6 +5,7 @@
 # matplotlib==3.5
 # dill==0.3.4
 pandas==1.4.1
+pyarrow==7.0.0
 
 # -f https://download.pytorch.org/whl/cpu/torch_stable.html
 # torch==1.10.2+cpu

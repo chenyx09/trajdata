@@ -35,6 +35,8 @@ class AgentBatch:
     robot_fut_len: Tensor
     maps: Optional[Tensor]
     maps_resolution: Optional[Tensor]
+    rasters_from_world_tf: Optional[Tensor]
+    agents_from_world_tf: Tensor
 
     def to(self, device) -> None:
         excl_vals = {"data_idx", "agent_name", "agent_type", "neigh_types", "num_neigh"}
@@ -79,6 +81,10 @@ class AgentBatch:
             maps_resolution=self.maps_resolution[match_type]
             if self.maps_resolution is not None
             else None,
+            rasters_from_world_tf=self.rasters_from_world_tf[match_type]
+            if self.rasters_from_world_tf is not None
+            else None,
+            agents_from_world_tf=self.agents_from_world_tf[match_type],
         )
 
 

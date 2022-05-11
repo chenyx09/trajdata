@@ -2,7 +2,7 @@ from collections import defaultdict
 from copy import deepcopy
 from math import floor
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -12,6 +12,7 @@ from avdata.caching.df_cache import DataFrameCache
 from avdata.data_structures.agent import AgentMetadata
 from avdata.data_structures.scene_metadata import SceneMetadata
 from avdata.simulation.sim_cache import SimulationCache
+from avdata.simulation.sim_metrics import SimMetric
 
 
 class SimulationDataFrameCache(DataFrameCache, SimulationCache):
@@ -37,6 +38,11 @@ class SimulationDataFrameCache(DataFrameCache, SimulationCache):
         if scene_info.env_metadata.dt != scene_info.dt:
             self.interpolate_data(scene_info.dt)
 
+        # This will remain untouched through simulation, only present for
+        # metrics computation later.
+        self.original_scene_df: pd.DataFrame = self.scene_data_df.copy()
+
+        # This will be modified as simulation steps forward.
         self.persistent_data_df: pd.DataFrame = self.scene_data_df.copy()
 
     def reset(self) -> None:
@@ -130,3 +136,36 @@ class SimulationDataFrameCache(DataFrameCache, SimulationCache):
         DataFrameCache.save_agent_data(
             self.persistent_data_df[history_idxs], self.path, sim_scene_info
         )
+
+    def calculate_metrics(
+        self, metrics: List[SimMetric], ts_range: Optional[Tuple[int, int]] = None
+    ) -> Dict[str, float]:
+        """Calculate metrics about the simulated scene.
+
+        Args:
+            metrics (List[Callable]): The metrics to compute.
+            ts_range (Optional[Tuple[int, int]], optional): Optional specification of which timesteps to constrain metric computation within (both inclusive). Defaults to None which means all available timesteps.
+
+        Returns:
+            Dict[str, float]: A mapping from present agent names to their associated metric value.
+        """
+        index_scene_ts: pd.Index = self.original_scene_df.index.get_level_values(1)
+        if ts_range is not None:
+            from_ts, to_ts = ts_range
+        else:
+            from_ts, to_ts = 0, index_scene_ts.max()
+
+        ts_range_mask: np.ndarray = (index_scene_ts >= from_ts) & (
+            index_scene_ts <= to_ts
+        )
+        intersected_index: pd.Index = self.original_scene_df.index[
+            ts_range_mask
+        ].intersection(self.scene_data_df.index, sort=None)
+        gt_df: pd.DataFrame = self.original_scene_df.reindex(index=intersected_index)
+        sim_df: pd.DataFrame = self.scene_data_df.reindex(index=intersected_index)
+
+        metrics_dict: Dict[str, Dict[str, float]] = dict()
+        for metric in metrics:
+            metrics_dict[metric.name] = metric(gt_df, sim_df)
+
+        return metrics_dict

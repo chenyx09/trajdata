@@ -1,21 +1,17 @@
 from collections import defaultdict
-from tabnanny import verbose
 from typing import Dict, List
 
 import numpy as np
 from tqdm import trange
 
 from avdata import AgentBatch, AgentType, UnifiedDataset
-from avdata.augmentation import LowSpeedYawCorrection
 from avdata.data_structures.scene_metadata import SceneMetadata
-from avdata.simulation import SimulationScene
+from avdata.simulation import SimulationScene, sim_metrics
 from avdata.visualization.vis import plot_agent_batch
 
 
 # @profile
 def main():
-    low_speed_yaw = LowSpeedYawCorrection(speed_threshold=1.0)
-
     dataset = UnifiedDataset(
         desired_data=["nusc_mini"],
         only_types=[AgentType.VEHICLE],
@@ -28,15 +24,17 @@ def main():
             "return_rgb": True,
         },
         verbose=True,
-        augmentations=[low_speed_yaw],
-        # desired_dt=0.1,
-        # num_workers=4,
+        desired_dt=0.1,
+        num_workers=4,
     )
 
-    sim_env_name = "lyft_sample_sim"
+    ade = sim_metrics.ADE()
+    fde = sim_metrics.FDE()
+
+    sim_env_name = "nusc_mini_sim"
     all_sim_scenes: List[SceneMetadata] = list()
     desired_scene: SceneMetadata
-    for idx, desired_scene in enumerate(dataset.scene_index):
+    for idx, desired_scene in enumerate(dataset.scenes()):
         sim_scene: SimulationScene = SimulationScene(
             env_name=sim_env_name,
             scene_name=f"sim_scene-{idx:04d}",
@@ -47,7 +45,7 @@ def main():
         )
 
         obs: AgentBatch = sim_scene.reset()
-        for t in trange(1, 51):
+        for t in trange(1, 101):
             new_xyh_dict: Dict[str, np.ndarray] = dict()
             for idx, agent_name in enumerate(obs.agent_name):
                 curr_yaw = obs.curr_agent_state[idx, -1]
@@ -74,19 +72,13 @@ def main():
                 new_xyh_dict[agent_name] = next_state
 
             obs = sim_scene.step(new_xyh_dict)
+            metrics: Dict[str, Dict[str, float]] = sim_scene.get_metrics([ade, fde])
+            print(metrics)
 
-        plot_agent_batch(
-            obs, 0, dataset.map_params["offset_frac_xy"], show=False, close=False
-        )
-        plot_agent_batch(
-            obs, 1, dataset.map_params["offset_frac_xy"], show=False, close=False
-        )
-        plot_agent_batch(
-            obs, 2, dataset.map_params["offset_frac_xy"], show=False, close=False
-        )
-        plot_agent_batch(
-            obs, 3, dataset.map_params["offset_frac_xy"], show=True, close=True
-        )
+        plot_agent_batch(obs, 0, show=False, close=False)
+        plot_agent_batch(obs, 1, show=False, close=False)
+        plot_agent_batch(obs, 2, show=False, close=False)
+        plot_agent_batch(obs, 3, show=True, close=True)
 
         sim_scene.finalize()
         sim_scene.save()

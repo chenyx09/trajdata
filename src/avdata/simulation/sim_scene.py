@@ -1,5 +1,5 @@
 from copy import deepcopy
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
 import numpy as np
 
@@ -15,6 +15,7 @@ from avdata.data_structures.scene_metadata import SceneMetadata
 from avdata.dataset import UnifiedDataset
 from avdata.simulation.sim_cache import SimulationCache
 from avdata.simulation.sim_df_cache import SimulationDataFrameCache
+from avdata.simulation.sim_metrics import SimMetric
 
 
 class SimulationScene:
@@ -135,6 +136,11 @@ class SimulationScene:
             )
         else:
             return agent_data_list
+
+    def get_metrics(self, metrics: List[SimMetric]) -> Dict[str, Dict[str, float]]:
+        return self.cache.calculate_metrics(
+            metrics, ts_range=(self.init_scene_ts + 1, self.scene_ts)
+        )
 
     def finalize(self) -> None:
         # We only change the agent's last timestep here because we use it

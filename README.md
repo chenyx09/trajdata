@@ -35,7 +35,7 @@ dataloader = DataLoader(
     dataset,
     batch_size=64,
     shuffle=True,
-    collate_fn=dataset.collate_fn,
+    collate_fn=dataset.get_collate_fn(),
     num_workers=os.cpu_count(),
 )
 
@@ -46,7 +46,7 @@ for batch in dataloader:
 ```
 
 ### Current Implementation
-This is still an in-progress work, however many basic features are implemented. Take a look at [these slides](https://nvidia-my.sharepoint.com/:p:/g/personal/bivanovic_nvidia_com1/Ea7ePQYJlx5Orc34-qrYRL4BBFKe9vb7QVEz2khTHtrMqg) for an overview of the project and its current status.
+This is still an in-progress work, however many basic features are implemented. Take a look at [these slides](https://nvidia-my.sharepoint.com/:p:/g/personal/bivanovic_nvidia_com1/ERemy_e0hE9GuUsl-ZJBFfIBHDP0_q8JNG4Er5iOVaeCTw?e=Nhz9Kw) for an overview of the project and its current status.
 
 In particular, the following has been implemented:
 ![implementation](./img/implementation.png)

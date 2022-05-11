@@ -12,13 +12,14 @@ from torch.utils.data._utils.collate import default_collate
 from avdata.augmentation import BatchAugmentation
 from avdata.data_structures.batch import AgentBatch, SceneBatch
 from avdata.data_structures.batch_element import AgentBatchElement, SceneBatchElement
+from avdata.utils import arr_utils
 
 
 def map_collate_fn(
     batch_elems: List[AgentBatchElement],
-) -> Tuple[Optional[Tensor], Optional[Tensor]]:
+) -> Tuple[Optional[Tensor], Optional[Tensor], Optional[Tensor]]:
     if batch_elems[0].map_patch is None:
-        return None, None
+        return None, None, None
 
     patch_data: Tensor = torch.as_tensor(
         np.stack([batch_elem.map_patch.data for batch_elem in batch_elems]),
@@ -38,17 +39,49 @@ def map_collate_fn(
         dtype=torch.float,
     )
 
+    rasters_from_world_tf: Tensor = torch.as_tensor(
+        np.stack(
+            [batch_elem.map_patch.raster_from_world_tf for batch_elem in batch_elems]
+        ),
+        dtype=torch.float,
+    )
+
     if (
         torch.count_nonzero(rot_angles) == 0
         and patch_size == patch_data.shape[-1] == patch_data.shape[-2]
     ):
-        return patch_data, resolution
+        rasters_from_world_tf = torch.bmm(
+            torch.tensor(
+                [
+                    [
+                        [1.0, 0.0, patch_size // 2],
+                        [0.0, 1.0, patch_size // 2],
+                        [0.0, 0.0, 1.0],
+                    ]
+                ],
+                dtype=rasters_from_world_tf.dtype,
+                device=rasters_from_world_tf.device,
+            ).expand((rasters_from_world_tf.shape[0], -1, -1)),
+            rasters_from_world_tf,
+        )
+
+        return patch_data, resolution, rasters_from_world_tf
 
     rot_crop_patches: Tensor = center_crop(
         rotate(patch_data, torch.rad2deg(rot_angles)), (patch_size, patch_size)
     )
 
-    return rot_crop_patches, resolution
+    rasters_from_world_tf = torch.bmm(
+        arr_utils.transform_matrices(
+            -rot_angles,
+            torch.tensor([[patch_size // 2, patch_size // 2]]).expand(
+                (rot_angles.shape[0], -1)
+            ),
+        ),
+        rasters_from_world_tf,
+    )
+
+    return rot_crop_patches, resolution, rasters_from_world_tf
 
 
 def agent_collate_fn(
@@ -318,7 +351,7 @@ def agent_collate_fn(
         neighbor_types_t: Tensor = torch.full((batch_size, 0), np.nan)
 
         neighbor_histories_t: Tensor = torch.full(
-            (batch_size, 0, max_neigh_history_len, curr_agent_state_t.shape[-1]), np.nan
+            (batch_size, 0, max_neigh_history_len, agent_history_t.shape[-1]), np.nan
         )
         neighbor_history_extents_t: Tensor = torch.full(
             (batch_size, 0, max_neigh_history_len, agent_history_extent_t.shape[-1]),
@@ -326,7 +359,7 @@ def agent_collate_fn(
         )
 
         neighbor_futures_t: Tensor = torch.full(
-            (batch_size, 0, max_neigh_future_len, curr_agent_state_t.shape[-1]), np.nan
+            (batch_size, 0, max_neigh_future_len, agent_future_t.shape[-1]), np.nan
         )
         neighbor_future_extents_t: Tensor = torch.full(
             (batch_size, 0, max_neigh_future_len, agent_future_extent_t.shape[-1]),
@@ -338,7 +371,11 @@ def agent_collate_fn(
         if robot_future
         else None
     )
-    map_patches, maps_resolution = map_collate_fn(batch_elems)
+    map_patches, maps_resolution, rasters_from_world_tf = map_collate_fn(batch_elems)
+    agents_from_world_tf = torch.as_tensor(
+        np.stack([batch_elem.agent_from_world_tf for batch_elem in batch_elems]),
+        dtype=torch.float,
+    )
 
     batch = AgentBatch(
         data_idx=data_index_t,
@@ -364,6 +401,8 @@ def agent_collate_fn(
         robot_fut_len=robot_future_len,
         maps=map_patches,
         maps_resolution=maps_resolution,
+        rasters_from_world_tf=rasters_from_world_tf,
+        agents_from_world_tf=agents_from_world_tf,
     )
 
     if batch_augments:

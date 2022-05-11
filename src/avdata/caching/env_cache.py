@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import List, NamedTuple
+from typing import List, NamedTuple, Union
 
 import dill
 
@@ -14,21 +14,27 @@ class EnvCache:
         return (self.path / env_name / "scenes_list.dill").is_file()
 
     def scene_is_cached(self, env_name: str, scene_name: str) -> bool:
-        return (self.path / env_name / scene_name / "scene_metadata.dill").is_file()
+        return EnvCache.scene_metadata_path(self.path, env_name, scene_name).is_file()
+
+    @staticmethod
+    def scene_metadata_path(base_path: Path, env_name: str, scene_name: str) -> Path:
+        return base_path / env_name / scene_name / "scene_metadata.dill"
 
     def load_scene_metadata(self, env_name: str, scene_name: str) -> SceneMetadata:
-        scene_cache_dir: Path = self.path / env_name / scene_name
-        scene_file: Path = scene_cache_dir / "scene_metadata.dill"
+        scene_file: Path = EnvCache.scene_metadata_path(self.path, env_name, scene_name)
         with open(scene_file, "rb") as f:
             scene_metadata: SceneMetadata = dill.load(f)
 
         return scene_metadata
 
     def save_scene_metadata(self, scene_info: SceneMetadata) -> None:
-        scene_cache_dir: Path = self.path / scene_info.env_name / scene_info.name
+        scene_file: Path = EnvCache.scene_metadata_path(
+            self.path, scene_info.env_name, scene_info.name
+        )
+
+        scene_cache_dir: Path = scene_file.parent
         scene_cache_dir.mkdir(parents=True, exist_ok=True)
 
-        scene_file: Path = scene_cache_dir / "scene_metadata.dill"
         with open(scene_file, "wb") as f:
             dill.dump(scene_info, f)
 
@@ -46,3 +52,10 @@ class EnvCache:
         env_cache_dir.mkdir(parents=True, exist_ok=True)
         with open(env_cache_dir / "scenes_list.dill", "wb") as f:
             dill.dump(scenes_list, f)
+
+    @staticmethod
+    def load(scene_info_path: Union[Path, str]) -> SceneMetadata:
+        with open(scene_info_path, "rb") as handle:
+            scene_info: SceneMetadata = dill.load(handle)
+
+        return scene_info

@@ -190,9 +190,7 @@ class DataFrameCache(SceneCache):
         interpolated_df = interpolated_df.astype(self.scene_data_df.dtypes.to_dict())
 
         scene_data: np.ndarray = self.scene_data_df.to_numpy()
-        unwrapped_heading: np.ndarray = self.scene_data_df.groupby(level=0, sort=False)[
-            "heading"
-        ].apply(lambda df: pd.Series(np.unwrap(df)))
+        unwrapped_heading: np.ndarray = np.unwrap(self.scene_data_df["heading"])
 
         # Getting the data initially in the new df, making sure to unwrap angles above
         # in preparation for interpolation.
@@ -262,6 +260,10 @@ class DataFrameCache(SceneCache):
     ) -> Tuple[np.ndarray, np.ndarray]:
         # We don't have to check the mins here because our data_index filtering in dataset.py already
         # took care of it.
+        if scene_ts >= agent_info.last_timestep:
+            # Extent shape = 3
+            return np.zeros((0, self.state_dim)), np.zeros((0, 3))
+
         first_index_incl: int = self.index_dict[(agent_info.name, scene_ts + 1)]
         last_index_incl: int
         if future_sec[1] is not None:
@@ -506,7 +508,7 @@ class DataFrameCache(SceneCache):
         agent_heading: float,
         return_rgb: bool,
         rot_pad_factor: float = 1.0,
-    ) -> Tuple[np.ndarray, MapMetadata]:
+    ) -> Tuple[np.ndarray, np.ndarray]:
         maps_path: Path = DataFrameCache.get_maps_path(
             self.path, self.scene_info.env_name
         )
@@ -515,10 +517,22 @@ class DataFrameCache(SceneCache):
         with open(metadata_file, "rb") as f:
             map_info: MapMetadata = dill.load(f)
 
+        raster_from_world_tf: np.ndarray = map_info.map_from_world
         map_coords: np.ndarray = map_info.map_from_world @ np.array(
             [world_x, world_y, 1.0]
         )
-        map_x, map_y = round(map_coords[0].item()), round(map_coords[1].item())
+        map_x, map_y = map_coords[0].item(), map_coords[1].item()
+
+        raster_from_world_tf = (
+            np.array(
+                [
+                    [1.0, 0.0, -map_x],
+                    [0.0, 1.0, -map_y],
+                    [0.0, 0.0, 1.0],
+                ]
+            )
+            @ raster_from_world_tf
+        )
 
         data_patch_size: int = ceil(
             desired_patch_size * map_info.resolution / resolution
@@ -526,15 +540,34 @@ class DataFrameCache(SceneCache):
 
         # Incorporating offsets.
         if offset_xy != (0.0, 0.0):
+            # x is negative here because I am moving the map
+            # center so that the agent ends up where the user wishes
+            # (the agent is pinned from the end user's perspective).
             map_offset: Tuple[float, float] = (
-                offset_xy[0] * data_patch_size // 2,
-                -offset_xy[1] * data_patch_size // 2,
+                -offset_xy[0] * data_patch_size // 2,
+                offset_xy[1] * data_patch_size // 2,
             )
+
             rotated_offset: np.ndarray = (
-                arr_utils.rotation_matrix(-agent_heading) @ map_offset
+                arr_utils.rotation_matrix(agent_heading) @ map_offset
             )
-            map_x -= round(rotated_offset[0])
-            map_y += round(rotated_offset[1])
+
+            off_x = rotated_offset[0]
+            off_y = rotated_offset[1]
+
+            map_x += off_x
+            map_y += off_y
+
+            raster_from_world_tf = (
+                np.array(
+                    [
+                        [1.0, 0.0, -off_x],
+                        [0.0, 1.0, -off_y],
+                        [0.0, 0.0, 1.0],
+                    ]
+                )
+                @ raster_from_world_tf
+            )
 
         # Ensuring the size is divisible by two so that the // 2 below does not
         # chop any information off.
@@ -543,10 +576,15 @@ class DataFrameCache(SceneCache):
         map_file: Path = maps_path / f"{map_info.name}.zarr"
         disk_data = zarr.open_array(map_file, mode="r")
 
-        top: int = map_y - data_with_rot_pad_size // 2
-        bot: int = map_y + data_with_rot_pad_size // 2
-        left: int = map_x - data_with_rot_pad_size // 2
-        right: int = map_x + data_with_rot_pad_size // 2
+        map_x = round(map_x)
+        map_y = round(map_y)
+
+        half_extent: int = data_with_rot_pad_size // 2
+
+        top: int = map_y - half_extent
+        bot: int = map_y + half_extent
+        left: int = map_x - half_extent
+        right: int = map_x + half_extent
 
         data_patch: np.ndarray = self.pad_map_patch(
             disk_data[
@@ -570,10 +608,11 @@ class DataFrameCache(SceneCache):
             )
 
         if desired_patch_size != data_patch_size:
+            scale_factor: float = desired_patch_size / data_patch_size
             data_patch = (
                 kornia.geometry.rescale(
                     torch.from_numpy(data_patch).unsqueeze(0),
-                    desired_patch_size / data_patch_size,
+                    scale_factor,
                     # Default align_corners value, just putting it to remove warnings
                     align_corners=False,
                     antialias=True,
@@ -582,4 +621,15 @@ class DataFrameCache(SceneCache):
                 .numpy()
             )
 
-        return data_patch
+            raster_from_world_tf = (
+                np.array(
+                    [
+                        [1 / scale_factor, 0.0, 0.0],
+                        [0.0, 1 / scale_factor, 0.0],
+                        [0.0, 0.0, 1.0],
+                    ]
+                )
+                @ raster_from_world_tf
+            )
+
+        return data_patch, raster_from_world_tf

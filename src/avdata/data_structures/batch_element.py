@@ -3,10 +3,9 @@ from math import sqrt
 from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
-import pandas as pd
 
 from avdata.caching import SceneCache
-from avdata.data_structures.agent import AgentMetadata, AgentType
+from avdata.data_structures.agent import AgentMetadata, AgentType, FixedExtent
 from avdata.data_structures.map_patch import MapPatch
 from avdata.data_structures.scene import SceneTime, SceneTimeAgent
 
@@ -45,12 +44,26 @@ class AgentBatchElement:
 
         self.standardize_data = standardize_data
         if self.standardize_data:
+            agent_pos: np.ndarray = self.curr_agent_state_np[:2]
             agent_heading: float = self.curr_agent_state_np[-1]
+
+            cos_agent, sin_agent = np.cos(agent_heading), np.sin(agent_heading)
+            world_from_agent_tf: np.ndarray = np.array(
+                [
+                    [cos_agent, -sin_agent, agent_pos[0]],
+                    [sin_agent, cos_agent, agent_pos[1]],
+                    [0.0, 0.0, 1.0],
+                ]
+            )
+            self.agent_from_world_tf: np.ndarray = np.linalg.inv(world_from_agent_tf)
+
             cache.transform_data(
                 shift_mean_to=self.curr_agent_state_np,
                 rotate_by=agent_heading,
                 sincos_heading=True,
             )
+        else:
+            self.agent_from_world_tf: np.ndarray = np.eye(3)
 
         ### AGENT-SPECIFIC DATA ###
         self.agent_history_np, self.agent_history_extent_np = self.get_agent_history(
@@ -98,7 +111,11 @@ class AgentBatchElement:
             self.robot_future_np: np.ndarray = self.get_robot_current_and_future(
                 scene_time_agent.robot, future_sec
             )
-            self.robot_future_len: int = self.robot_future_np.shape[0]
+
+            # -1 because this is meant to hold the number of future steps
+            # (whereas the above returns the current + future, yielding
+            # one more timestep).
+            self.robot_future_len: int = self.robot_future_np.shape[0] - 1
 
         ### MAP ###
         self.map_patch: Optional[MapPatch] = None
@@ -210,13 +227,22 @@ class AgentBatchElement:
         robot_info: AgentMetadata,
         future_sec: Tuple[Optional[float], Optional[float]],
     ) -> np.ndarray:
-        # self.scene_ts - 1 because we want to get the current timestep (scene_ts) too
-        # and get_agent_future(...) gets data starting from the timestep AFTER the
-        # given one.
+        robot_curr_np: np.ndarray = self.cache.get_state(robot_info.name, self.scene_ts)
+        # # TODO(bivanovic): This should be fine in general, but it is making
+        # # the assumption that all robots have a fixed extent (reasonable
+        # # since usually robots will know their own dimensions).
+        # robot_extent_np: np.ndarray = robot_info.extent.get_extents(
+        #     self.scene_ts, self.scene_ts
+        # )
+
         (
-            robot_curr_and_fut_np,
-            robot_curr_and_fut_extents_np,
-        ) = self.cache.get_agent_future(robot_info, self.scene_ts - 1, future_sec)
+            robot_fut_np,
+            _,  # robot_fut_extents_np,
+        ) = self.cache.get_agent_future(robot_info, self.scene_ts, future_sec)
+
+        robot_curr_and_fut_np: np.ndarray = np.concatenate(
+            (robot_curr_np[np.newaxis, :], robot_fut_np), axis=0
+        )
         return robot_curr_and_fut_np
 
     def get_agent_map_patch(self, patch_params: Dict[str, int]) -> MapPatch:
@@ -228,7 +254,7 @@ class AgentBatchElement:
 
         if self.standardize_data:
             heading = self.curr_agent_state_np[-1]
-            patch_data = self.cache.load_map_patch(
+            patch_data, raster_from_world_tf = self.cache.load_map_patch(
                 world_x,
                 world_y,
                 desired_patch_size,
@@ -240,7 +266,7 @@ class AgentBatchElement:
             )
         else:
             heading = 0.0
-            patch_data = self.cache.load_map_patch(
+            patch_data, raster_from_world_tf = self.cache.load_map_patch(
                 world_x,
                 world_y,
                 desired_patch_size,
@@ -255,6 +281,7 @@ class AgentBatchElement:
             rot_angle=heading,
             crop_size=desired_patch_size,
             resolution=resolution,
+            raster_from_world_tf=raster_from_world_tf,
         )
 
 

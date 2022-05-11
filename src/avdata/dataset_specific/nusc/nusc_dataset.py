@@ -62,8 +62,9 @@ class NuscDataset(RawDataset):
             scene_split_map=nusc_scene_split_map,
         )
 
-    def load_dataset_obj(self) -> None:
-        print(f"Loading {self.name} dataset...", flush=True)
+    def load_dataset_obj(self, verbose: bool = False) -> None:
+        if verbose:
+            print(f"Loading {self.name} dataset...", flush=True)
 
         if self.name == "nusc_mini":
             version_str = "v1.0-mini"
