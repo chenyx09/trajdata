@@ -48,7 +48,8 @@ class AgentBatch:
             "neigh_hist_len",
             "neigh_fut_len",
             "neigh_types",
-            "num_neigh" "robot_fut_len",
+            "num_neigh",
+            "robot_fut_len",
         }
         for val in vars(self).keys():
             tensor_val = getattr(self, val)
