@@ -35,6 +35,8 @@ class AgentBatch:
     robot_fut_len: Tensor
     maps: Optional[Tensor]
     maps_resolution: Optional[Tensor]
+    neighbor_maps: Optional[Tensor]
+    neighbor_rasters_from_world_tf: Optional[Tensor]
     rasters_from_world_tf: Optional[Tensor]
     agents_from_world_tf: Tensor
 
@@ -95,7 +97,25 @@ class AgentBatch:
             if self.rasters_from_world_tf is not None
             else None,
             agents_from_world_tf=self.agents_from_world_tf[match_type],
+
         )
 
-
-SceneBatch = namedtuple("SceneBatch", "")
+@dataclass
+class SceneBatch:
+        data_idx:Tensor
+        dt:Tensor
+        num_agents:Tensor
+        agent_type:Tensor
+        centered_agent_state:Tensor
+        agent_hist:Tensor
+        agent_hist_extent:Tensor
+        agent_hist_len:Tensor
+        agent_fut:Tensor
+        agent_fut_extent:Tensor
+        agent_fut_len:Tensor
+        maps:Tensor
+        maps_resolution:Tensor
+        rasters_from_world_tf:Tensor
+        centered_agent_from_world_tf:Tensor
+        centered_world_from_agent_tf:Tensor
+# SceneBatch = namedtuple("SceneBatch", "")

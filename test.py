@@ -13,19 +13,22 @@ def main():
     noise_hists = NoiseHistories()
 
     dataset = UnifiedDataset(
-        desired_data=["lyft_sample"],
-        centric="agent",
+        desired_data=["nusc-val"],
+        centric="scene",
+        data_dirs= {'nusc': '/home/yuxiaoc/repos/Trajectron-plus-plus/experiments/nuScenes/v1.0-trainval_meta'},
         desired_dt=0.1,
         history_sec=(1.5, 1.5),
         future_sec=(5.0, 5.0),
         only_types=[AgentType.VEHICLE],
-        agent_interaction_distances=defaultdict(lambda: 30.0),
+        agent_interaction_distances=defaultdict(lambda: 50.0),
         incl_robot_future=True,
+        incl_neighbor_map=True,
         incl_map=True,
         map_params={"px_per_m": 2, "map_size_px": 224, "offset_frac_xy": (-0.5, 0.0)},
         augmentations=[noise_hists],
         num_workers=4,
         verbose=True,
+        max_agent_num=10,
     )
 
     print(f"# Data Samples: {len(dataset):,}")
@@ -37,7 +40,7 @@ def main():
         batch_size=4,
         shuffle=True,
         collate_fn=dataset.get_collate_fn(),
-        num_workers=4,
+        num_workers=0,
     )
 
     batch: AgentBatch

@@ -56,11 +56,13 @@ class UnifiedDataset(Dataset):
         ] = defaultdict(lambda: np.inf),
         incl_robot_future: bool = False,
         incl_map: bool = False,
+        incl_neighbor_map: bool = False,
         map_params: Optional[Dict[str, int]] = None,
         only_types: Optional[List[AgentType]] = None,
         no_types: Optional[List[AgentType]] = None,
         standardize_data: bool = True,
         augmentations: Optional[List[Augmentation]] = None,
+        max_agent_num: int = 20,
         data_dirs: Dict[str, str] = {
             # "nusc": "~/datasets/nuScenes",
             "nusc_mini": "/home/yuxiaoc/repos/Trajectron-plus-plus/experiments/nuScenes/v1.0-mini",
@@ -113,18 +115,21 @@ class UnifiedDataset(Dataset):
             assert (
                 map_params["map_size_px"] % 2 == 0
             ), "Patch parameter 'map_size_px' must be divisible by 2"
-
+        if incl_neighbor_map:
+            assert incl_map
         self.history_sec = history_sec
         self.future_sec = future_sec
         self.agent_interaction_distances = agent_interaction_distances
         self.incl_robot_future = incl_robot_future
         self.incl_map = incl_map
+        self.incl_neighbor_map = incl_neighbor_map
         self.map_params = map_params
         self.only_types = None if only_types is None else set(only_types)
         self.no_types = None if no_types is None else set(no_types)
         self.standardize_data = standardize_data
         self.augmentations = augmentations
         self.verbose = verbose
+        self.max_agent_num = max_agent_num
 
         # Ensuring scene description queries are all lowercase
         if scene_description_contains is not None:
@@ -189,11 +194,11 @@ class UnifiedDataset(Dataset):
         data_index: List[Tuple[str, int]] = self.get_data_index(
             num_workers, scene_paths
         )
-
+        
         # Done with this list. Cutting memory usage because
         # of multiprocessing later on.
         del scene_paths
-
+        
         self._scene_index: List[Path] = [orig_path for orig_path, _ in data_index]
 
         # Don't need the temp directory or its contents anymore since
@@ -376,7 +381,12 @@ class UnifiedDataset(Dataset):
             )
         elif self.centric == "scene":
             collate_fn = partial(
-                scene_collate_fn, return_dict=return_dict, batch_augments=batch_augments
+                scene_collate_fn,
+                return_dict=return_dict, 
+                history_frames = int(max(self.history_sec)/self.desired_dt)+1,
+                future_frames = int(max(self.future_sec)/self.desired_dt),
+                max_agent_num = self.max_agent_num, 
+                batch_augments=batch_augments,
             )
 
         return collate_fn
@@ -606,8 +616,16 @@ class UnifiedDataset(Dataset):
                 only_types=self.only_types,
                 no_types=self.no_types,
             )
-
-            return SceneBatchElement(scene_time, self.history_sec, self.future_sec)
+            return SceneBatchElement(scene_cache,
+                                     idx,
+                                     scene_time, 
+                                     self.history_sec, 
+                                     self.future_sec,
+                                     self.agent_interaction_distances,
+                                     self.incl_map,
+                                     self.map_params,
+                                     self.standardize_data,
+                                    )
         elif self.centric == "agent":
             scene_time_agent: SceneTimeAgent = SceneTimeAgent.from_cache(
                 scene_info,
@@ -630,4 +648,5 @@ class UnifiedDataset(Dataset):
                 self.incl_map,
                 self.map_params,
                 self.standardize_data,
+                self.incl_neighbor_map
             )
