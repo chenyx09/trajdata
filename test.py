@@ -13,18 +13,18 @@ def main():
     noise_hists = NoiseHistories()
 
     dataset = UnifiedDataset(
-        desired_data=["lyft_sample"],
+        desired_data=["eupeds_eth-train_loo"],
         centric="agent",
         desired_dt=0.1,
         history_sec=(1.5, 1.5),
         future_sec=(5.0, 5.0),
-        only_types=[AgentType.VEHICLE],
+        # only_types=[AgentType.VEHICLE],
         agent_interaction_distances=defaultdict(lambda: 30.0),
-        incl_robot_future=True,
-        incl_map=True,
-        map_params={"px_per_m": 2, "map_size_px": 224, "offset_frac_xy": (-0.5, 0.0)},
+        # incl_robot_future=True,
+        # incl_map=True,
+        # map_params={"px_per_m": 2, "map_size_px": 224, "offset_frac_xy": (-0.5, 0.0)},
         augmentations=[noise_hists],
-        num_workers=4,
+        num_workers=0,
         verbose=True,
     )
 

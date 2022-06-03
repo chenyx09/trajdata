@@ -63,6 +63,11 @@ class UnifiedDataset(Dataset):
         augmentations: Optional[List[Augmentation]] = None,
         data_dirs: Dict[str, str] = {
             # "nusc": "~/datasets/nuScenes",
+            "eupeds_eth": "~/datasets/eth_ucy_peds",
+            "eupeds_hotel": "~/datasets/eth_ucy_peds",
+            "eupeds_univ": "~/datasets/eth_ucy_peds",
+            "eupeds_zara1": "~/datasets/eth_ucy_peds",
+            "eupeds_zara2": "~/datasets/eth_ucy_peds",
             "nusc_mini": "~/datasets/nuScenes",
             "lyft_sample": "~/datasets/lyft/scenes/sample.zarr",
             # "lyft_train": "~/datasets/lyft/scenes/train.zarr",
@@ -472,7 +477,7 @@ class UnifiedDataset(Dataset):
                     scene_paths.append((orig_scene_path, None))
                     continue
 
-                corresponding_env = self.envs_dict[scene_info.env_name]
+                corresponding_env: RawDataset = self.envs_dict[scene_info.env_name]
                 scene: Scene = agent_utils.get_agent_data(
                     scene_info,
                     corresponding_env,
