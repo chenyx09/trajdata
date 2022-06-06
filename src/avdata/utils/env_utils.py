@@ -12,7 +12,7 @@ def get_raw_dataset(dataset_name: str, data_dir: str) -> RawDataset:
 
     if "lyft" in dataset_name:
         return LyftDataset(dataset_name, data_dir, parallelizable=True)
-    
+
     if "eupeds" in dataset_name:
         return EUPedsDataset(dataset_name, data_dir, parallelizable=True)
 

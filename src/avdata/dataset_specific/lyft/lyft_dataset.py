@@ -108,7 +108,11 @@ class LyftDataset(RawDataset):
             # Saving all scene records for later caching.
             all_scenes_list.append(LyftSceneRecord(scene_name, scene_length))
 
-            if "palo_alto" in scene_tag and scene_split in scene_tag and scene_desc_contains is None:
+            if (
+                "palo_alto" in scene_tag
+                and scene_split in scene_tag
+                and scene_desc_contains is None
+            ):
                 scene_metadata = SceneMetadata(
                     env_name=self.metadata.name,
                     name=scene_name,
@@ -155,7 +159,11 @@ class LyftDataset(RawDataset):
             scene_name, scene_length = scene_record
             scene_split: str = self.metadata.scene_split_map[scene_name]
 
-            if "palo_alto" in scene_tag and scene_split in scene_tag and scene_desc_contains is None:
+            if (
+                "palo_alto" in scene_tag
+                and scene_split in scene_tag
+                and scene_desc_contains is None
+            ):
                 scene_metadata = Scene(
                     self.metadata,
                     scene_name,

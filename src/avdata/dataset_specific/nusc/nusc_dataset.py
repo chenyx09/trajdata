@@ -172,7 +172,7 @@ class NuscDataset(RawDataset):
         )
 
     def get_agent_info(
-        self, scene: Scene, cache_path: Path, cache: SceneCache
+        self, scene: Scene, cache_path: Path, cache_class: Type[SceneCache]
     ) -> Tuple[List[AgentMetadata], List[List[AgentMetadata]]]:
         ego_agent_info: AgentMetadata = AgentMetadata(
             name="ego",
@@ -224,7 +224,7 @@ class NuscDataset(RawDataset):
             existing_agents.values()
         )
 
-        cache.save_agent_data(pd.concat(agent_data_list), cache_path, scene)
+        cache_class.save_agent_data(pd.concat(agent_data_list), cache_path, scene)
 
         return agent_list, agent_presence
 

@@ -80,7 +80,9 @@ def transform_matrices(angles: Tensor, translations: Tensor) -> Tensor:
 
 
 def agent_aware_diff(values: np.ndarray, agent_ids: np.ndarray) -> np.ndarray:
-    values_diff: np.ndarray = np.diff(values, axis=0, prepend=values[[1]] - values[[0]])
+    values_diff: np.ndarray = np.diff(
+        values, axis=0, prepend=values[[0]] - (values[[1]] - values[[0]])
+    )
 
     # The point of the border mask is to catch data like this:
     # index    agent_id     vx    vy
