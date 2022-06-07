@@ -63,6 +63,7 @@ class UnifiedDataset(Dataset):
         standardize_data: bool = True,
         augmentations: Optional[List[Augmentation]] = None,
         max_agent_num: int = 20,
+        vectorize_lane = False,
         data_dirs: Dict[str, str] = {
             # "nusc": "~/datasets/nuScenes",
             "nusc_mini": "/home/yuxiaoc/repos/Trajectron-plus-plus/experiments/nuScenes/v1.0-mini",
@@ -130,6 +131,7 @@ class UnifiedDataset(Dataset):
         self.augmentations = augmentations
         self.verbose = verbose
         self.max_agent_num = max_agent_num
+        self.vectorize_lane = vectorize_lane
 
         # Ensuring scene description queries are all lowercase
         if scene_description_contains is not None:
@@ -648,5 +650,6 @@ class UnifiedDataset(Dataset):
                 self.incl_map,
                 self.map_params,
                 self.standardize_data,
-                self.incl_neighbor_map
+                self.incl_neighbor_map,
+                self.vectorize_lane,
             )

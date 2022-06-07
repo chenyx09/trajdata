@@ -39,6 +39,7 @@ class AgentBatch:
     neighbor_rasters_from_world_tf: Optional[Tensor]
     rasters_from_world_tf: Optional[Tensor]
     agents_from_world_tf: Tensor
+    agent_lanes: Optional[list]
 
     def to(self, device) -> None:
         excl_vals = {

@@ -8,8 +8,10 @@ from avdata.caching import SceneCache
 from avdata.data_structures.agent import AgentMetadata, AgentType, FixedExtent, Agent
 from avdata.data_structures.map_patch import MapPatch
 from avdata.data_structures.scene import SceneTime, SceneTimeAgent
-
-
+from avdata.utils import arr_utils
+from nuscenes.map_expansion.map_api import NuScenesMap
+from nuscenes.map_expansion import arcline_path_utils
+from scipy.interpolate import interp1d
 class AgentBatchElement:
     """A single element of an agent-centric batch."""
 
@@ -29,6 +31,7 @@ class AgentBatchElement:
         map_params: Optional[Dict[str, int]] = None,
         standardize_data: bool = False,
         incl_neighbor_map: bool = False,
+        vectorize_lane: bool = False,
     ) -> None:
         self.cache: SceneCache = cache
         self.data_index: int = data_index
@@ -110,6 +113,12 @@ class AgentBatchElement:
 
         ### ROBOT DATA ###
         self.robot_future_np: Optional[np.ndarray] = None
+        self.lanes = None
+        if vectorize_lane:
+            if scene_time_agent.scene.env_metadata.name=="nusc":
+                self.lanes = self.get_agent_lane_nusc(scene_time_agent)
+
+
         if incl_robot_future:
             self.robot_future_np: np.ndarray = self.get_robot_current_and_future(
                 scene_time_agent.robot, future_sec
@@ -148,6 +157,49 @@ class AgentBatchElement:
         return agent_future_np, agent_extent_future_np
 
     # @profile
+    def get_agent_lane_nusc(self,scene_time_agent):
+        state_full = self.curr_agent_state_np
+
+        vel = np.linalg.norm(state_full[2:4])
+        position = state_full[:2]
+        scene = scene_time_agent.scene
+        yaw = state_full[6]
+        
+        # TODO: parameterize this
+        interp_step_size = 5.0
+        num_steps = 8
+        interp_steps = interp_step_size*np.arange(num_steps)*scene.dt
+        state = np.hstack((position, yaw))
+        x0, y0 = position
+        nusc_map = NuScenesMap(dataroot=scene.env_metadata.data_dir, map_name=scene.location)
+        lanes = nusc_map.get_records_in_radius(x0, y0, 20.0, ['lane', 'lane_connector'])
+        lanes = lanes['lane'] + lanes['lane_connector']
+        relevant_lanes = list()
+        
+        for lane in lanes:
+            lane_record = nusc_map.get_arcline_path(lane)
+            poses = arcline_path_utils.discretize_lane(
+                lane_record, resolution_meters=interp_step_size
+            )
+            poses = np.array(poses)
+            
+            delta_x, delta_y, dpsi = arr_utils.batch_proj(state, poses)
+            
+            if abs(dpsi[0]) < np.pi/4 and np.min(np.abs(delta_y)) < 4.5:
+                pos_local = arr_utils.batch_nd_transform_points_np(poses[...,:2],self.agent_from_world_tf)
+                yaw_local = arr_utils.round_2pi(poses[...,2:]-yaw)
+                f = interp1d(
+                    -delta_x,
+                    np.concatenate((pos_local,yaw_local),-1),
+                    fill_value="extrapolate",
+                    assume_sorted=True,
+                    axis=0,
+                )
+                
+                relevant_lanes.append(f(interp_steps))
+        if len(relevant_lanes)==0:
+            return None
+        return relevant_lanes
     def get_neighbor_history(
         self,
         scene_time: SceneTimeAgent,

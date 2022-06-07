@@ -21,7 +21,7 @@ def map_collate_fn_agent(
     batch_elems: List[AgentBatchElement], max_neighbors_num=None,
 ):
     if batch_elems[0].map_patch is None:
-        return None, None, None
+        return None, None, None, None, None
 
     patch_data: Tensor = torch.as_tensor(
         np.stack([batch_elem.map_patch.data for batch_elem in batch_elems]),
@@ -479,7 +479,11 @@ def agent_collate_fn(
         np.stack([batch_elem.agent_from_world_tf for batch_elem in batch_elems]),
         dtype=torch.float,
     )
-    
+
+    lanes = [torch.tensor(np.array(elem.lanes)) if elem.lanes is not None else torch.empty([0,8,3]) for elem in batch_elems]
+    lanes = pad_sequence(lanes, batch_first=True,padding_value=np.nan)
+
+
     batch = AgentBatch(
         data_idx=data_index_t,
         dt=dt_t,
@@ -508,6 +512,7 @@ def agent_collate_fn(
         neighbor_rasters_from_world_tf = neighbor_rasters_from_world_tf,
         rasters_from_world_tf=rasters_from_world_tf,
         agents_from_world_tf=agents_from_world_tf,
+        agent_lanes = lanes,
     )
 
     if batch_augments:
