@@ -454,6 +454,7 @@ class SceneBatchElement(AgentBatchElement):
         self.agent_history_np, self.agent_history_extent_np = self.get_agent_history(
             self.centered_agent, history_sec
         )
+
         self.agent_history_len: int = self.agent_history_np.shape[0]
 
         self.agent_future_np, self.agent_future_extent_np = self.get_agent_future(
