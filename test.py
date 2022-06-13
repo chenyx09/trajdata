@@ -14,21 +14,23 @@ def main():
 
     dataset = UnifiedDataset(
         desired_data=["nusc-val"],
-        centric="scene",
+        centric="agent",
         data_dirs= {'nusc': '/home/yuxiaoc/repos/Trajectron-plus-plus/experiments/nuScenes/v1.0-trainval_meta'},
         desired_dt=0.1,
         history_sec=(1.5, 1.5),
         future_sec=(5.0, 5.0),
         only_types=[AgentType.VEHICLE],
         agent_interaction_distances=defaultdict(lambda: 50.0),
-        incl_robot_future=True,
-        incl_neighbor_map=True,
+        incl_robot_future=False,
+        incl_neighbor_map=False,
+        vectorize_lane="None",
         incl_map=True,
         map_params={"px_per_m": 2, "map_size_px": 224, "offset_frac_xy": (-0.5, 0.0)},
         augmentations=[noise_hists],
         num_workers=4,
         verbose=True,
         max_agent_num=10,
+        standardize_data = True,
     )
 
     print(f"# Data Samples: {len(dataset):,}")

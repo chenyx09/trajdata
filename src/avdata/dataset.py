@@ -63,7 +63,7 @@ class UnifiedDataset(Dataset):
         standardize_data: bool = True,
         augmentations: Optional[List[Augmentation]] = None,
         max_agent_num: int = 20,
-        vectorize_lane = False,
+        vectorize_lane: str = "None",
         data_dirs: Dict[str, str] = {
             # "nusc": "~/datasets/nuScenes",
             "nusc_mini": "/home/yuxiaoc/repos/Trajectron-plus-plus/experiments/nuScenes/v1.0-mini",
@@ -576,7 +576,6 @@ class UnifiedDataset(Dataset):
     # @profile
     def __getitem__(self, idx: int) -> AgentBatchElement:
         scene_path, scene_index_elem = self._data_index[idx]
-
         if self.centric == "scene":
             scene_info, _, scene_index_elems = UnifiedDataset._get_data_index_scene(
                 (scene_path, None),

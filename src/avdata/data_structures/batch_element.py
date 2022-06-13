@@ -31,7 +31,7 @@ class AgentBatchElement:
         map_params: Optional[Dict[str, int]] = None,
         standardize_data: bool = False,
         incl_neighbor_map: bool = False,
-        vectorize_lane: bool = False,
+        vectorize_lane: str = "None",
     ) -> None:
         self.cache: SceneCache = cache
         self.data_index: int = data_index
@@ -61,9 +61,11 @@ class AgentBatchElement:
                 ]
             )
             self.agent_from_world_tf: np.ndarray = np.linalg.inv(world_from_agent_tf)
+            offset = self.curr_agent_state_np
+            offset[2:6]=0.
 
             cache.transform_data(
-                shift_mean_to=self.curr_agent_state_np,
+                shift_mean_to=offset,
                 rotate_by=agent_heading,
                 sincos_heading=True,
             )
@@ -114,9 +116,14 @@ class AgentBatchElement:
         ### ROBOT DATA ###
         self.robot_future_np: Optional[np.ndarray] = None
         self.lanes = None
-        if vectorize_lane:
+
+        self.scene_id = scene_time_agent.scene.name
+
+        if vectorize_lane == "all" or (vectorize_lane=="ego" and self.agent_name=="ego"):
             if scene_time_agent.scene.env_metadata.name=="nusc":
                 self.lanes = self.get_agent_lane_nusc(scene_time_agent)
+        else:
+            self.lanes = None
 
 
         if incl_robot_future:
@@ -442,9 +449,10 @@ class SceneBatchElement(AgentBatchElement):
                 ]
             )
             self.centered_agent_from_world_tf: np.ndarray = np.linalg.inv(self.centered_world_from_agent_tf)
-
+            offset = self.centered_agent_state_np
+            offset[2:6]=0.0
             cache.transform_data(
-                shift_mean_to=self.centered_agent_state_np,
+                shift_mean_to=offset,
                 rotate_by=agent_heading,
                 sincos_heading=True,
             )

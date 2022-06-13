@@ -17,6 +17,7 @@ from avdata.data_structures.batch_element import AgentBatchElement, SceneBatchEl
 from avdata.utils import arr_utils
 
 
+
 def map_collate_fn_agent(
     batch_elems: List[AgentBatchElement], max_neighbors_num=None,
 ):
@@ -482,8 +483,7 @@ def agent_collate_fn(
 
     lanes = [torch.tensor(np.array(elem.lanes)) if elem.lanes is not None else torch.empty([0,8,3]) for elem in batch_elems]
     lanes = pad_sequence(lanes, batch_first=True,padding_value=np.nan)
-
-
+    scene_ids = [batch_elem.scene_id for batch_elem in batch_elems]
     batch = AgentBatch(
         data_idx=data_index_t,
         dt=dt_t,
@@ -513,6 +513,7 @@ def agent_collate_fn(
         rasters_from_world_tf=rasters_from_world_tf,
         agents_from_world_tf=agents_from_world_tf,
         agent_lanes = lanes,
+        scene_ids = scene_ids,
     )
 
     if batch_augments:
@@ -522,6 +523,7 @@ def agent_collate_fn(
     if return_dict:
         return asdict(batch)
     return batch
+
 
 
 def split_pad_crop(batch_tensor,sizes,pad_value=0.0,desired_size=None):
@@ -687,7 +689,7 @@ def scene_collate_fn(
         np.stack([batch_elem.centered_world_from_agent_tf for batch_elem in batch_elems]),
         dtype=torch.float,
     )
-
+    
     batch = SceneBatch(
         data_idx=data_index_t,
         dt=dt_t,

@@ -29,7 +29,7 @@ class SimulationScene:
         init_timestep: int = 0,
         freeze_agents: bool = True,
         return_dict: bool = False,
-        vectorize_lane: bool = False,
+        vectorize_lane: str = "None",
     ) -> None:
         self.env_name: str = env_name
         self.scene_name: str = scene_name
@@ -39,7 +39,6 @@ class SimulationScene:
         self.freeze_agents: bool = freeze_agents
         self.return_dict: bool = return_dict
         self.vectorize_lane = vectorize_lane
-
         self.scene_ts: int = self.init_scene_ts
 
         agents_present: List[AgentMetadata] = self.scene_info.agent_presence[
@@ -113,7 +112,6 @@ class SimulationScene:
             scene_time_agent = SceneTimeAgent(
                 self.scene_info, self.scene_ts, self.agents, agent, self.cache
             )
-
             agent_data_list.append(
                 AgentBatchElement(
                     self.cache,
