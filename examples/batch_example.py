@@ -8,21 +8,20 @@ from avdata.augmentation import NoiseHistories
 from avdata.visualization.vis import plot_agent_batch
 
 
-# @profile
 def main():
     noise_hists = NoiseHistories()
 
     dataset = UnifiedDataset(
-        desired_data=["eupeds_eth-train_loo"],
+        desired_data=["nusc_mini-mini_train"],
         centric="agent",
         desired_dt=0.1,
-        history_sec=(1.5, 1.5),
-        future_sec=(5.0, 5.0),
-        # only_types=[AgentType.VEHICLE],
+        history_sec=(3.2, 3.2),
+        future_sec=(4.8, 4.8),
+        only_types=[AgentType.VEHICLE],
         agent_interaction_distances=defaultdict(lambda: 30.0),
-        # incl_robot_future=True,
-        # incl_map=True,
-        # map_params={"px_per_m": 2, "map_size_px": 224, "offset_frac_xy": (-0.5, 0.0)},
+        incl_robot_future=True,
+        incl_map=True,
+        map_params={"px_per_m": 2, "map_size_px": 224, "offset_frac_xy": (-0.5, 0.0)},
         augmentations=[noise_hists],
         num_workers=0,
         verbose=True,
@@ -38,12 +37,12 @@ def main():
         shuffle=True,
         collate_fn=dataset.get_collate_fn(),
         num_workers=4,
+        persistent_workers=True,
     )
 
     batch: AgentBatch
     for batch in tqdm(dataloader):
-        pass
-        # plot_agent_batch(batch, batch_idx=0)
+        plot_agent_batch(batch, batch_idx=0)
 
 
 if __name__ == "__main__":

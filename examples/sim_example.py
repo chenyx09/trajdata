@@ -10,7 +10,6 @@ from avdata.simulation import SimulationScene, sim_metrics, sim_stats, sim_vis
 from avdata.visualization.vis import plot_agent_batch
 
 
-# @profile
 def main():
     dataset = UnifiedDataset(
         desired_data=["nusc_mini"],
@@ -24,7 +23,7 @@ def main():
         #     "return_rgb": True,
         # },
         verbose=True,
-        desired_dt=0.1,
+        # desired_dt=0.1,
         num_workers=4,
     )
 

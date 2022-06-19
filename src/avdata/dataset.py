@@ -82,26 +82,30 @@ class UnifiedDataset(Dataset):
         verbose: bool = False,
     ) -> None:
         """Instantiates a PyTorch Dataset object which aggregates data
-        from multiple autonomous vehicle (AV) datasets.
+        from multiple trajectory forecasting datasets.
 
         Args:
-            desired_data (List[str]): Names of AV datasets, training splits, or locations from which to load data.
-            scene_description_contains (Optional[List[str]], optional): Strings to search for within scene descriptions (for datasets which provide scene descriptions). Defaults to None.
-            centric (str, optional): Batch data format, one of {"agent", "scene"}, matching the type of model you want to train. Defaults to "agent".
-            history_sec (Tuple[Optional[float], Optional[float]], optional): _description_. Defaults to ( None, None, ).
-            incl_robot_future (bool, optional): _description_. Defaults to False.
-            incl_map (bool, optional): _description_. Defaults to False.
-            map_params (Optional[Dict[str, int]], optional): _description_. Defaults to None.
-            only_types (Optional[List[AgentType]], optional): _description_. Defaults to None.
-            no_types (Optional[List[AgentType]], optional): _description_. Defaults to None.
-            standardize_data (bool, optional): _description_. Defaults to True.
-            data_dirs (_type_, optional): _description_. Defaults to { "nusc_mini": "~/datasets/nuScenes", "lyft_sample": "~/datasets/lyft/scenes/sample.zarr", }.
-            cache_type (str, optional): _description_. Defaults to "dataframe".
-            cache_location (str, optional): _description_. Defaults to "~/.unified_data_cache".
-            rebuild_cache (bool, optional): _description_. Defaults to False.
-            rebuild_maps (bool, optional): _description_. Defaults to False.
-            num_workers (int, optional): _description_. Defaults to 0.
-            verbose (bool, optional): _description_. Defaults to False.
+            desired_data (List[str]): Names of datasets, splits, scene tags, etc. See the README for more information.
+            scene_description_contains (Optional[List[str]], optional): Only return data from scenes whose descriptions contain one or more of these strings. Defaults to None.
+            centric (str, optional): One of {"agent", "scene"}, specifies what a batch element contains data for (one agent at one timestep or all agents in a scene at one timestep). Defaults to "agent".
+            desired_dt (Optional[float], optional): Specifies the desired data sampling rate, an error will be raised if the original and desired data sampling rate are not integer multiples of each other. Defaults to None.
+            history_sec (Tuple[Optional[float], Optional[float]], optional): A tuple containing (the minimum seconds of history each batch element must contain, the maximum seconds of history to return). Both inclusive. Defaults to ( None, None, ).
+            future_sec (Tuple[Optional[float], Optional[float]], optional): A tuple containing (the minimum seconds of future data each batch element must contain, the maximum seconds of future data to return). Both inclusive. Defaults to ( None, None, ).
+            agent_interaction_distances: (Dict[Tuple[AgentType, AgentType], float]): A dictionary mapping agent-agent interaction distances in meters (determines which agents are included as neighbors to the predicted agent). Defaults to infinity for all types.
+            incl_robot_future (bool, optional): Include the ego agent's future trajectory in batches (accordingly, never predict the ego's future). Defaults to False.
+            incl_map (bool, optional): Include a local cropping of the rasterized map (if the dataset provides a map) per agent. Defaults to False.
+            map_params (Optional[Dict[str, int]], optional): Local map cropping parameters, must be specified if incl_map is True. Must contain keys {"px_per_m", "map_size_px"} and can optionally contain {"offset_frac_xy"}. Defaults to None.
+            only_types (Optional[List[AgentType]], optional): Filter out all agents except for those of the specified types. Defaults to None.
+            no_types (Optional[List[AgentType]], optional): Filter out all agents with the specified types. Defaults to None.
+            standardize_data (bool, optional): Standardize all data such that (1) the predicted agent's orientation at the current timestep is 0, (2) all data is made relative to the predicted agent's current position, and (3) the agent's heading value is replaced with its sin, cos values. Defaults to True.
+            augmentations (Optional[List[Augmentation]], optional): Perform the specified augmentations to the batch or dataset. Defaults to None.
+            data_dirs (Optional[Dict[str, str]], optional): Dictionary mapping dataset names to their directories on disk. Defaults to { "eupeds_eth": "~/datasets/eth_ucy_peds", "eupeds_hotel": "~/datasets/eth_ucy_peds", "eupeds_univ": "~/datasets/eth_ucy_peds", "eupeds_zara1": "~/datasets/eth_ucy_peds", "eupeds_zara2": "~/datasets/eth_ucy_peds", "nusc_mini": "~/datasets/nuScenes", "lyft_sample": "~/datasets/lyft/scenes/sample.zarr", }.
+            cache_type (str, optional): What type of cache to use to store preprocessed, cached data on disk. Defaults to "dataframe".
+            cache_location (str, optional): Where to store and load preprocessed, cached data. Defaults to "~/.unified_data_cache".
+            rebuild_cache (bool, optional): If True, process and cache trajectory data even if it is already cached. Defaults to False.
+            rebuild_maps (bool, optional): If True, process and cache maps even if they are already cached. Defaults to False.
+            num_workers (int, optional): Number of parallel workers to use for dataset preprocessing and loading. Defaults to 0.
+            verbose (bool, optional):  If True, print internal data loading information. Defaults to False.
         """
         self.centric: str = centric
         self.desired_dt: float = desired_dt

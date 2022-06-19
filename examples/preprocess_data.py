@@ -3,7 +3,6 @@ import os
 from avdata import UnifiedDataset
 
 
-# @profile
 def main():
     dataset = UnifiedDataset(
         desired_data=["nusc_mini", "lyft_sample"],
