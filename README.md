@@ -3,7 +3,7 @@
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![Imports: isort](https://img.shields.io/badge/%20imports-isort-%231674b1?style=flat&labelColor=ef8336)](https://pycqa.github.io/isort/)
 
-### Installation
+## Installation
 
 First, in whichever environment you would like to use (conda, venv, ...), please install the required dependencies with
 ```
@@ -11,14 +11,14 @@ pip install -r requirements.txt
 ```
 Then, download the raw datasets (nuScenes, Lyft Level 5, ETH/UCY, etc) somewhere onto your computer.
 
-### Data Preprocessing [Optional]
+## Data Preprocessing [Optional]
 The dataloader operates via a two-stage process, visualized below.
 ![architecture](./img/architecture.png)
 While optional, we recommend first preprocessing data into a canonical format. Take a look at the `examples/preprocess_data.py` script for an example script that does this. Data preprocessing will execute the first part of the diagram above and create data caches for each specified dataset.
 
 **Note**: Explicitly preprocessing datasets like this is not necessary; the dataloader will always internally check if there exists a cache for any requested data and will create one if not.
 
-### Data Loading
+## Data Loading
 To load batches of data for training/evaluation/etc, please see `examples/batch_example.py` for a comprehensive example.
 
 At a minimum, data can be loaded the following way:
@@ -46,7 +46,7 @@ for batch in dataloader:
 
 To see all of the possible `UnifiedDataset` constructor arguments, please see `src/avdata/dataset.py`.
 
-### Simulation Interface
+## Simulation Interface
 One additional feature of avdata is that it can be used to initialize simulations from real data and track resulting agent motion, metrics, etc. `examples/sim_example.py` contains an example which initializes a simulation from a scene in the nuScenes mini dataset, steps through it by replaying agents' GT motions, and computes metrics based on scene statistics (e.g., displacement error from the original GT data, velocity/acceleration/jerk histograms).
 
 At a minimum, a simulation can be initialized and stepped through as follows (also present in `examples/simple_sim_example.py`):
@@ -90,7 +90,7 @@ for t in range(1, sim_scene.scene_info.length_timesteps):
     obs = sim_scene.step(new_xyh_dict)
 ```
 
-### Supported Datasets
+## Supported Datasets
 Currently, the dataloader supports interfacing with the following datasets:
 
 | Dataset | ID | Splits | Add'l Tags | Description |
@@ -107,12 +107,21 @@ Currently, the dataloader supports interfacing with the following datasets:
 | UCY - Zara1 | `eupeds_zara1` | `train`, `val`, `train_loo`, `val_loo`, `test_loo` | `cyprus` | The Zara1 scene from the UCY Pedestrians dataset |
 | UCY - Zara2 | `eupeds_zara2` | `train`, `val`, `train_loo`, `val_loo`, `test_loo` | `cyprus` | The Zara2 scene from the UCY Pedestrians dataset |
 
+### Examples
+
+#### Multiple Datasets
+The following will load data from both the nuScenes mini dataset as well as the ETH - University scene from the ETH BIWI Walking Pedestrians dataset.
+
+```py
+dataset = UnifiedDataset(desired_data=["nusc_mini", "eupeds_eth"])
+```
+
 ### Adding New Datasets
 The code that interfaces raw datasets can be found in `src/avdata/dataset_specific`.
 
 To add a new dataset, ...
 
-### Current Implementation
+## Current Implementation
 This is still an in-progress work, however many basic features are implemented. Take a look at [these slides](https://nvidia-my.sharepoint.com/:p:/g/personal/bivanovic_nvidia_com1/ERemy_e0hE9GuUsl-ZJBFfIBHDP0_q8JNG4Er5iOVaeCTw?e=Nhz9Kw) for an overview of the project and its current status.
 
 In particular, the following has been implemented:
