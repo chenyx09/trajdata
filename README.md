@@ -29,7 +29,13 @@ from torch.utils.data import DataLoader
 from avdata import AgentBatch, UnifiedDataset
 
 # See below for a list of already-supported datasets and splits.
-dataset = UnifiedDataset(desired_data=["nusc_mini, lyft_sample"])
+dataset = UnifiedDataset(
+    desired_data=["nusc_mini, lyft_sample"],
+    data_dirs={  # Remember to change this to match your filesystem!
+        "nusc_mini": "~/datasets/nuScenes",
+        "lyft_sample": "~/datasets/lyft/scenes/sample.zarr",
+    },
+)
 
 dataloader = DataLoader(
     dataset,
@@ -92,7 +98,12 @@ from avdata.data_structures.scene_metadata import Scene # Just for type annotati
 from avdata.simulation import SimulationScene
 
 # See below for a list of already-supported datasets and splits.
-dataset = UnifiedDataset(desired_data=["nusc_mini"])
+dataset = UnifiedDataset(
+    desired_data=["nusc_mini"],
+    data_dirs={  # Remember to change this to match your filesystem!
+        "nusc_mini": "~/datasets/nuScenes",
+    },
+)
 
 desired_scene: Scene = dataset.get_scene(scene_idx=0)
 sim_scene = SimulationScene(
