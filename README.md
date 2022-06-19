@@ -46,6 +46,37 @@ for batch in dataloader:
 
 To see all of the possible `UnifiedDataset` constructor arguments, please see `src/avdata/dataset.py`.
 
+## Supported Datasets
+Currently, the dataloader supports interfacing with the following datasets:
+
+| Dataset | ID | Splits | Add'l Tags | Description |
+|---------|----|--------|------------|-------------|
+| nuScenes | `nusc` | `train`, `val`, `test` | `boston`, `singapore` | nuScenes' training/validation/test splits (700/150/150 scenes) |
+| nuScenes Mini | `nusc_mini` | `mini_train`, `mini_val` | `boston`, `singapore` | nuScenes mini training/validation splits (8/2 scenes) |
+| Lyft Level 5 Train | `lyft_train` | `train` | `palo_alto` | Lyft Level 5 training data - part 1/2 (8.4 GB) |
+| Lyft Level 5 Train Full | `lyft_train_full` | `train` | `palo_alto` | Lyft Level 5 training data - part 2/2 (70 GB) |
+| Lyft Level 5 Validation | `lyft_val` | `val` | `palo_alto` | Lyft Level 5 validation data (8.2 GB) |
+| Lyft Level 5 Sample | `lyft_sample` | `mini_train`, `mini_val` | `palo_alto` | Lyft Level 5 sample data (100 scenes, randomly split 80/20 for training/validation) |
+| ETH - Univ | `eupeds_eth` | `train`, `val`, `train_loo`, `val_loo`, `test_loo` | `zurich` | The ETH (University) scene from the ETH BIWI Walking Pedestrians dataset |
+| ETH - Hotel | `eupeds_hotel` | `train`, `val`, `train_loo`, `val_loo`, `test_loo` | `zurich` | The Hotel scene from the ETH BIWI Walking Pedestrians dataset |
+| UCY - Univ | `eupeds_univ` | `train`, `val`, `train_loo`, `val_loo`, `test_loo` | `cyprus` | The University scene from the UCY Pedestrians dataset |
+| UCY - Zara1 | `eupeds_zara1` | `train`, `val`, `train_loo`, `val_loo`, `test_loo` | `cyprus` | The Zara1 scene from the UCY Pedestrians dataset |
+| UCY - Zara2 | `eupeds_zara2` | `train`, `val`, `train_loo`, `val_loo`, `test_loo` | `cyprus` | The Zara2 scene from the UCY Pedestrians dataset |
+
+## Examples
+
+### Multiple Datasets
+The following will load data from both the nuScenes mini dataset as well as the ETH - University scene from the ETH BIWI Walking Pedestrians dataset.
+
+```py
+dataset = UnifiedDataset(desired_data=["nusc_mini", "eupeds_eth"])
+```
+
+## Adding New Datasets
+The code that interfaces raw datasets can be found in `src/avdata/dataset_specific`.
+
+To add a new dataset, ...
+
 ## Simulation Interface
 One additional feature of avdata is that it can be used to initialize simulations from real data and track resulting agent motion, metrics, etc. `examples/sim_example.py` contains an example which initializes a simulation from a scene in the nuScenes mini dataset, steps through it by replaying agents' GT motions, and computes metrics based on scene statistics (e.g., displacement error from the original GT data, velocity/acceleration/jerk histograms).
 
@@ -89,37 +120,6 @@ for t in range(1, sim_scene.scene_info.length_timesteps):
 
     obs = sim_scene.step(new_xyh_dict)
 ```
-
-## Supported Datasets
-Currently, the dataloader supports interfacing with the following datasets:
-
-| Dataset | ID | Splits | Add'l Tags | Description |
-|---------|----|--------|------------|-------------|
-| nuScenes | `nusc` | `train`, `val`, `test` | `boston`, `singapore` | nuScenes' training/validation/test splits (700/150/150 scenes) |
-| nuScenes Mini | `nusc_mini` | `mini_train`, `mini_val` | `boston`, `singapore` | nuScenes mini training/validation splits (8/2 scenes) |
-| Lyft Level 5 Train | `lyft_train` | `train` | `palo_alto` | Lyft Level 5 training data - part 1/2 (8.4 GB) |
-| Lyft Level 5 Train Full | `lyft_train_full` | `train` | `palo_alto` | Lyft Level 5 training data - part 2/2 (70 GB) |
-| Lyft Level 5 Validation | `lyft_val` | `val` | `palo_alto` | Lyft Level 5 validation data (8.2 GB) |
-| Lyft Level 5 Sample | `lyft_sample` | `mini_train`, `mini_val` | `palo_alto` | Lyft Level 5 sample data (100 scenes, randomly split 80/20 for training/validation) |
-| ETH - Univ | `eupeds_eth` | `train`, `val`, `train_loo`, `val_loo`, `test_loo` | `zurich` | The ETH (University) scene from the ETH BIWI Walking Pedestrians dataset |
-| ETH - Hotel | `eupeds_hotel` | `train`, `val`, `train_loo`, `val_loo`, `test_loo` | `zurich` | The Hotel scene from the ETH BIWI Walking Pedestrians dataset |
-| UCY - Univ | `eupeds_univ` | `train`, `val`, `train_loo`, `val_loo`, `test_loo` | `cyprus` | The University scene from the UCY Pedestrians dataset |
-| UCY - Zara1 | `eupeds_zara1` | `train`, `val`, `train_loo`, `val_loo`, `test_loo` | `cyprus` | The Zara1 scene from the UCY Pedestrians dataset |
-| UCY - Zara2 | `eupeds_zara2` | `train`, `val`, `train_loo`, `val_loo`, `test_loo` | `cyprus` | The Zara2 scene from the UCY Pedestrians dataset |
-
-### Examples
-
-#### Multiple Datasets
-The following will load data from both the nuScenes mini dataset as well as the ETH - University scene from the ETH BIWI Walking Pedestrians dataset.
-
-```py
-dataset = UnifiedDataset(desired_data=["nusc_mini", "eupeds_eth"])
-```
-
-### Adding New Datasets
-The code that interfaces raw datasets can be found in `src/avdata/dataset_specific`.
-
-To add a new dataset, ...
 
 ## Current Implementation
 This is still an in-progress work, however many basic features are implemented. Take a look at [these slides](https://nvidia-my.sharepoint.com/:p:/g/personal/bivanovic_nvidia_com1/ERemy_e0hE9GuUsl-ZJBFfIBHDP0_q8JNG4Er5iOVaeCTw?e=Nhz9Kw) for an overview of the project and its current status.
