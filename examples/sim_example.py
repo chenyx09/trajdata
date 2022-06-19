@@ -25,6 +25,9 @@ def main():
         verbose=True,
         # desired_dt=0.1,
         num_workers=4,
+        data_dirs={  # Remember to change this to match your filesystem!
+            "nusc_mini": "~/datasets/nuScenes",
+        },
     )
 
     ade = sim_metrics.ADE()

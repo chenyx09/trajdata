@@ -2,8 +2,20 @@ from typing import Dict, List, Type
 
 from avdata.dataset_specific import RawDataset
 from avdata.dataset_specific.eth_ucy_peds import EUPedsDataset
-from avdata.dataset_specific.lyft import LyftDataset
-from avdata.dataset_specific.nusc import NuscDataset
+
+try:
+    from avdata.dataset_specific.lyft import LyftDataset
+except ModuleNotFoundError:
+    # This can happen if the user did not install avdata
+    # with the "avdata[lyft]" option.
+    pass
+
+try:
+    from avdata.dataset_specific.nusc import NuscDataset
+except ModuleNotFoundError:
+    # This can happen if the user did not install avdata
+    # with the "avdata[nusc]" option.
+    pass
 
 
 def get_raw_dataset(dataset_name: str, data_dir: str) -> RawDataset:

@@ -25,6 +25,9 @@ def main():
         augmentations=[noise_hists],
         num_workers=0,
         verbose=True,
+        data_dirs={  # Remember to change this to match your filesystem!
+            "nusc_mini": "~/datasets/nuScenes",
+        },
     )
 
     print(f"# Data Samples: {len(dataset):,}")

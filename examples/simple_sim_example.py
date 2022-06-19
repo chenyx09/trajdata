@@ -1,12 +1,17 @@
-from typing import Dict # Just for type annotations
+from typing import Dict  # Just for type annotations
 
 import numpy as np
 
 from avdata import AgentBatch, UnifiedDataset
-from avdata.data_structures.scene_metadata import Scene # Just for type annotations
+from avdata.data_structures.scene_metadata import Scene  # Just for type annotations
 from avdata.simulation import SimulationScene
 
-dataset = UnifiedDataset(desired_data=["nusc_mini"])
+dataset = UnifiedDataset(
+    desired_data=["nusc_mini"],
+    data_dirs={  # Remember to change this to match your filesystem!
+        "nusc_mini": "~/datasets/nuScenes",
+    },
+)
 
 desired_scene: Scene = dataset.get_scene(scene_idx=0)
 sim_scene = SimulationScene(
