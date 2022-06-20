@@ -37,7 +37,7 @@ It should look like this after downloading:
 **Note**: Not all the dataset parts need to be downloaded, only the necessary `.zarr` files need to be downloaded (e.g., `sample.zarr` for the small sample dataset).
 
 ## ETH/UCY Pedestrians
-The raw data can be found in many places online, ranging from research projects' data [download scripts](https://github.com/agrimgupta92/sgan/blob/master/scripts/download_data.sh) to copies of the [original data itself](https://github.com/StanfordASL/Trajectron-plus-plus/tree/master/experiments/pedestrians/raw/raw/all_data) on GitHub. In this data loader, we assume the data was sourced from the latter.
+The raw data can be found in many places online, ranging from [research projects' data download scripts](https://github.com/agrimgupta92/sgan/blob/master/scripts/download_data.sh) to [copies of the original data itself](https://github.com/StanfordASL/Trajectron-plus-plus/tree/master/experiments/pedestrians/raw/raw/all_data) on GitHub. In this data loader, we assume the data was sourced from the latter.
 
 It should look like this after downloading:
 ```
