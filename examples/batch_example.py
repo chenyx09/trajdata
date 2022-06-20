@@ -32,8 +32,6 @@ def main():
 
     print(f"# Data Samples: {len(dataset):,}")
 
-    # TODO(bivanovic): Create a method like finalize() which writes all the batch information to a TFRecord?
-
     dataloader = DataLoader(
         dataset,
         batch_size=4,

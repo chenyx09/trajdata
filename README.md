@@ -6,11 +6,34 @@
 
 ## Installation
 
-First, in whichever environment you would like to use (conda, venv, ...), please install the required dependencies with
+The easiest way to install avdata is through PyPI with
+```sh
+pip install avdata
+```
+
+In case you would also like to use datasets such as nuScenes and Lyft Level 5 (which require their own devkits to access raw data), then the following will also install the respective devkits.
+```sh
+# For nuScenes
+pip install avdata[nusc]
+
+# For Lyft
+pip install avdata[lyft]
+
+# For both
+pip install avdata[nusc,lyft]
+```
+Then, download the raw datasets (nuScenes, Lyft Level 5, ETH/UCY, etc) somewhere onto your computer in case you do not already have them. For more information about how to structure dataset folders/files, please see [`DATASETS.md`](./DATASETS.md).
+
+### Package Developer Installation
+
+First, in whichever environment you would like to use (conda, venv, ...), make sure to install all required dependencies with
 ```
 pip install -r requirements.txt
 ```
-Then, download the raw datasets (nuScenes, Lyft Level 5, ETH/UCY, etc) somewhere onto your computer.
+Then, install avdata itself in editable mode with
+```
+pip install -e .
+```
 
 ## Data Preprocessing [Optional]
 The dataloader operates via a two-stage process, visualized below.
@@ -132,6 +155,11 @@ for t in range(1, sim_scene.scene_info.length_timesteps):
 
     obs = sim_scene.step(new_xyh_dict)
 ```
+
+## TODO
+- Merge in upstream scene batch addition.
+- Create a method like finalize() which writes all the batch information to a TFRecord/WebDataset/some other format which is fast to read from for higher epoch training.
+- Finish README section about how to add a new dataset.
 
 ## Current Implementation
 This is still an in-progress work, however many basic features are implemented. Take a look at [these slides](https://nvidia-my.sharepoint.com/:p:/g/personal/bivanovic_nvidia_com1/ERemy_e0hE9GuUsl-ZJBFfIBHDP0_q8JNG4Er5iOVaeCTw?e=Nhz9Kw) for an overview of the project and its current status.
