@@ -11,7 +11,7 @@ The easiest way to install avdata is through PyPI with
 pip install avdata
 ```
 
-In case you would also like to use datasets such as nuScenes and Lyft Level 5 (which require their own devkits to access raw data), then the following will also install the respective devkits.
+In case you would also like to use datasets such as nuScenes and Lyft Level 5 (which require their own devkits to access raw data), the following will also install the respective devkits.
 ```sh
 # For nuScenes
 pip install avdata[nusc]
@@ -19,10 +19,10 @@ pip install avdata[nusc]
 # For Lyft
 pip install avdata[lyft]
 
-# For both
+# Both
 pip install avdata[nusc,lyft]
 ```
-Then, download the raw datasets (nuScenes, Lyft Level 5, ETH/UCY, etc) somewhere onto your computer in case you do not already have them. For more information about how to structure dataset folders/files, please see [`DATASETS.md`](./DATASETS.md).
+Then, download the raw datasets (nuScenes, Lyft Level 5, ETH/UCY, etc) in case you do not already have them. For more information about how to structure dataset folders/files, please see [`DATASETS.md`](./DATASETS.md).
 
 ### Package Developer Installation
 
@@ -43,9 +43,8 @@ While optional, we recommend first preprocessing data into a canonical format. T
 **Note**: Explicitly preprocessing datasets like this is not necessary; the dataloader will always internally check if there exists a cache for any requested data and will create one if not.
 
 ## Data Loading
-To load batches of data for training/evaluation/etc, please see `examples/batch_example.py` for a comprehensive example.
 
-At a minimum, data can be loaded the following way:
+At a minimum, batches of data for training/evaluation/etc can be loaded the following way:
 ```py
 import os
 from torch.utils.data import DataLoader
@@ -74,7 +73,9 @@ for batch in dataloader:
     pass
 ```
 
-To see all of the possible `UnifiedDataset` constructor arguments, please see `src/avdata/dataset.py`.
+For a more comprehensive example, please see `examples/batch_example.py`.
+
+For more information on all of the possible `UnifiedDataset` constructor arguments, please see `src/avdata/dataset.py`.
 
 ## Supported Datasets
 Currently, the dataloader supports interfacing with the following datasets:
@@ -108,7 +109,7 @@ The code that interfaces raw datasets can be found in `src/avdata/dataset_specif
 To add a new dataset, ...
 
 ## Simulation Interface
-One additional feature of avdata is that it can be used to initialize simulations from real data and track resulting agent motion, metrics, etc. `examples/sim_example.py` contains an example which initializes a simulation from a scene in the nuScenes mini dataset, steps through it by replaying agents' GT motions, and computes metrics based on scene statistics (e.g., displacement error from the original GT data, velocity/acceleration/jerk histograms).
+One additional feature of avdata is that it can be used to initialize simulations from real data and track resulting agent motion, metrics, etc. 
 
 At a minimum, a simulation can be initialized and stepped through as follows (also present in `examples/simple_sim_example.py`):
 ```py
@@ -156,9 +157,12 @@ for t in range(1, sim_scene.scene_info.length_timesteps):
     obs = sim_scene.step(new_xyh_dict)
 ```
 
+`examples/sim_example.py` contains a more comprehensive example which initializes a simulation from a scene in the nuScenes mini dataset, steps through it by replaying agents' GT motions, and computes metrics based on scene statistics (e.g., displacement error from the original GT data, velocity/acceleration/jerk histograms).
+
 ## TODO
-- Merge in upstream scene batch addition.
-- Create a method like finalize() which writes all the batch information to a TFRecord/WebDataset/some other format which is fast to read from for higher epoch training.
+- Merge in upstream scene batch pull request.
+- Create a method like finalize() which writes all the batch information to a TFRecord/WebDataset/some other format which is (very) fast to read from for higher epoch training.
+- Add more examples to the README.
 - Finish README section about how to add a new dataset.
 
 ## Current Implementation
