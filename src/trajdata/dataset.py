@@ -56,7 +56,6 @@ class UnifiedDataset(Dataset):
         ] = defaultdict(lambda: np.inf),
         incl_robot_future: bool = False,
         incl_map: bool = False,
-        incl_neighbor_map: bool = False,
         map_params: Optional[Dict[str, int]] = None,
         only_types: Optional[List[AgentType]] = None,
         no_types: Optional[List[AgentType]] = None,
@@ -128,14 +127,12 @@ class UnifiedDataset(Dataset):
             assert (
                 map_params["map_size_px"] % 2 == 0
             ), "Patch parameter 'map_size_px' must be divisible by 2"
-        if incl_neighbor_map:
-            assert incl_map
+
         self.history_sec = history_sec
         self.future_sec = future_sec
         self.agent_interaction_distances = agent_interaction_distances
         self.incl_robot_future = incl_robot_future
         self.incl_map = incl_map
-        self.incl_neighbor_map = incl_neighbor_map
         self.map_params = map_params
         self.only_types = None if only_types is None else set(only_types)
         self.no_types = None if no_types is None else set(no_types)
@@ -397,7 +394,6 @@ class UnifiedDataset(Dataset):
             collate_fn = partial(
                 scene_collate_fn,
                 return_dict=return_dict,
-                max_agent_num=self.max_agent_num,
                 batch_augments=batch_augments,
             )
 
@@ -639,6 +635,7 @@ class UnifiedDataset(Dataset):
                 self.map_params,
                 self.standardize_data,
                 self.standardize_derivatives,
+                self.max_agent_num,
             )
         elif self.centric == "agent":
             scene_time_agent: SceneTimeAgent = SceneTimeAgent.from_cache(
@@ -663,5 +660,4 @@ class UnifiedDataset(Dataset):
                 self.map_params,
                 self.standardize_data,
                 self.standardize_derivatives,
-                self.incl_neighbor_map,
             )

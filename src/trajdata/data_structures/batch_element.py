@@ -26,7 +26,6 @@ class AgentBatchElement:
         ] = defaultdict(lambda: np.inf),
         incl_robot_future: bool = False,
         incl_map: bool = False,
-        incl_neighbor_map: bool = False,
         map_params: Optional[Dict[str, int]] = None,
         standardize_data: bool = False,
         standardize_derivatives: bool = False,
@@ -130,10 +129,6 @@ class AgentBatchElement:
         self.neighbor_map_patch: Optional[List[MapPatch]] = None
         if incl_map:
             self.map_patch = self.get_agent_map_patch(map_params)
-        if incl_neighbor_map:
-            self.neighbor_map_patch = self.get_neighbor_map_patch(
-                map_params, self.neighbor_histories
-            )
 
         self.scene_id = scene_time_agent.scene.name
 
@@ -291,72 +286,6 @@ class AgentBatchElement:
             raster_from_world_tf=raster_from_world_tf,
         )
 
-    def get_neighbor_map_patch(
-        self, patch_params: Dict[str, int], neighbor_histories: List[np.ndarray]
-    ) -> List[MapPatch]:
-        world_x, world_y = self.curr_agent_state_np[:2]
-        heading: float = self.curr_agent_state_np[-1]
-        desired_patch_size: int = patch_params["map_size_px"]
-        resolution: int = patch_params["px_per_m"]
-        offset_xy: Tuple[float, float] = patch_params.get("offset_frac_xy", (0.0, 0.0))
-        return_rgb: bool = patch_params.get("return_rgb", True)
-
-        if len(self.cache.heading_cols) == 1:
-            heading_idx = self.cache.heading_cols[0]
-            sincos = False
-        else:
-            heading_sin_idx, heading_cos_idx = self.cache.heading_cols
-            sincos = True
-        x_idx, y_idx = self.cache.pos_cols
-
-        map_patches = list()
-        for nb_his in neighbor_histories:
-            if self.standardize_data:
-                if sincos:
-                    neighbor_heading = (
-                        np.arctan2(
-                            nb_his[-1, heading_sin_idx], nb_his[-1, heading_cos_idx]
-                        )
-                        + heading
-                    )
-                else:
-                    neighbor_heading = nb_his[-1, heading_idx] + heading
-
-                patch_data, raster_from_world_tf = self.cache.load_map_patch(
-                    world_x + nb_his[-1, x_idx],
-                    world_y + nb_his[-1, y_idx],
-                    desired_patch_size,
-                    resolution,
-                    offset_xy,
-                    neighbor_heading,
-                    return_rgb,
-                    rot_pad_factor=sqrt(2),
-                )
-
-            else:
-                neighbor_heading = 0.0
-                patch_data, raster_from_world_tf = self.cache.load_map_patch(
-                    nb_his[-1, x_idx],
-                    nb_his[-1, y_idx],
-                    desired_patch_size,
-                    resolution,
-                    offset_xy,
-                    neighbor_heading,
-                    return_rgb,
-                )
-
-            map_patches.append(
-                MapPatch(
-                    data=patch_data,
-                    rot_angle=neighbor_heading,
-                    crop_size=desired_patch_size,
-                    resolution=resolution,
-                    raster_from_world_tf=raster_from_world_tf,
-                )
-            )
-
-        return map_patches
-
 
 class SceneBatchElement:
     """A single batch element."""
@@ -376,11 +305,15 @@ class SceneBatchElement:
         map_params: Optional[Dict[str, int]] = None,
         standardize_data: bool = False,
         standardize_derivatives: bool = False,
+        max_agent_num: Optional[int] = None,
     ) -> None:
         self.cache: SceneCache = cache
         self.data_index = data_index
         self.dt: float = scene_time.scene.dt
         self.scene_ts: int = scene_time.ts
+
+        if max_agent_num is not None:
+            scene_time.agents = scene_time.agents[:max_agent_num]
 
         self.agents: List[AgentMetadata] = scene_time.agents
 

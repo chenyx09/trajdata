@@ -120,7 +120,6 @@ class SimulationScene:
                     agent_interaction_distances=self.dataset.agent_interaction_distances,
                     incl_robot_future=False,
                     incl_map=get_map and self.dataset.incl_map,
-                    incl_neighbor_map=get_map and self.dataset.incl_neighbor_map,
                     map_params=self.dataset.map_params,
                     standardize_data=self.dataset.standardize_data,
                     standardize_derivatives=self.dataset.standardize_derivatives,

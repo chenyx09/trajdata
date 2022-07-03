@@ -81,63 +81,10 @@ def map_collate_fn_agent(
             rasters_from_world_tf,
         )
 
-    if batch_elems[0].neighbor_map_patch is not None:
-        assert max_neighbors_num is not None
-
-        num_neighbors: List[int] = list()
-        neighbor_rasters_from_world_tfs: List[np.ndarray] = list()
-        neighbor_patches: List[np.ndarray] = list()
-        neighbor_angles: List[float] = list()
-
-        for elem in batch_elems:
-            num_neighbors.append(len(elem.neighbor_map_patch))
-            neighbor_rasters_from_world_tfs += [
-                x.raster_from_world_tf
-                for x in elem.neighbor_map_patch[:max_neighbors_num]
-            ]
-            neighbor_patches += [
-                x.data for x in elem.neighbor_map_patch[:max_neighbors_num]
-            ]
-            neighbor_angles += [
-                x.rot_angle for x in elem.neighbor_map_patch[:max_neighbors_num]
-            ]
-
-        patch_data_nb = torch.as_tensor(np.stack(neighbor_patches), dtype=torch.float)
-        rot_angle_nb = torch.as_tensor(np.stack(neighbor_angles), dtype=torch.float)
-        neighbor_rot_crop_patches = center_crop(
-            rotate(patch_data_nb, torch.rad2deg(rot_angle_nb)), (patch_size, patch_size)
-        )
-        neighbor_rot_crop_patches = split_pad_crop(
-            neighbor_rot_crop_patches, num_neighbors, desired_size=max_neighbors_num
-        )
-
-        neighbor_rasters_from_world_tf: Tensor = torch.as_tensor(
-            np.stack(neighbor_rasters_from_world_tfs), dtype=torch.float
-        )
-        neighbor_rasters_from_world_tf = torch.bmm(
-            arr_utils.transform_matrices(
-                -rot_angle_nb,
-                torch.tensor([[patch_size // 2, patch_size // 2]]).expand(
-                    (rot_angle_nb.shape[0], -1)
-                ),
-            ),
-            neighbor_rasters_from_world_tf,
-        )
-        neighbor_rasters_from_world_tf = split_pad_crop(
-            neighbor_rasters_from_world_tf,
-            num_neighbors,
-            desired_size=max_neighbors_num,
-        )
-
-    else:
-        neighbor_rot_crop_patches, neighbor_rasters_from_world_tf = None, None
-
     return (
         rot_crop_patches,
         resolution,
         rasters_from_world_tf,
-        neighbor_rot_crop_patches,
-        neighbor_rasters_from_world_tf,
     )
 
 
@@ -524,8 +471,6 @@ def agent_collate_fn(
         map_patches,
         maps_resolution,
         rasters_from_world_tf,
-        neighbor_map_patches,
-        neighbor_rasters_from_world_tf,
     ) = map_collate_fn_agent(batch_elems, max_num_neighbors)
 
     agents_from_world_tf = torch.as_tensor(
@@ -558,8 +503,6 @@ def agent_collate_fn(
         robot_fut_len=robot_future_len,
         maps=map_patches,
         maps_resolution=maps_resolution,
-        neighbor_maps=neighbor_map_patches,
-        neighbor_rasters_from_world_tf=neighbor_rasters_from_world_tf,
         rasters_from_world_tf=rasters_from_world_tf,
         agents_from_world_tf=agents_from_world_tf,
         scene_ids=scene_ids,
@@ -622,15 +565,13 @@ def split_pad_crop(
 def scene_collate_fn(
     batch_elems: List[SceneBatchElement],
     return_dict: bool,
-    max_agent_num: Optional[int] = None,
     batch_augments: Optional[List[BatchAugmentation]] = None,
 ) -> SceneBatch:
     batch_size: int = len(batch_elems)
     data_index_t: Tensor = torch.zeros((batch_size,), dtype=torch.int)
     dt_t: Tensor = torch.zeros((batch_size,), dtype=torch.float)
 
-    if max_agent_num is None:
-        max_agent_num = max(elem.num_agents for elem in batch_elems)
+    max_agent_num: int = max(elem.num_agents for elem in batch_elems)
 
     centered_agent_state: List[Tensor] = list()
     agents_types: List[Tensor] = list()
