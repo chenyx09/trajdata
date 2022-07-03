@@ -26,10 +26,10 @@ class AgentBatchElement:
         ] = defaultdict(lambda: np.inf),
         incl_robot_future: bool = False,
         incl_map: bool = False,
+        incl_neighbor_map: bool = False,
         map_params: Optional[Dict[str, int]] = None,
         standardize_data: bool = False,
         standardize_derivatives: bool = False,
-        incl_neighbor_map: bool = False,
     ) -> None:
         self.cache: SceneCache = cache
         self.data_index: int = data_index

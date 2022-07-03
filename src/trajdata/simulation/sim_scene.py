@@ -29,7 +29,6 @@ class SimulationScene:
         init_timestep: int = 0,
         freeze_agents: bool = True,
         return_dict: bool = False,
-        vectorize_lane: str = "None",
     ) -> None:
         self.env_name: str = env_name
         self.scene_name: str = scene_name
@@ -38,7 +37,6 @@ class SimulationScene:
         self.init_scene_ts: int = init_timestep
         self.freeze_agents: bool = freeze_agents
         self.return_dict: bool = return_dict
-        self.vectorize_lane = vectorize_lane
         self.scene_ts: int = self.init_scene_ts
 
         agents_present: List[AgentMetadata] = self.scene_info.agent_presence[
@@ -122,9 +120,10 @@ class SimulationScene:
                     agent_interaction_distances=self.dataset.agent_interaction_distances,
                     incl_robot_future=False,
                     incl_map=get_map and self.dataset.incl_map,
+                    incl_neighbor_map=get_map and self.dataset.incl_neighbor_map,
                     map_params=self.dataset.map_params,
                     standardize_data=self.dataset.standardize_data,
-                    vectorize_lane=self.vectorize_lane,
+                    standardize_derivatives=self.dataset.standardize_derivatives,
                 )
             )
 
