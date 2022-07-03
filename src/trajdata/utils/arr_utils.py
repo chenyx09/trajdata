@@ -78,19 +78,23 @@ def transform_matrices(angles: Tensor, translations: Tensor) -> Tensor:
         dim=-2,
     )
 
+
 def batch_nd_transform_points_np(points, Mat):
     ndim = Mat.shape[-1] - 1
-    batch = list(range(Mat.ndim-2))+[Mat.ndim-1]+[Mat.ndim-2]
-    Mat = np.transpose(Mat,batch)
-    if points.ndim==Mat.ndim-1:
-        return (points[...,np.newaxis,:] @ Mat[..., :ndim, :ndim]).squeeze(-2) + Mat[
+    batch = list(range(Mat.ndim - 2)) + [Mat.ndim - 1] + [Mat.ndim - 2]
+    Mat = np.transpose(Mat, batch)
+    if points.ndim == Mat.ndim - 1:
+        return (points[..., np.newaxis, :] @ Mat[..., :ndim, :ndim]).squeeze(-2) + Mat[
             ..., -1:, :ndim
         ].squeeze(-2)
-    elif points.ndim==Mat.ndim:
-        return ((points[...,np.newaxis,:] @ Mat[...,np.newaxis, :ndim, :ndim]) + Mat[
-            ...,np.newaxis, -1:, :ndim]).squeeze(-2)
+    elif points.ndim == Mat.ndim:
+        return (
+            (points[..., np.newaxis, :] @ Mat[..., np.newaxis, :ndim, :ndim])
+            + Mat[..., np.newaxis, -1:, :ndim]
+        ).squeeze(-2)
     else:
         raise Exception("wrong shape")
+
 
 def agent_aware_diff(values: np.ndarray, agent_ids: np.ndarray) -> np.ndarray:
     values_diff: np.ndarray = np.diff(
@@ -110,6 +114,8 @@ def agent_aware_diff(values: np.ndarray, agent_ids: np.ndarray) -> np.ndarray:
     values_diff[border_mask] = values_diff[border_mask + 1]
 
     return values_diff
+
+
 def batch_proj(x, line):
     # x:[batch,3], line:[batch,N,3]
     line_length = line.shape[-2]
@@ -133,7 +139,7 @@ def batch_proj(x, line):
             line_min[..., None, 2]
         )
 
-        delta_psi = round_2pi(x[..., 2] - line_min[..., 2])
+        delta_psi = angle_wrap(x[..., 2] - line_min[..., 2])
 
         return (
             delta_x,
@@ -156,11 +162,9 @@ def batch_proj(x, line):
         delta_x = dx * np.cos(line_min[..., None, 2]) + dy * np.sin(
             line_min[..., None, 2]
         )
-        delta_psi = round_2pi(x[..., 2] - line_min[..., 2])
+        delta_psi = angle_wrap(x[..., 2] - line_min[..., 2])
         return (
             delta_x,
             delta_y,
             np.expand_dims(delta_psi, axis=-1),
         )
-def round_2pi(x):
-    return (x + np.pi) % (2 * np.pi) - np.pi

@@ -5,13 +5,10 @@ from typing import Callable, Dict, List, Optional, Tuple
 import numpy as np
 
 from trajdata.caching import SceneCache
-from trajdata.data_structures.agent import AgentMetadata, AgentType, FixedExtent, Agent
+from trajdata.data_structures.agent import Agent, AgentMetadata, AgentType, FixedExtent
 from trajdata.data_structures.map_patch import MapPatch
 from trajdata.data_structures.scene import SceneTime, SceneTimeAgent
-from trajdata.utils import arr_utils
-from nuscenes.map_expansion.map_api import NuScenesMap
-from nuscenes.map_expansion import arcline_path_utils
-from scipy.interpolate import interp1d
+
 
 class AgentBatchElement:
     """A single element of an agent-centric batch."""
@@ -31,8 +28,8 @@ class AgentBatchElement:
         incl_map: bool = False,
         map_params: Optional[Dict[str, int]] = None,
         standardize_data: bool = False,
+        standardize_derivatives: bool = False,
         incl_neighbor_map: bool = False,
-        vectorize_lane: str = "None",
     ) -> None:
         self.cache: SceneCache = cache
         self.data_index: int = data_index
@@ -46,7 +43,6 @@ class AgentBatchElement:
         self.curr_agent_state_np: np.ndarray = cache.get_state(
             agent_info.name, self.scene_ts
         )
-
 
         self.standardize_data = standardize_data
         if self.standardize_data:
@@ -62,8 +58,10 @@ class AgentBatchElement:
                 ]
             )
             self.agent_from_world_tf: np.ndarray = np.linalg.inv(world_from_agent_tf)
+
             offset = self.curr_agent_state_np
-            offset[2:6]=0.
+            if not standardize_derivatives:
+                offset[2:6] = 0.0
 
             cache.transform_data(
                 shift_mean_to=offset,
@@ -116,16 +114,6 @@ class AgentBatchElement:
 
         ### ROBOT DATA ###
         self.robot_future_np: Optional[np.ndarray] = None
-        self.lanes = None
-
-        self.scene_id = scene_time_agent.scene.name
-
-        if vectorize_lane == "all" or (vectorize_lane=="ego" and self.agent_name=="ego"):
-            if scene_time_agent.scene.env_metadata.name=="nusc":
-                self.lanes = self.get_agent_lane_nusc(scene_time_agent)
-        else:
-            self.lanes = None
-
 
         if incl_robot_future:
             self.robot_future_np: np.ndarray = self.get_robot_current_and_future(
@@ -139,10 +127,15 @@ class AgentBatchElement:
 
         ### MAP ###
         self.map_patch: Optional[MapPatch] = None
+        self.neighbor_map_patch: Optional[List[MapPatch]] = None
         if incl_map:
             self.map_patch = self.get_agent_map_patch(map_params)
         if incl_neighbor_map:
-            self.neighbor_map_patch = self.get_neighbor_map_patch(map_params,self.neighbor_histories)
+            self.neighbor_map_patch = self.get_neighbor_map_patch(
+                map_params, self.neighbor_histories
+            )
+
+        self.scene_id = scene_time_agent.scene.name
 
     def get_agent_history(
         self,
@@ -164,50 +157,6 @@ class AgentBatchElement:
         )
         return agent_future_np, agent_extent_future_np
 
-    # @profile
-    def get_agent_lane_nusc(self,scene_time_agent):
-        state_full = self.curr_agent_state_np
-
-        vel = np.linalg.norm(state_full[2:4])
-        position = state_full[:2]
-        scene = scene_time_agent.scene
-        yaw = state_full[6]
-        
-        # TODO: parameterize this
-        interp_step_size = 5.0
-        num_steps = 8
-        interp_steps = interp_step_size*np.arange(num_steps)*scene.dt
-        state = np.hstack((position, yaw))
-        x0, y0 = position
-        nusc_map = NuScenesMap(dataroot=scene.env_metadata.data_dir, map_name=scene.location)
-        lanes = nusc_map.get_records_in_radius(x0, y0, 20.0, ['lane', 'lane_connector'])
-        lanes = lanes['lane'] + lanes['lane_connector']
-        relevant_lanes = list()
-        
-        for lane in lanes:
-            lane_record = nusc_map.get_arcline_path(lane)
-            poses = arcline_path_utils.discretize_lane(
-                lane_record, resolution_meters=interp_step_size
-            )
-            poses = np.array(poses)
-            
-            delta_x, delta_y, dpsi = arr_utils.batch_proj(state, poses)
-            
-            if abs(dpsi[0]) < np.pi/4 and np.min(np.abs(delta_y)) < 4.5:
-                pos_local = arr_utils.batch_nd_transform_points_np(poses[...,:2],self.agent_from_world_tf)
-                yaw_local = arr_utils.round_2pi(poses[...,2:]-yaw)
-                f = interp1d(
-                    -delta_x,
-                    np.concatenate((pos_local,yaw_local),-1),
-                    fill_value="extrapolate",
-                    assume_sorted=True,
-                    axis=0,
-                )
-                
-                relevant_lanes.append(f(interp_steps))
-        if len(relevant_lanes)==0:
-            return None
-        return relevant_lanes
     def get_neighbor_history(
         self,
         scene_time: SceneTimeAgent,
@@ -341,66 +290,75 @@ class AgentBatchElement:
             resolution=resolution,
             raster_from_world_tf=raster_from_world_tf,
         )
-    def get_neighbor_map_patch(self, patch_params: Dict[str, int], neighbor_histories:List[np.ndarray]) -> List[MapPatch]:
+
+    def get_neighbor_map_patch(
+        self, patch_params: Dict[str, int], neighbor_histories: List[np.ndarray]
+    ) -> List[MapPatch]:
         world_x, world_y = self.curr_agent_state_np[:2]
-        heading = self.curr_agent_state_np[-1]
+        heading: float = self.curr_agent_state_np[-1]
         desired_patch_size: int = patch_params["map_size_px"]
         resolution: int = patch_params["px_per_m"]
         offset_xy: Tuple[float, float] = patch_params.get("offset_frac_xy", (0.0, 0.0))
         return_rgb: bool = patch_params.get("return_rgb", True)
-        if len(self.cache.heading_cols)==1:
+
+        if len(self.cache.heading_cols) == 1:
             heading_idx = self.cache.heading_cols[0]
             sincos = False
         else:
-            heading_sin_idx,heading_cos_idx = self.cache.heading_cols
+            heading_sin_idx, heading_cos_idx = self.cache.heading_cols
             sincos = True
-        x_idx,y_idx = self.cache.pos_cols
+        x_idx, y_idx = self.cache.pos_cols
 
         map_patches = list()
         for nb_his in neighbor_histories:
             if self.standardize_data:
                 if sincos:
-                    nb_heading = np.arctan2(nb_his[-1,heading_sin_idx],nb_his[-1,heading_cos_idx])+heading
+                    neighbor_heading = (
+                        np.arctan2(
+                            nb_his[-1, heading_sin_idx], nb_his[-1, heading_cos_idx]
+                        )
+                        + heading
+                    )
                 else:
-                    nb_heading = nb_his[-1,heading_idx]+heading
-                    
+                    neighbor_heading = nb_his[-1, heading_idx] + heading
+
                 patch_data, raster_from_world_tf = self.cache.load_map_patch(
-                    world_x+nb_his[-1,x_idx],
-                    world_y+nb_his[-1,y_idx],
+                    world_x + nb_his[-1, x_idx],
+                    world_y + nb_his[-1, y_idx],
                     desired_patch_size,
                     resolution,
                     offset_xy,
-                    nb_heading,
+                    neighbor_heading,
                     return_rgb,
                     rot_pad_factor=sqrt(2),
                 )
-                
+
             else:
-                nb_heading = 0.0
+                neighbor_heading = 0.0
                 patch_data, raster_from_world_tf = self.cache.load_map_patch(
-                    nb_his[-1,x_idx],
-                    nb_his[-1,y_idx],
+                    nb_his[-1, x_idx],
+                    nb_his[-1, y_idx],
                     desired_patch_size,
                     resolution,
                     offset_xy,
-                    nb_heading,
+                    neighbor_heading,
                     return_rgb,
                 )
+
             map_patches.append(
                 MapPatch(
-                            data=patch_data,
-                            rot_angle=nb_heading,
-                            crop_size=desired_patch_size,
-                            resolution=resolution,
-                            raster_from_world_tf=raster_from_world_tf,
-                        )
+                    data=patch_data,
+                    rot_angle=neighbor_heading,
+                    crop_size=desired_patch_size,
+                    resolution=resolution,
+                    raster_from_world_tf=raster_from_world_tf,
+                )
             )
 
         return map_patches
 
 
-
-class SceneBatchElement(AgentBatchElement):
+class SceneBatchElement:
     """A single batch element."""
 
     def __init__(
@@ -413,9 +371,11 @@ class SceneBatchElement(AgentBatchElement):
         agent_interaction_distances: Dict[
             Tuple[AgentType, AgentType], float
         ] = defaultdict(lambda: np.inf),
+        incl_robot_future: bool = False,
         incl_map: bool = False,
         map_params: Optional[Dict[str, int]] = None,
         standardize_data: bool = False,
+        standardize_derivatives: bool = False,
     ) -> None:
         self.cache: SceneCache = cache
         self.data_index = data_index
@@ -423,11 +383,9 @@ class SceneBatchElement(AgentBatchElement):
         self.scene_ts: int = scene_time.ts
 
         self.agents: List[AgentMetadata] = scene_time.agents
-        # self.agent_name: str = agent_info.name
-        # self.agent_type: AgentType = agent_info.type
-        
-        robot = [agent for agent in self.agents if agent.name=="ego"] 
-        if len(robot)>0:
+
+        robot = [agent for agent in self.agents if agent.name == "ego"]
+        if len(robot) > 0:
             self.centered_agent = robot[0]
         else:
             self.centered_agent = self.agents[0]
@@ -436,7 +394,7 @@ class SceneBatchElement(AgentBatchElement):
             self.centered_agent.name, self.scene_ts
         )
         self.standardize_data = standardize_data
-        
+
         if self.standardize_data:
             agent_pos: np.ndarray = self.centered_agent_state_np[:2]
             agent_heading: float = self.centered_agent_state_np[-1]
@@ -449,9 +407,14 @@ class SceneBatchElement(AgentBatchElement):
                     [0.0, 0.0, 1.0],
                 ]
             )
-            self.centered_agent_from_world_tf: np.ndarray = np.linalg.inv(self.centered_world_from_agent_tf)
+            self.centered_agent_from_world_tf: np.ndarray = np.linalg.inv(
+                self.centered_world_from_agent_tf
+            )
+
             offset = self.centered_agent_state_np
-            offset[2:6]=0.0
+            if not standardize_derivatives:
+                offset[2:6] = 0.0
+
             cache.transform_data(
                 shift_mean_to=offset,
                 rotate_by=agent_heading,
@@ -459,17 +422,6 @@ class SceneBatchElement(AgentBatchElement):
             )
         else:
             self.agent_from_world_tf: np.ndarray = np.eye(3)
-        
-        self.agent_history_np, self.agent_history_extent_np = self.get_agent_history(
-            self.centered_agent, history_sec
-        )
-
-        self.agent_history_len: int = self.agent_history_np.shape[0]
-
-        self.agent_future_np, self.agent_future_extent_np = self.get_agent_future(
-            self.centered_agent, future_sec
-        )
-        self.agent_future_len: int = self.agent_future_np.shape[0]
 
         ### NEIGHBOR-SPECIFIC DATA ###
         def distance_limit(agent_types: np.ndarray, target_type: int) -> np.ndarray:
@@ -480,8 +432,9 @@ class SceneBatchElement(AgentBatchElement):
                 ]
             )
 
-        nearby_agents,self.agent_types_np = self.get_nearby_agents(scene_time,self.centered_agent, distance_limit)
-
+        nearby_agents, self.agent_types_np = self.get_nearby_agents(
+            scene_time, self.centered_agent, distance_limit
+        )
 
         self.num_agents = len(nearby_agents)
         (
@@ -498,14 +451,29 @@ class SceneBatchElement(AgentBatchElement):
         ### MAP ###
         self.map_patches: Optional[MapPatch] = None
         if incl_map:
-            self.map_patches = self.get_agents_map_patch(map_params,self.agent_histories)
+            self.map_patches = self.get_agents_map_patch(
+                map_params, self.agent_histories
+            )
 
+        ### ROBOT DATA ###
+        self.robot_future_np: Optional[np.ndarray] = None
 
-    def get_nearby_agents(self,
+        if incl_robot_future:
+            self.robot_future_np: np.ndarray = self.get_robot_current_and_future(
+                self.centered_agent, future_sec
+            )
+
+            # -1 because this is meant to hold the number of future steps
+            # (whereas the above returns the current + future, yielding
+            # one more timestep).
+            self.robot_future_len: int = self.robot_future_np.shape[0] - 1
+
+    def get_nearby_agents(
+        self,
         scene_time: SceneTime,
         agent: AgentMetadata,
         distance_limit: Callable[[np.ndarray, int], np.ndarray],
-    ) -> Tuple[List[AgentMetadata],np.ndarray]:
+    ) -> Tuple[List[AgentMetadata], np.ndarray]:
         agent_distances: np.ndarray = scene_time.get_agent_distances_to(agent)
 
         agents_types: np.ndarray = np.array([a.type.value for a in scene_time.agents])
@@ -514,14 +482,17 @@ class SceneBatchElement(AgentBatchElement):
         )
         # sort the agents based on their distance to the centered agent
         idx = np.argsort(agent_distances)
-        num_qualified=nearby_mask.sum()
-        nearby_agents: List[AgentMetadata] = [scene_time.agents[idx[i]] for i in range(num_qualified)]
+        num_qualified = nearby_mask.sum()
+        nearby_agents: List[AgentMetadata] = [
+            scene_time.agents[idx[i]] for i in range(num_qualified)
+        ]
         agents_types_np = agents_types[idx[:num_qualified]]
         return nearby_agents, agents_types_np
+
     def get_agents_history(
         self,
         history_sec: Tuple[Optional[float], Optional[float]],
-        nearby_agents: List[AgentMetadata]
+        nearby_agents: List[AgentMetadata],
     ) -> Tuple[List[np.ndarray], List[np.ndarray], np.ndarray]:
         # The indices of the returned ndarray match the scene_time agents list (including the index of the central agent,
         # which would have a distance of 0 to itself).
@@ -536,12 +507,12 @@ class SceneBatchElement(AgentBatchElement):
             agent_history_extents,
             agent_history_lens_np,
         )
+
     def get_agents_future(
         self,
         future_sec: Tuple[Optional[float], Optional[float]],
         nearby_agents: List[AgentMetadata],
     ) -> Tuple[List[np.ndarray], List[np.ndarray], np.ndarray]:
-
 
         (
             agent_futures,
@@ -555,31 +526,41 @@ class SceneBatchElement(AgentBatchElement):
             agent_future_lens_np,
         )
 
-    def get_agents_map_patch(self, patch_params: Dict[str, int], agent_histories:List[np.ndarray]) -> List[MapPatch]:
+    def get_agents_map_patch(
+        self, patch_params: Dict[str, int], agent_histories: List[np.ndarray]
+    ) -> List[MapPatch]:
         world_x, world_y = self.centered_agent_state_np[:2]
         heading = self.centered_agent_state_np[-1]
         desired_patch_size: int = patch_params["map_size_px"]
         resolution: int = patch_params["px_per_m"]
         offset_xy: Tuple[float, float] = patch_params.get("offset_frac_xy", (0.0, 0.0))
         return_rgb: bool = patch_params.get("return_rgb", True)
-        if len(self.cache.heading_cols)==1:
+
+        if len(self.cache.heading_cols) == 1:
             heading_idx = self.cache.heading_cols[0]
             sincos = False
         else:
-            heading_sin_idx,heading_cos_idx = self.cache.heading_cols
+            heading_sin_idx, heading_cos_idx = self.cache.heading_cols
             sincos = True
-        x_idx,y_idx = self.cache.pos_cols
+        x_idx, y_idx = self.cache.pos_cols
 
         map_patches = list()
         for agent_his in agent_histories:
             if self.standardize_data:
                 if sincos:
-                    agent_heading = np.arctan2(agent_his[-1,heading_sin_idx],agent_his[-1,heading_cos_idx])+heading
+                    agent_heading = (
+                        np.arctan2(
+                            agent_his[-1, heading_sin_idx],
+                            agent_his[-1, heading_cos_idx],
+                        )
+                        + heading
+                    )
                 else:
-                    agent_heading = agent_his[-1,heading_idx]+heading
+                    agent_heading = agent_his[-1, heading_idx] + heading
+
                 patch_data, raster_from_world_tf = self.cache.load_map_patch(
-                    world_x+agent_his[-1,x_idx],
-                    world_y+agent_his[-1,y_idx],
+                    world_x + agent_his[-1, x_idx],
+                    world_y + agent_his[-1, y_idx],
                     desired_patch_size,
                     resolution,
                     offset_xy,
@@ -587,28 +568,44 @@ class SceneBatchElement(AgentBatchElement):
                     return_rgb,
                     rot_pad_factor=sqrt(2),
                 )
-                
+
             else:
                 agent_heading = 0.0
                 patch_data, raster_from_world_tf = self.cache.load_map_patch(
-                    agent_his[-1,x_idx],
-                    agent_his[-1,y_idx],
+                    agent_his[-1, x_idx],
+                    agent_his[-1, y_idx],
                     desired_patch_size,
                     resolution,
                     offset_xy,
                     agent_heading,
                     return_rgb,
                 )
+
             map_patches.append(
                 MapPatch(
-                            data=patch_data,
-                            rot_angle=agent_heading,
-                            crop_size=desired_patch_size,
-                            resolution=resolution,
-                            raster_from_world_tf=raster_from_world_tf,
-                        )
+                    data=patch_data,
+                    rot_angle=agent_heading,
+                    crop_size=desired_patch_size,
+                    resolution=resolution,
+                    raster_from_world_tf=raster_from_world_tf,
+                )
             )
 
-        return map_patches  
+        return map_patches
 
+    def get_robot_current_and_future(
+        self,
+        robot_info: AgentMetadata,
+        future_sec: Tuple[Optional[float], Optional[float]],
+    ) -> np.ndarray:
+        robot_curr_np: np.ndarray = self.cache.get_state(robot_info.name, self.scene_ts)
+        # robot_fut_extents_np,
+        (
+            robot_fut_np,
+            _,
+        ) = self.cache.get_agent_future(robot_info, self.scene_ts, future_sec)
 
+        robot_curr_and_fut_np: np.ndarray = np.concatenate(
+            (robot_curr_np[np.newaxis, :], robot_fut_np), axis=0
+        )
+        return robot_curr_and_fut_np
