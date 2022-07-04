@@ -35,8 +35,6 @@ class AgentBatch:
     robot_fut_len: Tensor
     maps: Optional[Tensor]
     maps_resolution: Optional[Tensor]
-    neighbor_maps: Optional[Tensor]
-    neighbor_rasters_from_world_tf: Optional[Tensor]
     rasters_from_world_tf: Optional[Tensor]
     agents_from_world_tf: Tensor
     scene_ids: Optional[List]

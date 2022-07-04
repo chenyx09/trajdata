@@ -17,10 +17,9 @@ from trajdata.utils import arr_utils
 
 def map_collate_fn_agent(
     batch_elems: List[AgentBatchElement],
-    max_neighbors_num: Optional[int] = None,
 ):
     if batch_elems[0].map_patch is None:
-        return None, None, None, None, None
+        return None, None, None
 
     patch_data: Tensor = torch.as_tensor(
         np.stack([batch_elem.map_patch.data for batch_elem in batch_elems]),
@@ -471,7 +470,7 @@ def agent_collate_fn(
         map_patches,
         maps_resolution,
         rasters_from_world_tf,
-    ) = map_collate_fn_agent(batch_elems, max_num_neighbors)
+    ) = map_collate_fn_agent(batch_elems)
 
     agents_from_world_tf = torch.as_tensor(
         np.stack([batch_elem.agent_from_world_tf for batch_elem in batch_elems]),
