@@ -172,8 +172,8 @@ class SimulationScene:
         self.dataset.env_cache.save_scene(self.scene_info)
         self.cache.save_sim_scene(self.scene_info)
 
-    def add_new_agent(self,agent_data: list):
-        self.cache.add_agent(agent_data)
+    def add_new_agents(self,agent_data: list):
+        self.cache.add_agents(agent_data)
         for data in agent_data:
             name,state,ts0,agent_type,extent = data
             metadata = AgentMetadata(name=name,

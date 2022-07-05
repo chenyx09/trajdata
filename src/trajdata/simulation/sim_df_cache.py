@@ -129,7 +129,7 @@ class SimulationDataFrameCache(DataFrameCache, SimulationCache):
         self.persistent_data_df.sort_index(inplace=True)
         self.reset()
 
-    def add_agent(self, agent_data):
+    def add_agents(self, agent_data):
         """add agents to the sim dataset
 
         Args:
