@@ -6,7 +6,7 @@ import numpy as np
 from trajdata import filtering
 from trajdata.augmentation import BatchAugmentation
 from trajdata.caching.df_cache import DataFrameCache
-from trajdata.data_structures.agent import AgentMetadata, VariableExtent
+from trajdata.data_structures.agent import AgentMetadata, VariableExtent, AgentType, FixedExtent
 from trajdata.data_structures.batch import AgentBatch
 from trajdata.data_structures.batch_element import AgentBatchElement
 from trajdata.data_structures.collation import agent_collate_fn
@@ -171,3 +171,15 @@ class SimulationScene:
     def save(self) -> None:
         self.dataset.env_cache.save_scene(self.scene_info)
         self.cache.save_sim_scene(self.scene_info)
+
+    def add_new_agent(self,agent_data: list):
+        self.cache.add_agent(agent_data)
+        for data in agent_data:
+            name,state,ts0,agent_type,extent = data
+            metadata = AgentMetadata(name=name,
+                                     agent_type=agent_type,
+                                     first_timestep=ts0,
+                                     last_timestep=ts0+state.shape[0]-1,
+                                     extent = FixedExtent(length=extent[0],width=extent[1],height=extent[2]),
+                                     )
+            self.agents.append(metadata)
