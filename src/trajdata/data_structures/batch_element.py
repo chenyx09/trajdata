@@ -126,7 +126,6 @@ class AgentBatchElement:
 
         ### MAP ###
         self.map_patch: Optional[MapPatch] = None
-        self.neighbor_map_patch: Optional[List[MapPatch]] = None
         if incl_map:
             self.map_patch = self.get_agent_map_patch(map_params)
 
