@@ -66,6 +66,7 @@ dataloader = DataLoader(
     shuffle=True,
     collate_fn=dataset.get_collate_fn(),
     num_workers=os.cpu_count(), # This can be set to 0 for single-threaded loading, if desired.
+    persistent_workers=True,
 )
 
 batch: AgentBatch
