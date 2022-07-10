@@ -24,4 +24,4 @@ pytest-xdist==2.5.0 \
 zarr==2.11.0 \
 kornia==0.6.4 
 
-WORKDIR /workspace/avdata
+WORKDIR /workspace/trajdata
