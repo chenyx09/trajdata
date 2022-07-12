@@ -63,7 +63,8 @@ class UnifiedDataset(Dataset):
         augmentations: Optional[List[Augmentation]] = None,
         max_agent_num: Optional[int] = None,
         data_dirs: Dict[str, str] = {
-            # "nusc": "~/datasets/nuScenes",
+            # "nusc_trainval": "~/datasets/nuScenes",
+            # "nusc_test": "~/datasets/nuScenes",
             "eupeds_eth": "~/datasets/eth_ucy_peds",
             "eupeds_hotel": "~/datasets/eth_ucy_peds",
             "eupeds_univ": "~/datasets/eth_ucy_peds",
