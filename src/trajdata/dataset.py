@@ -546,12 +546,12 @@ class UnifiedDataset(Dataset):
                 collate_fn=scene_paths_collate_fn,
             )
 
-            for scene_paths in tqdm(
+            for processed_scene_paths in tqdm(
                 dataloader,
                 desc=f"Calculating Agent Data ({num_workers} CPUs)",
                 disable=not self.verbose,
             ):
-                scene_paths += [Path(path_str) for path_str in scene_paths]
+                scene_paths += [Path(path_str) for path_str in processed_scene_paths]
 
         return scene_paths
 
