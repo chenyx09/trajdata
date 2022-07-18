@@ -45,7 +45,7 @@ class NuscDataset(RawDataset):
 
             # nuScenes possibilities are the Cartesian product of these
             dataset_parts: List[Tuple[str, ...]] = [
-                ("test", ),
+                ("test",),
                 ("boston", "singapore"),
             ]
         elif env_name == "nusc_mini":

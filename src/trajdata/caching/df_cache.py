@@ -540,8 +540,19 @@ class DataFrameCache(SceneCache):
         agent_heading: float,
         return_rgb: bool,
         rot_pad_factor: float = 1.0,
+        no_map_val: float = 0.0,
     ) -> Tuple[np.ndarray, np.ndarray]:
         maps_path: Path = DataFrameCache.get_maps_path(self.path, self.scene.env_name)
+
+        if not maps_path.exists():
+            # This dataset (or location) does not have any maps,
+            # so we return an empty map.
+            patch_size: int = ceil((rot_pad_factor * desired_patch_size) / 2) * 2
+
+            return np.full(
+                (1 if not return_rgb else 3, patch_size, patch_size),
+                fill_value=no_map_val,
+            ), np.eye(3)
 
         metadata_file: Path = maps_path / f"{self.scene.location}_metadata.dill"
         with open(metadata_file, "rb") as f:
@@ -564,6 +575,9 @@ class DataFrameCache(SceneCache):
             @ raster_from_world_tf
         )
 
+        # This first size is how much of the map we
+        # need to extract to match the requested metric size (meters x meters) of
+        # the patch.
         data_patch_size: int = ceil(
             desired_patch_size * map_info.resolution / resolution
         )
@@ -599,8 +613,9 @@ class DataFrameCache(SceneCache):
                 @ raster_from_world_tf
             )
 
-        # Ensuring the size is divisible by two so that the // 2 below does not
-        # chop any information off.
+        # This is the size of the patch taking into account expansion to allow for
+        # rotation to match the agent's heading. We also ensure the final size is
+        # divisible by two so that the // 2 below does not chop any information off.
         data_with_rot_pad_size: int = ceil((rot_pad_factor * data_patch_size) / 2) * 2
 
         map_file: Path = maps_path / f"{map_info.name}.zarr"
@@ -609,6 +624,7 @@ class DataFrameCache(SceneCache):
         map_x = round(map_x)
         map_y = round(map_y)
 
+        # Half of the patch's side length.
         half_extent: int = data_with_rot_pad_size // 2
 
         top: int = map_y - half_extent

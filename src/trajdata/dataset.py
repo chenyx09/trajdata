@@ -345,7 +345,9 @@ class UnifiedDataset(Dataset):
         scene_utils.enforce_desired_dt(scene, desired_dt)
 
         filtered_agents: List[AgentMetadata] = filtering.agent_types(
-            scene.agents, no_types, only_predict if only_predict is not None else only_types
+            scene.agents,
+            no_types,
+            only_predict if only_predict is not None else only_types,
         )
 
         for agent_info in filtered_agents:
