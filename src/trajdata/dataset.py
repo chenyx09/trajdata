@@ -57,9 +57,10 @@ class UnifiedDataset(Dataset):
         incl_map: bool = False,
         map_params: Optional[Dict[str, int]] = None,
         only_types: Optional[List[AgentType]] = None,
+        only_predict: Optional[List[AgentType]] = None,
         no_types: Optional[List[AgentType]] = None,
         standardize_data: bool = True,
-        standardize_derivatives: bool = True,
+        standardize_derivatives: bool = False,
         augmentations: Optional[List[Augmentation]] = None,
         max_agent_num: Optional[int] = None,
         data_dirs: Dict[str, str] = {
@@ -97,7 +98,8 @@ class UnifiedDataset(Dataset):
             incl_robot_future (bool, optional): Include the ego agent's future trajectory in batches (accordingly, never predict the ego's future). Defaults to False.
             incl_map (bool, optional): Include a local cropping of the rasterized map (if the dataset provides a map) per agent. Defaults to False.
             map_params (Optional[Dict[str, int]], optional): Local map cropping parameters, must be specified if incl_map is True. Must contain keys {"px_per_m", "map_size_px"} and can optionally contain {"offset_frac_xy"}. Defaults to None.
-            only_types (Optional[List[AgentType]], optional): Filter out all agents except for those of the specified types. Defaults to None.
+            only_types (Optional[List[AgentType]], optional): Filter out all agents EXCEPT for those of the specified types. Defaults to None.
+            only_predict (Optional[List[AgentType]], optional): Only predict the specified types of agents. Importantly, this keeps other agent types in the scene, e.g., as neighbors of the agent to be predicted. Defaults to None.
             no_types (Optional[List[AgentType]], optional): Filter out all agents with the specified types. Defaults to None.
             standardize_data (bool, optional): Standardize all data such that (1) the predicted agent's orientation at the current timestep is 0, (2) all data is made relative to the predicted agent's current position, and (3) the agent's heading value is replaced with its sin, cos values. Defaults to True.
             standardize_derivatives (bool, optional): Make agent velocities and accelerations relative to the agent being predicted. Defaults to True.
@@ -137,6 +139,7 @@ class UnifiedDataset(Dataset):
         self.incl_map = incl_map
         self.map_params = map_params
         self.only_types = None if only_types is None else set(only_types)
+        self.only_predict = None if only_predict is None else set(only_predict)
         self.no_types = None if no_types is None else set(no_types)
         self.standardize_data = standardize_data
         self.standardize_derivatives = standardize_derivatives
@@ -240,6 +243,7 @@ class UnifiedDataset(Dataset):
                 UnifiedDataset._get_data_index_agent,
                 incl_robot_future=self.incl_robot_future,
                 only_types=self.only_types,
+                only_predict=self.only_predict,
                 no_types=self.no_types,
                 history_sec=self.history_sec,
                 future_sec=self.future_sec,
@@ -324,6 +328,7 @@ class UnifiedDataset(Dataset):
         scene_info_path: Path,
         incl_robot_future: bool,
         only_types: Optional[Set[AgentType]],
+        only_predict: Optional[Set[AgentType]],
         no_types: Optional[Set[AgentType]],
         history_sec: Tuple[Optional[float], Optional[float]],
         future_sec: Tuple[Optional[float], Optional[float]],
@@ -340,7 +345,7 @@ class UnifiedDataset(Dataset):
         scene_utils.enforce_desired_dt(scene, desired_dt)
 
         filtered_agents: List[AgentMetadata] = filtering.agent_types(
-            scene.agents, no_types, only_types
+            scene.agents, no_types, only_predict if only_predict is not None else only_types
         )
 
         for agent_info in filtered_agents:
@@ -589,6 +594,7 @@ class UnifiedDataset(Dataset):
                 scene_path,
                 self.incl_robot_future,
                 self.only_types,
+                self.only_predict,
                 self.no_types,
                 self.history_sec,
                 self.future_sec,
