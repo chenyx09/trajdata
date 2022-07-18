@@ -1,3 +1,4 @@
+import gc
 from collections import defaultdict
 from functools import partial
 from itertools import chain
@@ -102,7 +103,7 @@ class UnifiedDataset(Dataset):
             only_predict (Optional[List[AgentType]], optional): Only predict the specified types of agents. Importantly, this keeps other agent types in the scene, e.g., as neighbors of the agent to be predicted. Defaults to None.
             no_types (Optional[List[AgentType]], optional): Filter out all agents with the specified types. Defaults to None.
             standardize_data (bool, optional): Standardize all data such that (1) the predicted agent's orientation at the current timestep is 0, (2) all data is made relative to the predicted agent's current position, and (3) the agent's heading value is replaced with its sin, cos values. Defaults to True.
-            standardize_derivatives (bool, optional): Make agent velocities and accelerations relative to the agent being predicted. Defaults to True.
+            standardize_derivatives (bool, optional): Make agent velocities and accelerations relative to the agent being predicted. Defaults to False.
             augmentations (Optional[List[Augmentation]], optional): Perform the specified augmentations to the batch or dataset. Defaults to None.
             max_agent_num (int, optional): The maximum number of agents to include in a batch for scene-centric batching.
             data_dirs (Optional[Dict[str, str]], optional): Dictionary mapping dataset names to their directories on disk. Defaults to { "eupeds_eth": "~/datasets/eth_ucy_peds", "eupeds_hotel": "~/datasets/eth_ucy_peds", "eupeds_univ": "~/datasets/eth_ucy_peds", "eupeds_zara1": "~/datasets/eth_ucy_peds", "eupeds_zara2": "~/datasets/eth_ucy_peds", "nusc_mini": "~/datasets/nuScenes", "lyft_sample": "~/datasets/lyft/scenes/sample.zarr", }.
@@ -471,10 +472,11 @@ class UnifiedDataset(Dataset):
                 desc="Calculating Agent Data (Serially)",
                 disable=not self.verbose,
             ):
+                scene_dt: float = (
+                    self.desired_dt if self.desired_dt is not None else scene_info.dt
+                )
                 if self.env_cache.scene_is_cached(
-                    scene_info.env_name, scene_info.name, scene_info.dt
-                ) and not scene_utils.enforce_desired_dt(
-                    scene_info, self.desired_dt, dry_run=True
+                    scene_info.env_name, scene_info.name, scene_dt
                 ):
                     # This is a fast path in case we don't need to
                     # perform any modifications to the scene_info.
@@ -482,7 +484,7 @@ class UnifiedDataset(Dataset):
                         self.cache_path,
                         scene_info.env_name,
                         scene_info.name,
-                        scene_info.dt,
+                        scene_dt,
                     )
 
                     scene_paths.append(scene_path)
@@ -544,6 +546,12 @@ class UnifiedDataset(Dataset):
             # Done with this list. Cutting memory usage because
             # of multiprocessing below.
             del parallel_scenes
+
+            # This shouldn't be necessary, but sometimes old
+            # (large) dataset objects haven't been garbage collected
+            # by this time, causing memory usage to skyrocket during
+            # parallel data preprocessing below.
+            gc.collect()
 
             dataloader = DataLoader(
                 parallel_preprocessor,
