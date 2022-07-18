@@ -252,6 +252,7 @@ class AgentBatchElement:
         resolution: int = patch_params["px_per_m"]
         offset_xy: Tuple[float, float] = patch_params.get("offset_frac_xy", (0.0, 0.0))
         return_rgb: bool = patch_params.get("return_rgb", True)
+        no_map_fill_val: float = patch_params.get("no_map_fill_value", 0.0)
 
         if self.standardize_data:
             heading = self.curr_agent_state_np[-1]
@@ -264,6 +265,7 @@ class AgentBatchElement:
                 heading,
                 return_rgb,
                 rot_pad_factor=sqrt(2),
+                no_map_val=no_map_fill_val,
             )
         else:
             heading = 0.0
@@ -275,6 +277,7 @@ class AgentBatchElement:
                 offset_xy,
                 heading,
                 return_rgb,
+                no_map_val=no_map_fill_val,
             )
 
         return MapPatch(
@@ -468,6 +471,7 @@ class SceneBatchElement:
         resolution: int = patch_params["px_per_m"]
         offset_xy: Tuple[float, float] = patch_params.get("offset_frac_xy", (0.0, 0.0))
         return_rgb: bool = patch_params.get("return_rgb", True)
+        no_map_fill_val: float = patch_params.get("no_map_fill_value", 0.0)
 
         if len(self.cache.heading_cols) == 1:
             heading_idx = self.cache.heading_cols[0]
@@ -500,6 +504,7 @@ class SceneBatchElement:
                     agent_heading,
                     return_rgb,
                     rot_pad_factor=sqrt(2),
+                    no_map_val=no_map_fill_val,
                 )
 
             else:
@@ -512,6 +517,7 @@ class SceneBatchElement:
                     offset_xy,
                     agent_heading,
                     return_rgb,
+                    no_map_val=no_map_fill_val,
                 )
 
             map_patches.append(
