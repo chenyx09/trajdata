@@ -530,7 +530,9 @@ def agent_collate_fn(
 
     extras: Dict[str, Tensor] = {}
     for key in batch_elems[0].extras.keys():
-        extras[key] = torch.as_tensor(np.stack([batch_elem.extras[key] for batch_elem in batch_elems]))
+        extras[key] = torch.as_tensor(
+            np.stack([batch_elem.extras[key] for batch_elem in batch_elems])
+        )
 
     batch = AgentBatch(
         data_idx=data_index_t,
@@ -568,6 +570,7 @@ def agent_collate_fn(
 
     if return_dict:
         return asdict(batch)
+
     return batch
 
 
@@ -781,7 +784,9 @@ def scene_collate_fn(
 
     extras: Dict[str, Tensor] = {}
     for key in batch_elems[0].extras.keys():
-        extras[key] = torch.as_tensor(np.stack([batch_elem.extras[key] for batch_elem in batch_elems]))
+        extras[key] = torch.as_tensor(
+            np.stack([batch_elem.extras[key] for batch_elem in batch_elems])
+        )
 
     batch = SceneBatch(
         data_idx=data_index_t,

@@ -86,7 +86,7 @@ class UnifiedDataset(Dataset):
         rebuild_maps: bool = False,
         num_workers: int = 0,
         verbose: bool = False,
-        extras: Dict[str, Callable] = {},
+        extras: Dict[str, Callable[..., np.ndarray]] = dict(),
     ) -> None:
         """Instantiates a PyTorch Dataset object which aggregates data
         from multiple trajectory forecasting datasets.
@@ -116,7 +116,7 @@ class UnifiedDataset(Dataset):
             rebuild_maps (bool, optional): If True, process and cache maps even if they are already cached. Defaults to False.
             num_workers (int, optional): Number of parallel workers to use for dataset preprocessing and loading. Defaults to 0.
             verbose (bool, optional):  If True, print internal data loading information. Defaults to False.
-            extras (Dict[str, Callable]: Used to add extra data to a batch element. The callable function will be provided with an initialised batch element and should return the data. 
+            extras (Dict[str, Callable[..., np.ndarray]], optional): Adds extra data to each batch element. Each Callable must take as input a filled {Agent,Scene}BatchElement and return an ndarray which will subsequently be added to the batch element's `extra` dict.
         """
         self.centric: str = centric
         self.desired_dt: float = desired_dt
@@ -612,6 +612,7 @@ class UnifiedDataset(Dataset):
                 only_types=self.only_types,
                 no_types=self.no_types,
             )
+
             batch_element: SceneBatchElement = SceneBatchElement(
                 scene_cache,
                 idx,
@@ -651,8 +652,7 @@ class UnifiedDataset(Dataset):
                 self.standardize_derivatives,
             )
 
-        for key, func in self.extras.items():
-            batch_element.extras[key] = func(batch_element)
+        for key, extra_fn in self.extras.items():
+            batch_element.extras[key] = extra_fn(batch_element)
 
         return batch_element
-
