@@ -1,3 +1,4 @@
+import gc
 from collections import defaultdict
 from functools import partial
 from itertools import chain
@@ -13,11 +14,13 @@ from trajdata.augmentation.augmentation import Augmentation, BatchAugmentation
 from trajdata.caching import DataFrameCache, EnvCache, SceneCache
 from trajdata.data_structures import (
     AgentBatchElement,
+    AgentDataIndex,
     AgentMetadata,
     AgentType,
     DataIndex,
     Scene,
     SceneBatchElement,
+    SceneDataIndex,
     SceneMetadata,
     SceneTag,
     SceneTime,
@@ -103,7 +106,7 @@ class UnifiedDataset(Dataset):
             only_predict (Optional[List[AgentType]], optional): Only predict the specified types of agents. Importantly, this keeps other agent types in the scene, e.g., as neighbors of the agent to be predicted. Defaults to None.
             no_types (Optional[List[AgentType]], optional): Filter out all agents with the specified types. Defaults to None.
             standardize_data (bool, optional): Standardize all data such that (1) the predicted agent's orientation at the current timestep is 0, (2) all data is made relative to the predicted agent's current position, and (3) the agent's heading value is replaced with its sin, cos values. Defaults to True.
-            standardize_derivatives (bool, optional): Make agent velocities and accelerations relative to the agent being predicted. Defaults to True.
+            standardize_derivatives (bool, optional): Make agent velocities and accelerations relative to the agent being predicted. Defaults to False.
             augmentations (Optional[List[Augmentation]], optional): Perform the specified augmentations to the batch or dataset. Defaults to None.
             max_agent_num (int, optional): The maximum number of agents to include in a batch for scene-centric batching.
             data_dirs (Optional[Dict[str, str]], optional): Dictionary mapping dataset names to their directories on disk. Defaults to { "eupeds_eth": "~/datasets/eth_ucy_peds", "eupeds_hotel": "~/datasets/eth_ucy_peds", "eupeds_univ": "~/datasets/eth_ucy_peds", "eupeds_zara1": "~/datasets/eth_ucy_peds", "eupeds_zara2": "~/datasets/eth_ucy_peds", "nusc_mini": "~/datasets/nuScenes", "lyft_sample": "~/datasets/lyft/scenes/sample.zarr", }.
@@ -208,24 +211,32 @@ class UnifiedDataset(Dataset):
         # of multiprocessing later on.
         del all_scenes_list
 
-        data_index: List[Tuple[str, int]] = self.get_data_index(
-            num_workers, scene_paths
-        )
+        data_index: Union[
+            List[Tuple[str, int, np.ndarray]],
+            List[Tuple[str, int, List[Tuple[str, np.ndarray]]]],
+        ] = self.get_data_index(num_workers, scene_paths)
 
         # Done with this list. Cutting memory usage because
         # of multiprocessing later on.
         del scene_paths
 
-        self._scene_index: List[Path] = [orig_path for orig_path, _ in data_index]
+        self._scene_index: List[Path] = [orig_path for orig_path, _, _ in data_index]
 
         # The data index is effectively a big list of tuples taking the form:
-        #   (env_name: str, scene_name: str, timestep: int[, agent_name: str])
-        self._data_index: DataIndex = DataIndex(data_index)
+        # (scene_path: str, index_len: int, valid_timesteps: np.ndarray[, agent_name: str])
+        self._data_index: DataIndex = (
+            AgentDataIndex(data_index)
+            if self.centric == "agent"
+            else SceneDataIndex(data_index)
+        )
         self._data_len: int = len(self._data_index)
 
     def get_data_index(
         self, num_workers: int, scene_paths: List[Path]
-    ) -> List[Tuple[str, int]]:
+    ) -> Union[
+        List[Tuple[str, int, np.ndarray]],
+        List[Tuple[str, int, List[Tuple[str, np.ndarray]]]],
+    ]:
         # We're doing all this staticmethod malarkey so that multiprocessing
         # doesn't copy the UnifiedDataset self object (which generally slows down the
         # rate of spinning up new processes and hogs memory).
@@ -239,7 +250,6 @@ class UnifiedDataset(Dataset):
                 history_sec=self.history_sec,
                 future_sec=self.future_sec,
                 desired_dt=self.desired_dt,
-                ret_len_only=True,
             )
         elif self.centric == "agent":
             data_index_fn = partial(
@@ -251,29 +261,36 @@ class UnifiedDataset(Dataset):
                 history_sec=self.history_sec,
                 future_sec=self.future_sec,
                 desired_dt=self.desired_dt,
-                ret_len_only=True,
             )
 
-        data_index: List[Tuple[str, int]] = list()
+        # data_index is either:
+        # [(scene_path, total_index_len, valid_scene_ts)] for scene-centric data, or
+        # [(scene_path, total_index_len, [(agent_name, valid_agent_ts)])] for agent-centric data
+        data_index: Union[
+            List[Tuple[str, int, np.ndarray]],
+            List[Tuple[str, int, List[Tuple[str, np.ndarray]]]],
+        ] = list()
         if num_workers <= 1:
             for scene_info_path in tqdm(
                 scene_paths,
                 desc=desc + " (Serially)",
                 disable=not self.verbose,
             ):
-                _, orig_path, index_elems_len = data_index_fn(scene_info_path)
-                if index_elems_len > 0:
-                    data_index.append((str(orig_path), index_elems_len))
+                _, orig_path, index_elems_len, index_elems = data_index_fn(
+                    scene_info_path
+                )
+                if len(index_elems) > 0:
+                    data_index.append((str(orig_path), index_elems_len, index_elems))
         else:
-            for (_, orig_path, index_elems_len) in parallel_iapply(
+            for (_, orig_path, index_elems_len, index_elems) in parallel_iapply(
                 data_index_fn,
                 scene_paths,
                 num_workers=num_workers,
                 desc=desc + f" ({num_workers} CPUs)",
                 disable=not self.verbose,
             ):
-                if index_elems_len > 0:
-                    data_index.append((str(orig_path), index_elems_len))
+                if len(index_elems) > 0:
+                    data_index.append((str(orig_path), index_elems_len, index_elems))
 
         return data_index
 
@@ -285,13 +302,9 @@ class UnifiedDataset(Dataset):
         history_sec: Tuple[Optional[float], Optional[float]],
         future_sec: Tuple[Optional[float], Optional[float]],
         desired_dt: Optional[float],
-        ret_len_only: bool = False,
         ret_scene_info: bool = False,
-    ) -> Tuple[Scene, Path, List[Tuple]]:
-        if ret_len_only:
-            index_elems_len: int = 0
-        else:
-            index_elems: List[Tuple] = list()
+    ) -> Tuple[Optional[Scene], Path, int, np.ndarray]:
+        index_elems: List[int] = list()
 
         scene: Scene = EnvCache.load(scene_info_path)
         scene_utils.enforce_desired_dt(scene, desired_dt)
@@ -315,15 +328,13 @@ class UnifiedDataset(Dataset):
                 # Ignore this datum if no agent in the scene satisfies our time requirements.
                 continue
 
-            if ret_len_only:
-                index_elems_len += 1
-            else:
-                index_elems.append((scene.env_name, scene.name, ts))
+            index_elems.append(ts)
 
         return (
             (scene if ret_scene_info else None),
             scene_info_path,
-            (index_elems_len if ret_len_only else index_elems),
+            len(index_elems),
+            np.array(index_elems, dtype=np.int),
         )
 
     @staticmethod
@@ -336,13 +347,10 @@ class UnifiedDataset(Dataset):
         history_sec: Tuple[Optional[float], Optional[float]],
         future_sec: Tuple[Optional[float], Optional[float]],
         desired_dt: Optional[float],
-        ret_len_only: bool = False,
         ret_scene_info: bool = False,
-    ) -> Tuple[Scene, Path, List[Tuple]]:
-        if ret_len_only:
-            index_elems_len: int = 0
-        else:
-            index_elems: List[Tuple] = list()
+    ) -> Tuple[Optional[Scene], Path, int, List[Tuple[str, np.ndarray]]]:
+        index_elems_len: int = 0
+        index_elems: List[Tuple[str, np.ndarray]] = list()
 
         scene: Scene = EnvCache.load(scene_info_path)
         scene_utils.enforce_desired_dt(scene, desired_dt)
@@ -358,23 +366,20 @@ class UnifiedDataset(Dataset):
             if incl_robot_future and agent_info.name == "ego":
                 continue
 
-            valid_ts: List[int] = filtering.get_valid_ts(
+            valid_ts: Tuple[int, int] = filtering.get_valid_ts(
                 agent_info, scene.dt, history_sec, future_sec
             )
 
-            if valid_ts:
-                if ret_len_only:
-                    index_elems_len += len(valid_ts)
-                else:
-                    index_elems += [
-                        (scene.env_name, scene.name, ts, agent_info.name)
-                        for ts in valid_ts
-                    ]
+            num_agent_ts: int = valid_ts[1] - valid_ts[0] + 1
+            if num_agent_ts > 0:
+                index_elems_len += num_agent_ts
+                index_elems.append((agent_info.name, np.array(valid_ts, dtype=np.int)))
 
         return (
             (scene if ret_scene_info else None),
             scene_info_path,
-            (index_elems_len if ret_len_only else index_elems),
+            index_elems_len,
+            index_elems,
         )
 
     def get_collate_fn(self, return_dict: bool = False) -> Callable:
@@ -474,10 +479,11 @@ class UnifiedDataset(Dataset):
                 desc="Calculating Agent Data (Serially)",
                 disable=not self.verbose,
             ):
+                scene_dt: float = (
+                    self.desired_dt if self.desired_dt is not None else scene_info.dt
+                )
                 if self.env_cache.scene_is_cached(
-                    scene_info.env_name, scene_info.name, scene_info.dt
-                ) and not scene_utils.enforce_desired_dt(
-                    scene_info, self.desired_dt, dry_run=True
+                    scene_info.env_name, scene_info.name, scene_dt
                 ):
                     # This is a fast path in case we don't need to
                     # perform any modifications to the scene_info.
@@ -485,7 +491,7 @@ class UnifiedDataset(Dataset):
                         self.cache_path,
                         scene_info.env_name,
                         scene_info.name,
-                        scene_info.dt,
+                        scene_dt,
                     )
 
                     scene_paths.append(scene_path)
@@ -548,6 +554,12 @@ class UnifiedDataset(Dataset):
             # of multiprocessing below.
             del parallel_scenes
 
+            # This shouldn't be necessary, but sometimes old
+            # (large) dataset objects haven't been garbage collected
+            # by this time, causing memory usage to skyrocket during
+            # parallel data preprocessing below.
+            gc.collect()
+
             dataloader = DataLoader(
                 parallel_preprocessor,
                 batch_size=1,
@@ -580,34 +592,14 @@ class UnifiedDataset(Dataset):
     def __len__(self) -> int:
         return self._data_len
 
-    # @profile
     def __getitem__(self, idx: int) -> Union[SceneBatchElement, AgentBatchElement]:
-        scene_path, scene_index_elem = self._data_index[idx]
         if self.centric == "scene":
-            scene, _, scene_index_elems = UnifiedDataset._get_data_index_scene(
-                scene_path,
-                self.only_types,
-                self.no_types,
-                self.history_sec,
-                self.future_sec,
-                self.desired_dt,
-                ret_scene_info=True,
-            )
-            env_name, scene_name, ts = scene_index_elems[scene_index_elem]
+            scene_path, ts = self._data_index[idx]
         elif self.centric == "agent":
-            scene, _, scene_index_elems = UnifiedDataset._get_data_index_agent(
-                scene_path,
-                self.incl_robot_future,
-                self.only_types,
-                self.only_predict,
-                self.no_types,
-                self.history_sec,
-                self.future_sec,
-                self.desired_dt,
-                ret_scene_info=True,
-            )
-            env_name, scene_name, ts, agent_id = scene_index_elems[scene_index_elem]
+            scene_path, agent_id, ts = self._data_index[idx]
 
+        scene: Scene = EnvCache.load(scene_path)
+        scene_utils.enforce_desired_dt(scene, self.desired_dt)
         scene_cache: SceneCache = self.cache_class(
             self.cache_path, scene, ts, self.augmentations
         )
