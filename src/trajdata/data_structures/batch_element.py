@@ -131,6 +131,9 @@ class AgentBatchElement:
 
         self.scene_id = scene_time_agent.scene.name
 
+        # Will be optionally populated by the user's provided functions.
+        self.extras: Dict[str, np.ndarray] = dict()
+
     def get_agent_history(
         self,
         agent_info: AgentMetadata,
@@ -404,6 +407,9 @@ class SceneBatchElement:
             # (whereas the above returns the current + future, yielding
             # one more timestep).
             self.robot_future_len: int = self.robot_future_np.shape[0] - 1
+
+        # Will be optionally populated by the user's provided functions.
+        self.extras: Dict[str, np.ndarray] = dict()
 
     def get_nearby_agents(
         self,

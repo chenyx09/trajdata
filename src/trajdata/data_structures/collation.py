@@ -527,6 +527,13 @@ def agent_collate_fn(
     )
 
     scene_ids = [batch_elem.scene_id for batch_elem in batch_elems]
+
+    extras: Dict[str, Tensor] = {}
+    for key in batch_elems[0].extras.keys():
+        extras[key] = torch.as_tensor(
+            np.stack([batch_elem.extras[key] for batch_elem in batch_elems])
+        )
+
     batch = AgentBatch(
         data_idx=data_index_t,
         dt=dt_t,
@@ -554,6 +561,7 @@ def agent_collate_fn(
         rasters_from_world_tf=rasters_from_world_tf,
         agents_from_world_tf=agents_from_world_tf,
         scene_ids=scene_ids,
+        extras=extras,
     )
 
     if batch_augments:
@@ -562,6 +570,7 @@ def agent_collate_fn(
 
     if return_dict:
         return asdict(batch)
+
     return batch
 
 
@@ -773,6 +782,12 @@ def scene_collate_fn(
         else None
     )
 
+    extras: Dict[str, Tensor] = {}
+    for key in batch_elems[0].extras.keys():
+        extras[key] = torch.as_tensor(
+            np.stack([batch_elem.extras[key] for batch_elem in batch_elems])
+        )
+
     batch = SceneBatch(
         data_idx=data_index_t,
         dt=dt_t,
@@ -792,6 +807,7 @@ def scene_collate_fn(
         rasters_from_world_tf=rasters_from_world_tf,
         centered_agent_from_world_tf=centered_agent_from_world_tf,
         centered_world_from_agent_tf=centered_world_from_agent_tf,
+        extras=extras,
     )
 
     if batch_augments:
