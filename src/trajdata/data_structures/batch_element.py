@@ -5,7 +5,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 import numpy as np
 
 from trajdata.caching import SceneCache
-from trajdata.data_structures.agent import Agent, AgentMetadata, AgentType, FixedExtent
+from trajdata.data_structures.agent import AgentMetadata, AgentType
 from trajdata.data_structures.map_patch import MapPatch
 from trajdata.data_structures.scene import SceneTime, SceneTimeAgent
 
@@ -256,7 +256,7 @@ class AgentBatchElement:
 
         if self.standardize_data:
             heading = self.curr_agent_state_np[-1]
-            patch_data, raster_from_world_tf = self.cache.load_map_patch(
+            patch_data, raster_from_world_tf, has_data = self.cache.load_map_patch(
                 world_x,
                 world_y,
                 desired_patch_size,
@@ -269,7 +269,7 @@ class AgentBatchElement:
             )
         else:
             heading = 0.0
-            patch_data, raster_from_world_tf = self.cache.load_map_patch(
+            patch_data, raster_from_world_tf, has_data = self.cache.load_map_patch(
                 world_x,
                 world_y,
                 desired_patch_size,
@@ -286,6 +286,7 @@ class AgentBatchElement:
             crop_size=desired_patch_size,
             resolution=resolution,
             raster_from_world_tf=raster_from_world_tf,
+            has_data=has_data,
         )
 
 
@@ -495,7 +496,7 @@ class SceneBatchElement:
                 else:
                     agent_heading = agent_his[-1, heading_idx] + heading
 
-                patch_data, raster_from_world_tf = self.cache.load_map_patch(
+                patch_data, raster_from_world_tf, has_data = self.cache.load_map_patch(
                     world_x + agent_his[-1, x_idx],
                     world_y + agent_his[-1, y_idx],
                     desired_patch_size,
@@ -509,7 +510,7 @@ class SceneBatchElement:
 
             else:
                 agent_heading = 0.0
-                patch_data, raster_from_world_tf = self.cache.load_map_patch(
+                patch_data, raster_from_world_tf, has_data = self.cache.load_map_patch(
                     agent_his[-1, x_idx],
                     agent_his[-1, y_idx],
                     desired_patch_size,
@@ -527,6 +528,7 @@ class SceneBatchElement:
                     crop_size=desired_patch_size,
                     resolution=resolution,
                     raster_from_world_tf=raster_from_world_tf,
+                    has_data=has_data,
                 )
             )
 

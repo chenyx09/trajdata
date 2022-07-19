@@ -541,7 +541,7 @@ class DataFrameCache(SceneCache):
         return_rgb: bool,
         rot_pad_factor: float = 1.0,
         no_map_val: float = 0.0,
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> Tuple[np.ndarray, np.ndarray, bool]:
         maps_path: Path = DataFrameCache.get_maps_path(self.path, self.scene.env_name)
 
         if not maps_path.exists():
@@ -549,10 +549,14 @@ class DataFrameCache(SceneCache):
             # so we return an empty map.
             patch_size: int = ceil((rot_pad_factor * desired_patch_size) / 2) * 2
 
-            return np.full(
-                (1 if not return_rgb else 3, patch_size, patch_size),
-                fill_value=no_map_val,
-            ), np.eye(3)
+            return (
+                np.full(
+                    (1 if not return_rgb else 3, patch_size, patch_size),
+                    fill_value=no_map_val,
+                ),
+                np.eye(3),
+                False,
+            )
 
         metadata_file: Path = maps_path / f"{self.scene.location}_metadata.dill"
         with open(metadata_file, "rb") as f:
@@ -678,4 +682,4 @@ class DataFrameCache(SceneCache):
                 @ raster_from_world_tf
             )
 
-        return data_patch, raster_from_world_tf
+        return data_patch, raster_from_world_tf, True

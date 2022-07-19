@@ -7,7 +7,6 @@ import torch.nn.functional as F
 from kornia.geometry.transform import center_crop, rotate
 from torch import Tensor
 from torch.nn.utils.rnn import pad_sequence
-from torch.utils.data._utils.collate import default_collate
 
 from trajdata.augmentation import BatchAugmentation
 from trajdata.data_structures.batch import AgentBatch, SceneBatch
@@ -21,19 +20,69 @@ def map_collate_fn_agent(
     if batch_elems[0].map_patch is None:
         return None, None, None
 
-    patch_data: Tensor = torch.as_tensor(
-        np.stack([batch_elem.map_patch.data for batch_elem in batch_elems]),
-        dtype=torch.float,
+    # Ensuring that any empty map patches have the correct number of channels
+    # prior to collation.
+    has_data: np.ndarray = np.array(
+        [batch_elem.map_patch.has_data for batch_elem in batch_elems],
+        dtype=np.bool,
     )
-    rot_angles: Tensor = torch.as_tensor(
-        [batch_elem.map_patch.rot_angle for batch_elem in batch_elems],
-        dtype=torch.float,
+    no_data: np.ndarray = ~has_data
+
+    desired_num_channels: int = 1
+    if np.any(has_data):
+        patch_channels: np.ndarray = np.array(
+            [batch_elem.map_patch.data.shape[0] for batch_elem in batch_elems],
+            dtype=np.int,
+        )
+
+        unique_num_channels = np.unique(patch_channels[has_data])
+        if unique_num_channels.size > 1:
+            raise ValueError(
+                "Maps must all have the same number of channels in a batch, "
+                f"but found maps with {unique_num_channels.tolist()} channels."
+            )
+
+        desired_num_channels = unique_num_channels[0].item()
+
+    # Getting the map patch data and preparing it for batched rotation.
+    patch_size_y, patch_size_x = batch_elems[0].map_patch.data.shape[-2:]
+    patch_data: Tensor = torch.empty(
+        (len(batch_elems), desired_num_channels, patch_size_y, patch_size_x)
     )
+
+    if np.any(has_data):
+        patch_data[has_data] = torch.as_tensor(
+            np.stack(
+                [
+                    batch_elem.map_patch.data
+                    for idx, batch_elem in enumerate(batch_elems)
+                    if has_data[idx]
+                ]
+            ),
+            dtype=torch.float,
+        )
+
+    if np.any(no_data):
+        patch_data[no_data] = torch.as_tensor(
+            np.stack(
+                [
+                    batch_elem.map_patch.data
+                    for idx, batch_elem in enumerate(batch_elems)
+                    if no_data[idx]
+                ]
+            ),
+            dtype=torch.float,
+        ).expand(-1, desired_num_channels, -1, -1)
+
     patch_size: int = batch_elems[0].map_patch.crop_size
     assert all(
         batch_elem.map_patch.crop_size == patch_size for batch_elem in batch_elems
     )
 
+    rot_angles: Tensor = torch.as_tensor(
+        [batch_elem.map_patch.rot_angle for batch_elem in batch_elems],
+        dtype=torch.float,
+    )
     resolution: Tensor = torch.as_tensor(
         [batch_elem.map_patch.resolution for batch_elem in batch_elems],
         dtype=torch.float,
@@ -65,8 +114,8 @@ def map_collate_fn_agent(
         )
 
         rot_crop_patches = patch_data
-    else:
 
+    else:
         rot_crop_patches: Tensor = center_crop(
             rotate(patch_data, torch.rad2deg(rot_angles)), (patch_size, patch_size)
         )
