@@ -463,18 +463,18 @@ class DataFrameCache(SceneCache):
 
     @staticmethod
     def get_map_paths(
-        cache_path: Path, env_name: str, map_name: str, resolution: int
+        cache_path: Path, env_name: str, map_name: str, resolution: float
     ) -> Tuple[Path, Path, Path]:
         maps_path: Path = DataFrameCache.get_maps_path(cache_path, env_name)
 
-        map_path: Path = maps_path / f"{map_name}_{resolution}px_m.zarr"
-        metadata_path: Path = maps_path / f"{map_name}_{resolution}px_m.dill"
+        map_path: Path = maps_path / f"{map_name}_{resolution:.2f}px_m.zarr"
+        metadata_path: Path = maps_path / f"{map_name}_{resolution:.2f}px_m.dill"
 
         return maps_path, map_path, metadata_path
 
     @staticmethod
     def is_map_cached(
-        cache_path: Path, env_name: str, map_name: str, resolution: int
+        cache_path: Path, env_name: str, map_name: str, resolution: float
     ) -> bool:
         maps_path, map_file, metadata_file = DataFrameCache.get_map_paths(
             cache_path, env_name, map_name, resolution
@@ -554,7 +554,7 @@ class DataFrameCache(SceneCache):
         world_x: float,
         world_y: float,
         desired_patch_size: int,
-        resolution: int,
+        resolution: float,
         offset_xy: Tuple[float, float],
         agent_heading: float,
         return_rgb: bool,

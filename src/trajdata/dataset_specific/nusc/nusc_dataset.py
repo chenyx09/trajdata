@@ -256,7 +256,7 @@ class NuscDataset(RawDataset):
         layer_names: List[str],
         cache_path: Path,
         map_cache_class: Type[SceneCache],
-        resolution: int,
+        resolution: float,
     ) -> None:
         """
         resolution is in pixels per meter.
@@ -296,7 +296,7 @@ class NuscDataset(RawDataset):
         map_cache_class.cache_map_layers(cache_path, map_info, layer_fn, self.name)
 
     def cache_maps(
-        self, cache_path: Path, map_cache_class: Type[SceneCache], resolution: int
+        self, cache_path: Path, map_cache_class: Type[SceneCache], resolution: float
     ) -> None:
         """
         Stores rasterized maps to disk for later retrieval.
@@ -329,7 +329,7 @@ class NuscDataset(RawDataset):
             "walkway",
         ]
         for map_name in tqdm(
-            locations, desc=f"Caching {self.name} Maps at {resolution} px/m"
+            locations, desc=f"Caching {self.name} Maps at {resolution:.2f} px/m"
         ):
             self.cache_map(
                 map_name, layer_names, cache_path, map_cache_class, resolution

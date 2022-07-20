@@ -118,7 +118,7 @@ class SceneCache:
 
     @staticmethod
     def is_map_cached(
-        cache_path: Path, env_name: str, map_name: str, resolution: int
+        cache_path: Path, env_name: str, map_name: str, resolution: float
     ) -> bool:
         raise NotImplementedError()
 
@@ -140,7 +140,7 @@ class SceneCache:
         world_x: float,
         world_y: float,
         desired_patch_size: int,
-        resolution: int,
+        resolution: float,
         offset_xy: Tuple[float, float],
         agent_heading: float,
         return_rgb: bool,

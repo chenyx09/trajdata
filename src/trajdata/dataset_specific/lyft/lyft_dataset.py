@@ -321,9 +321,9 @@ class LyftDataset(RawDataset):
         return agent_list, agent_presence
 
     def cache_maps(
-        self, cache_path: Path, map_cache_class: Type[SceneCache], resolution: int
+        self, cache_path: Path, map_cache_class: Type[SceneCache], resolution: float
     ) -> None:
-        print(f"Caching palo_alto Map at {resolution} px/m...", flush=True)
+        print(f"Caching palo_alto Map at {resolution:.2f} px/m...", flush=True)
 
         # We have to do this ../.. stuff because the data_dir for lyft is scenes/sample.zarr
         dm = LocalDataManager((self.metadata.data_dir / ".." / "..").resolve())

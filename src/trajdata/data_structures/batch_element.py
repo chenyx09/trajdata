@@ -252,7 +252,7 @@ class AgentBatchElement:
     def get_agent_map_patch(self, patch_params: Dict[str, int]) -> MapPatch:
         world_x, world_y = self.curr_agent_state_np[:2]
         desired_patch_size: int = patch_params["map_size_px"]
-        resolution: int = patch_params["px_per_m"]
+        resolution: float = patch_params["px_per_m"]
         offset_xy: Tuple[float, float] = patch_params.get("offset_frac_xy", (0.0, 0.0))
         return_rgb: bool = patch_params.get("return_rgb", True)
         no_map_fill_val: float = patch_params.get("no_map_fill_value", 0.0)
@@ -475,7 +475,7 @@ class SceneBatchElement:
         world_x, world_y = self.centered_agent_state_np[:2]
         heading = self.centered_agent_state_np[-1]
         desired_patch_size: int = patch_params["map_size_px"]
-        resolution: int = patch_params["px_per_m"]
+        resolution: float = patch_params["px_per_m"]
         offset_xy: Tuple[float, float] = patch_params.get("offset_frac_xy", (0.0, 0.0))
         return_rgb: bool = patch_params.get("return_rgb", True)
         no_map_fill_val: float = patch_params.get("no_map_fill_value", 0.0)

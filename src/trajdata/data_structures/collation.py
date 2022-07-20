@@ -175,7 +175,7 @@ def map_collate_fn_scene(
         np.stack(agents_rasters_from_world_tfs), dtype=torch.float
     )
     agents_resolution: Tensor = torch.as_tensor(
-        np.stack(agents_res_list), dtype=torch.int
+        np.stack(agents_res_list), dtype=torch.float
     )
 
     if torch.count_nonzero(agents_rot_angles) == 0:

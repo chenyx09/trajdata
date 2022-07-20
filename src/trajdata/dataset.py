@@ -3,7 +3,7 @@ from collections import defaultdict
 from functools import partial
 from itertools import chain
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Set, Tuple, Union
+from typing import Callable, Dict, Final, List, Optional, Set, Tuple, Union
 
 import numpy as np
 from torch.utils.data import DataLoader, Dataset
@@ -37,7 +37,7 @@ from trajdata.parallel import (
 from trajdata.utils import agent_utils, env_utils, scene_utils, string_utils
 
 # TODO(bivanovic): Move this to a better place in the codebase.
-DEFAULT_PX_PER_M = 2
+DEFAULT_PX_PER_M: Final[float] = 2.0
 
 
 class UnifiedDataset(Dataset):
