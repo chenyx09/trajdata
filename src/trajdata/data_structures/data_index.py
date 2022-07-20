@@ -1,6 +1,7 @@
 from typing import List, Tuple, Union
 
 import numpy as np
+from tqdm import tqdm
 
 
 class DataIndex:
@@ -16,6 +17,7 @@ class DataIndex:
             List[Tuple[str, int, np.ndarray]],
             List[Tuple[str, int, List[Tuple[str, np.ndarray]]]],
         ],
+        verbose: bool = False,
     ) -> None:
         scene_paths, full_index_len, _ = zip(*data_index)
 
@@ -41,7 +43,9 @@ class DataIndex:
 
 class AgentDataIndex(DataIndex):
     def __init__(
-        self, data_index: List[Tuple[str, int, List[Tuple[str, np.ndarray]]]]
+        self,
+        data_index: List[Tuple[str, int, List[Tuple[str, np.ndarray]]]],
+        verbose: bool = False,
     ) -> None:
         super().__init__(data_index)
 
@@ -52,7 +56,9 @@ class AgentDataIndex(DataIndex):
         self._agent_ids: List[np.ndarray] = list()
         self._agent_times: List[np.ndarray] = list()
         self._cumulative_scene_lengths: List[np.ndarray] = list()
-        for scene_data_index in agent_timesteps:
+        for scene_data_index in tqdm(
+            agent_timesteps, desc="Structuring Agent Data Index", disable=not verbose
+        ):
             agent_ids, agent_times = zip(*scene_data_index)
 
             self._agent_ids.append(np.array(agent_ids).astype(np.string_))
@@ -93,10 +99,17 @@ class AgentDataIndex(DataIndex):
 
 
 class SceneDataIndex(DataIndex):
-    def __init__(self, data_index: List[Tuple[str, int, np.ndarray]]) -> None:
+    def __init__(
+        self, data_index: List[Tuple[str, int, np.ndarray]], verbose: bool = False
+    ) -> None:
         super().__init__(data_index)
 
-        self.scene_ts: List[np.ndarray] = [valid_ts for _, _, valid_ts in data_index]
+        self.scene_ts: List[np.ndarray] = [
+            valid_ts
+            for _, _, valid_ts in tqdm(
+                data_index, desc="Structuring Scene Data Index", disable=not verbose
+            )
+        ]
 
     def __getitem__(self, index: int) -> Tuple[str, int]:
         scene_path, scene_idx, scene_elem_index = super().__getitem__(index)

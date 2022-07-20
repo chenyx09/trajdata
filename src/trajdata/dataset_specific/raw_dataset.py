@@ -80,7 +80,7 @@ class RawDataset:
         raise NotImplementedError()
 
     def cache_maps(
-        self, cache_path: Path, map_cache_class: Type[SceneCache], resolution: int = 2
+        self, cache_path: Path, map_cache_class: Type[SceneCache], resolution: int
     ) -> None:
         """
         resolution is in pixels per meter.

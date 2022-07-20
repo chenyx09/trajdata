@@ -40,7 +40,7 @@ class DataFrameCache(SceneCache):
         agent_data_path: Path = self.scene_dir / DataFrameCache._agent_data_file(
             scene.dt
         )
-        if not agent_data_path.is_file():
+        if not agent_data_path.exists():
             # Load the original dt agent data and then
             # interpolate it to the desired dt.
             self._load_agent_data(scene.env_metadata.dt)
@@ -459,24 +459,41 @@ class DataFrameCache(SceneCache):
 
     @staticmethod
     def are_maps_cached(cache_path: Path, env_name: str) -> bool:
-        return DataFrameCache.get_maps_path(cache_path, env_name).is_dir()
+        return DataFrameCache.get_maps_path(cache_path, env_name).exists()
 
     @staticmethod
-    def is_map_cached(cache_path: Path, env_name: str, map_name: str) -> bool:
+    def get_map_paths(
+        cache_path: Path, env_name: str, map_name: str, resolution: int
+    ) -> Tuple[Path, Path, Path]:
         maps_path: Path = DataFrameCache.get_maps_path(cache_path, env_name)
-        metadata_file: Path = maps_path / f"{map_name}_metadata.dill"
-        map_file: Path = maps_path / f"{map_name}.zarr"
-        return maps_path.is_dir() and metadata_file.is_file() and map_file.is_file()
+
+        map_path: Path = maps_path / f"{map_name}_{resolution}px_m.zarr"
+        metadata_path: Path = maps_path / f"{map_name}_{resolution}px_m.dill"
+
+        return maps_path, map_path, metadata_path
+
+    @staticmethod
+    def is_map_cached(
+        cache_path: Path, env_name: str, map_name: str, resolution: int
+    ) -> bool:
+        maps_path, map_file, metadata_file = DataFrameCache.get_map_paths(
+            cache_path, env_name, map_name, resolution
+        )
+        return maps_path.exists() and metadata_file.exists() and map_file.exists()
 
     @staticmethod
     def cache_map(cache_path: Path, map_obj: Map, env_name: str) -> None:
-        maps_path: Path = DataFrameCache.get_maps_path(cache_path, env_name)
+        maps_path, map_file, metadata_file = DataFrameCache.get_map_paths(
+            cache_path, env_name, map_obj.metadata.name, map_obj.metadata.resolution
+        )
+
+        # Ensuring the maps directory exists.
         maps_path.mkdir(parents=True, exist_ok=True)
 
-        map_file: Path = maps_path / f"{map_obj.metadata.name}.zarr"
+        # Saving the map data.
         zarr.save(map_file, map_obj.data)
 
-        metadata_file: Path = maps_path / f"{map_obj.metadata.name}_metadata.dill"
+        # Saving the map metadata.
         with open(metadata_file, "wb") as f:
             dill.dump(map_obj.metadata, f)
 
@@ -487,22 +504,24 @@ class DataFrameCache(SceneCache):
         layer_fn: Callable[[str], np.ndarray],
         env_name: str,
     ) -> None:
-        maps_path: Path = DataFrameCache.get_maps_path(cache_path, env_name)
+        maps_path, map_file, metadata_file = DataFrameCache.get_map_paths(
+            cache_path, env_name, map_info.name, map_info.resolution
+        )
+
+        # Ensuring the maps directory exists.
         maps_path.mkdir(parents=True, exist_ok=True)
 
-        map_file: Path = maps_path / f"{map_info.name}.zarr"
         disk_data = zarr.open_array(map_file, mode="w", shape=map_info.shape)
         for idx, layer_name in enumerate(map_info.layers):
             disk_data[idx] = layer_fn(layer_name)
 
-        metadata_file: Path = maps_path / f"{map_info.name}_metadata.dill"
         with open(metadata_file, "wb") as f:
             dill.dump(map_info, f)
 
     def pad_map_patch(
         self,
         patch: np.ndarray,
-        # top, bot, left, right
+        #                 top, bot, left, right
         patch_sides: Tuple[int, int, int, int],
         patch_size: int,
         map_dims: Tuple[int, int, int],
@@ -542,8 +561,9 @@ class DataFrameCache(SceneCache):
         rot_pad_factor: float = 1.0,
         no_map_val: float = 0.0,
     ) -> Tuple[np.ndarray, np.ndarray, bool]:
-        maps_path: Path = DataFrameCache.get_maps_path(self.path, self.scene.env_name)
-
+        maps_path, map_file, metadata_file = DataFrameCache.get_map_paths(
+            self.path, self.scene.env_name, self.scene.location, resolution
+        )
         if not maps_path.exists():
             # This dataset (or location) does not have any maps,
             # so we return an empty map.
@@ -558,7 +578,6 @@ class DataFrameCache(SceneCache):
                 False,
             )
 
-        metadata_file: Path = maps_path / f"{self.scene.location}_metadata.dill"
         with open(metadata_file, "rb") as f:
             map_info: MapMetadata = dill.load(f)
 
@@ -622,7 +641,6 @@ class DataFrameCache(SceneCache):
         # divisible by two so that the // 2 below does not chop any information off.
         data_with_rot_pad_size: int = ceil((rot_pad_factor * data_patch_size) / 2) * 2
 
-        map_file: Path = maps_path / f"{map_info.name}.zarr"
         disk_data = zarr.open_array(map_file, mode="r")
 
         map_x = round(map_x)

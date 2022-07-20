@@ -36,6 +36,9 @@ from trajdata.parallel import (
 )
 from trajdata.utils import agent_utils, env_utils, scene_utils, string_utils
 
+# TODO(bivanovic): Move this to a better place in the codebase.
+DEFAULT_PX_PER_M = 2
+
 
 class UnifiedDataset(Dataset):
     # @profile
@@ -142,7 +145,9 @@ class UnifiedDataset(Dataset):
         self.agent_interaction_distances = agent_interaction_distances
         self.incl_robot_future = incl_robot_future
         self.incl_map = incl_map
-        self.map_params = map_params
+        self.map_params = (
+            map_params if map_params is not None else {"px_per_m": DEFAULT_PX_PER_M}
+        )
         self.only_types = None if only_types is None else set(only_types)
         self.only_predict = None if only_predict is None else set(only_predict)
         self.no_types = None if no_types is None else set(no_types)
@@ -171,28 +176,52 @@ class UnifiedDataset(Dataset):
         all_scenes_list: Union[List[SceneMetadata], List[Scene]] = list()
         for env in self.envs:
             if any(env.name in dataset_tuple for dataset_tuple in matching_datasets):
-                all_cached: bool = False
+                all_data_cached: bool = False
+                all_maps_cached: bool = not self.incl_map
                 if self.env_cache.env_is_cached(env.name) and not self.rebuild_cache:
                     scenes_list: List[Scene] = self.get_desired_scenes_from_env(
                         matching_datasets, scene_description_contains, env
                     )
 
-                    all_cached: bool = all(
+                    all_data_cached: bool = all(
                         self.env_cache.scene_is_cached(
-                            scene_info.env_name, scene_info.name, scene_info.dt
+                            scene.env_name, scene.name, scene.dt
                         )
-                        for scene_info in scenes_list
+                        for scene in scenes_list
                     )
 
-                if not all_cached or self.rebuild_cache or rebuild_maps:
+                    all_maps_cached: bool = not self.incl_map or all(
+                        self.cache_class.is_map_cached(
+                            self.cache_path,
+                            env.name,
+                            scene.location,
+                            self.map_params["px_per_m"],
+                        )
+                        for scene in scenes_list
+                    )
+
+                if (
+                    not all_data_cached
+                    or not all_maps_cached
+                    or self.rebuild_cache
+                    or rebuild_maps
+                ):
                     # Loading dataset objects in case we don't have
                     # the desired data already cached.
                     env.load_dataset_obj(verbose=self.verbose)
 
-                    if rebuild_maps or not self.cache_class.are_maps_cached(
-                        self.cache_path, env.name
+                    if (
+                        rebuild_maps
+                        or not all_maps_cached
+                        or not self.cache_class.are_maps_cached(
+                            self.cache_path, env.name
+                        )
                     ):
-                        env.cache_maps(self.cache_path, self.cache_class)
+                        env.cache_maps(
+                            self.cache_path,
+                            self.cache_class,
+                            resolution=self.map_params["px_per_m"],
+                        )
 
                     scenes_list: List[SceneMetadata] = self.get_desired_scenes_from_env(
                         matching_datasets, scene_description_contains, env
@@ -225,9 +254,9 @@ class UnifiedDataset(Dataset):
         # The data index is effectively a big list of tuples taking the form:
         # (scene_path: str, index_len: int, valid_timesteps: np.ndarray[, agent_name: str])
         self._data_index: DataIndex = (
-            AgentDataIndex(data_index)
+            AgentDataIndex(data_index, self.verbose)
             if self.centric == "agent"
-            else SceneDataIndex(data_index)
+            else SceneDataIndex(data_index, self.verbose)
         )
         self._data_len: int = len(self._data_index)
 
