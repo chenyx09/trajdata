@@ -1,0 +1,59 @@
+syntax = "proto3";
+
+package trajdata;
+
+message VectorizedMap {
+  // The full set of map elements.
+  repeated MapElement elements = 1;
+}
+
+message MapElement {
+  // A unique ID to identify this element.
+  int64 id = 1;
+
+  // Type specific data.
+  oneof element_data {
+    Lane lane = 2;
+    Crosswalk crosswalk = 3;
+  }
+}
+
+message Polyline {
+  // Positions in meters. The origin is an arbitrary location.
+  repeated float x = 1;
+  repeated float y = 2;
+  repeated float z = 3;
+}
+
+message Lane {
+  // The polyline data for the lane. A polyline is a list of points with
+  // segments defined between consecutive points.
+  Polyline center = 1;
+
+  // The polyline data for the left boundary of this lane.
+  Polyline left_boundary = 2;
+
+  // The polyline data for the right boundary of this lane.
+  Polyline right_boundary = 3;
+
+  // A list of IDs for lanes that this lane may be entered from.
+  repeated int64 entry_lanes = 4;
+
+  // A list of IDs for lanes that this lane may exit to.
+  repeated int64 exit_lanes = 5;
+  
+  // A list of neighbors to the left of this lane. Neighbor lanes
+  // include only adjacent lanes going the same direction.
+  repeated int64 adjacent_lanes_left = 6;
+
+  // A list of neighbors to the right of this lane. Neighbor lanes
+  // include only adjacent lanes going the same direction.
+  repeated int64 adjacent_lanes_right = 7;
+}
+
+message Crosswalk {
+  // The polygon defining the outline of the crosswalk. The polygon is assumed
+  // to be closed (i.e. a segment exists between the last point and the first
+  // point).
+  Polyline polygon = 1;
+}

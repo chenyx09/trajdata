@@ -17,7 +17,7 @@ from trajdata.data_structures.agent import (
     VariableExtent,
 )
 from trajdata.data_structures.environment import EnvMetadata
-from trajdata.data_structures.map import MapMetadata
+from trajdata.maps import RasterizedMapMetadata
 from trajdata.data_structures.scene_metadata import Scene, SceneMetadata
 from trajdata.data_structures.scene_tag import SceneTag
 from trajdata.dataset_specific.nusc import nusc_utils
@@ -285,7 +285,7 @@ class NuscDataset(RawDataset):
         )
 
         map_shape = (len(layer_names), height_px, width_px)
-        map_info: MapMetadata = MapMetadata(
+        map_info: RasterizedMapMetadata = RasterizedMapMetadata(
             name=map_name,
             shape=map_shape,
             layers=layer_names,

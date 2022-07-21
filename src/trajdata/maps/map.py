@@ -5,7 +5,7 @@ import torch
 from torch import Tensor
 
 
-class MapMetadata:
+class RasterizedMapMetadata:
     def __init__(
         self,
         name: str,
@@ -23,14 +23,14 @@ class MapMetadata:
         self.map_from_world: np.ndarray = map_from_world
 
 
-class Map:
+class RasterizedMap:
     def __init__(
         self,
-        metadata: MapMetadata,
+        metadata: RasterizedMapMetadata,
         data: np.ndarray,
     ) -> None:
         assert data.shape == metadata.shape
-        self.metadata: MapMetadata = metadata
+        self.metadata: RasterizedMapMetadata = metadata
         self.data: np.ndarray = data
 
     @property

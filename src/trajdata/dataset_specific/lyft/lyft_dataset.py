@@ -4,12 +4,14 @@ from math import ceil
 from pathlib import Path
 from random import Random
 from typing import Any, Dict, List, Optional, Tuple, Type
+from tqdm import tqdm
 
 import numpy as np
 import pandas as pd
 from l5kit.configs.config import load_metadata
 from l5kit.data import ChunkedDataset, LocalDataManager
-from l5kit.data.map_api import MapAPI
+from l5kit.data.map_api import MapAPI, InterpolationMethod
+import l5kit.data.proto.road_network_pb2 as l5_pb2
 from l5kit.rasterization import RenderContext
 
 from trajdata.caching import EnvCache, SceneCache
@@ -21,7 +23,8 @@ from trajdata.data_structures import (
     SceneTag,
 )
 from trajdata.data_structures.agent import Agent, AgentType, VariableExtent
-from trajdata.data_structures.map import Map, MapMetadata
+from trajdata.maps import RasterizedMap, RasterizedMapMetadata, map_utils
+from trajdata.proto.vectorized_map_pb2 import Lane, MapElement, VectorizedMap
 from trajdata.dataset_specific.lyft import lyft_utils
 from trajdata.dataset_specific.lyft.rasterizer import MapSemanticRasterizer
 from trajdata.dataset_specific.raw_dataset import RawDataset
@@ -320,18 +323,60 @@ class LyftDataset(RawDataset):
 
         return agent_list, agent_presence
 
+    def extract_vectorized(self, mapAPI: MapAPI) -> VectorizedMap:
+        vec_map = VectorizedMap()
+        for l5_element in tqdm(mapAPI.elements, desc="Creating Vectorized Map"):
+            if mapAPI.is_lane(l5_element):
+                l5_element_id: str = mapAPI.id_as_str(l5_element.id)
+                l5_lane: l5_pb2.Lane = l5_element.element.lane
+                
+                lane_dict = mapAPI.get_lane_coords(l5_element_id)
+                left_pts = lane_dict["xyz_left"]
+                right_pts = lane_dict["xyz_right"]
+                
+                # Ensuring the left and right bounds have the same numbers of points.
+                if len(left_pts) < len(right_pts):
+                    left_pts = mapAPI.interpolate(left_pts, len(right_pts), InterpolationMethod.INTER_ENSURE_LEN)
+                elif len(right_pts) < len(left_pts):
+                    right_pts = mapAPI.interpolate(right_pts, len(left_pts), InterpolationMethod.INTER_ENSURE_LEN)
+                
+                midlane_pts = (left_pts + right_pts) / 2
+                
+                new_element: MapElement = vec_map.elements.add()
+                new_element.id = hash(l5_element_id)
+                
+                new_lane: Lane = new_element.lane
+                map_utils.populate_lane_polylines(new_lane, midlane_pts, left_pts, right_pts)
+
+                new_lane.exit_lanes.extend([hash(mapAPI.id_as_str(gid)) for gid in l5_lane.lanes_ahead])
+                new_lane.adjacent_lanes_left.append(hash(mapAPI.id_as_str(l5_lane.adjacent_lane_change_left)))
+                new_lane.adjacent_lanes_right.append(hash(mapAPI.id_as_str(l5_lane.adjacent_lane_change_right)))
+        
+        f = open("/home/bivanovic/test.pb", "wb")
+        f.write(vec_map.SerializeToString())
+        f.close()
+
+        return vec_map
+                
     def cache_maps(
         self, cache_path: Path, map_cache_class: Type[SceneCache], resolution: float
     ) -> None:
-        print(f"Caching palo_alto Map at {resolution:.2f} px/m...", flush=True)
+        map_name: str = "palo_alto"
+        
+        if map_cache_class.is_map_cached(cache_path, self.name, map_name, resolution):
+            return
+        
+        print(f"Caching {map_name} Map at {resolution:.2f} px/m...", flush=True)
 
-        # We have to do this ../.. stuff because the data_dir for lyft is scenes/sample.zarr
-        dm = LocalDataManager((self.metadata.data_dir / ".." / "..").resolve())
+        # We have to do this .parent.parent stuff because the data_dir for lyft is scenes/sample.zarr
+        dm = LocalDataManager((self.metadata.data_dir.parent.parent).resolve())
 
         dataset_meta = load_metadata(dm.require("meta.json"))
         semantic_map_filepath = dm.require("semantic_map/semantic_map.pb")
         world_to_ecef = np.array(dataset_meta["world_to_ecef"], dtype=np.float64)
         mapAPI = MapAPI(semantic_map_filepath, world_to_ecef)
+
+        vectorized_map: VectorizedMap = self.extract_vectorized(mapAPI)
 
         mins = np.stack(
             [
@@ -376,13 +421,13 @@ class LyftDataset(RawDataset):
             world_center, map_from_world
         )
 
-        map_info: MapMetadata = MapMetadata(
-            name="palo_alto",
+        map_info: RasterizedMapMetadata = RasterizedMapMetadata(
+            name=map_name,
             shape=map_data.shape,
             layers=["drivable_area", "lane_divider", "ped_crossing"],
             layer_rgb_groups=([0], [1], [2]),
             resolution=resolution,
             map_from_world=map_from_world,
         )
-        map_obj: Map = Map(map_info, map_data)
+        map_obj: RasterizedMap = RasterizedMap(map_info, map_data)
         map_cache_class.cache_map(cache_path, map_obj, self.name)

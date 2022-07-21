@@ -5,7 +5,7 @@ import numpy as np
 
 from trajdata.augmentation.augmentation import Augmentation
 from trajdata.data_structures.agent import AgentMetadata
-from trajdata.data_structures.map import Map, MapMetadata
+from trajdata.maps import RasterizedMap, RasterizedMapMetadata
 from trajdata.data_structures.scene_metadata import Scene
 
 
@@ -123,13 +123,13 @@ class SceneCache:
         raise NotImplementedError()
 
     @staticmethod
-    def cache_map(cache_path: Path, map_obj: Map, env_name: str) -> None:
+    def cache_map(cache_path: Path, map_obj: RasterizedMap, env_name: str) -> None:
         raise NotImplementedError()
 
     @staticmethod
     def cache_map_layers(
         cache_path: Path,
-        map_info: MapMetadata,
+        map_info: RasterizedMapMetadata,
         layer_fn: Callable[[str], np.ndarray],
         env_name: str,
     ) -> None:

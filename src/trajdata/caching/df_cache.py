@@ -13,7 +13,7 @@ import zarr
 from trajdata.augmentation.augmentation import Augmentation, DatasetAugmentation
 from trajdata.caching.scene_cache import SceneCache
 from trajdata.data_structures.agent import AgentMetadata, FixedExtent
-from trajdata.data_structures.map import Map, MapMetadata
+from trajdata.maps import RasterizedMap, RasterizedMapMetadata
 from trajdata.data_structures.scene_metadata import Scene
 from trajdata.utils import arr_utils
 
@@ -482,7 +482,7 @@ class DataFrameCache(SceneCache):
         return maps_path.exists() and metadata_file.exists() and map_file.exists()
 
     @staticmethod
-    def cache_map(cache_path: Path, map_obj: Map, env_name: str) -> None:
+    def cache_map(cache_path: Path, map_obj: RasterizedMap, env_name: str) -> None:
         maps_path, map_file, metadata_file = DataFrameCache.get_map_paths(
             cache_path, env_name, map_obj.metadata.name, map_obj.metadata.resolution
         )
@@ -500,7 +500,7 @@ class DataFrameCache(SceneCache):
     @staticmethod
     def cache_map_layers(
         cache_path: Path,
-        map_info: MapMetadata,
+        map_info: RasterizedMapMetadata,
         layer_fn: Callable[[str], np.ndarray],
         env_name: str,
     ) -> None:
@@ -579,7 +579,7 @@ class DataFrameCache(SceneCache):
             )
 
         with open(metadata_file, "rb") as f:
-            map_info: MapMetadata = dill.load(f)
+            map_info: RasterizedMapMetadata = dill.load(f)
 
         raster_from_world_tf: np.ndarray = map_info.map_from_world
         map_coords: np.ndarray = map_info.map_from_world @ np.array(
