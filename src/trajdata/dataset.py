@@ -60,7 +60,7 @@ class UnifiedDataset(Dataset):
         only_types: Optional[List[AgentType]] = None,
         no_types: Optional[List[AgentType]] = None,
         standardize_data: bool = True,
-        standardize_derivatives: bool = True,
+        standardize_derivatives: bool = False,
         augmentations: Optional[List[Augmentation]] = None,
         max_agent_num: Optional[int] = None,
         data_dirs: Dict[str, str] = {

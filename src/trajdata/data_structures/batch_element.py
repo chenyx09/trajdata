@@ -387,7 +387,7 @@ class SceneBatchElement:
             self.map_patches = self.get_agents_map_patch(
                 map_params, self.agent_histories
             )
-
+        self.scene_id = scene_time.scene.name
         ### ROBOT DATA ###
         self.robot_future_np: Optional[np.ndarray] = None
 

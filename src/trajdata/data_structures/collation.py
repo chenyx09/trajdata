@@ -723,7 +723,7 @@ def scene_collate_fn(
         if robot_future
         else None
     )
-
+    scene_ids = [batch_elem.scene_id for batch_elem in batch_elems]
     batch = SceneBatch(
         data_idx=data_index_t,
         dt=dt_t,
@@ -743,6 +743,7 @@ def scene_collate_fn(
         rasters_from_world_tf=rasters_from_world_tf,
         centered_agent_from_world_tf=centered_agent_from_world_tf,
         centered_world_from_agent_tf=centered_world_from_agent_tf,
+        scene_ids = scene_ids,
     )
 
     if batch_augments:

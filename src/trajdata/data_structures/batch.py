@@ -126,6 +126,7 @@ class SceneBatch:
     rasters_from_world_tf: Optional[Tensor]
     centered_agent_from_world_tf: Tensor
     centered_world_from_agent_tf: Tensor
+    scene_ids: Tensor
 
     def to(self, device) -> None:
         for val in vars(self).keys():
