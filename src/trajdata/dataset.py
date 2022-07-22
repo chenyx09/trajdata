@@ -185,7 +185,7 @@ class UnifiedDataset(Dataset):
 
                     all_data_cached: bool = all(
                         self.env_cache.scene_is_cached(
-                            scene.env_name, scene.name, self.desired_dt if self.desired_dt is not None else scene.dt
+                            scene.env_name, scene.name, scene.dt
                         )
                         for scene in scenes_list
                     )
