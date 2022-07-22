@@ -12,14 +12,16 @@ from trajdata.data_structures import (
 
 
 class RawDataset:
-    def __init__(self, env_name: str, data_dir: str, parallelizable: bool) -> None:
+    def __init__(self, env_name: str, data_dir: str, parallelizable: bool, has_maps: bool) -> None:
         metadata = self.compute_metadata(env_name, data_dir)
 
         self.metadata = metadata
         self.name = metadata.name
         self.scene_tags = metadata.scene_tags
         self.dataset_obj = None
+        
         self.parallelizable = parallelizable
+        self.has_maps = has_maps
 
     def compute_metadata(self, env_name: str, data_dir: str) -> EnvMetadata:
         raise NotImplementedError()

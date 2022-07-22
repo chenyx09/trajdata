@@ -28,21 +28,27 @@ def map_collate_fn_agent(
     )
     no_data: np.ndarray = ~has_data
 
-    desired_num_channels: int = 1
+    patch_channels: np.ndarray = np.array(
+        [batch_elem.map_patch.data.shape[0] for batch_elem in batch_elems],
+        dtype=np.int,
+    )
+
+    desired_num_channels: int
     if np.any(has_data):
-        patch_channels: np.ndarray = np.array(
-            [batch_elem.map_patch.data.shape[0] for batch_elem in batch_elems],
-            dtype=np.int,
+        # If any of the batch elements' maps have data, then use
+        # their number of channels as the reference.
+        unique_num_channels = np.unique(patch_channels[has_data])
+    else:
+        # All map patches in this batch are from datasets with no maps.
+        unique_num_channels = np.unique(patch_channels)
+    
+    if unique_num_channels.size > 1:
+        raise ValueError(
+            "Maps must all have the same number of channels in a batch, "
+            f"but found maps with {unique_num_channels.tolist()} channels."
         )
 
-        unique_num_channels = np.unique(patch_channels[has_data])
-        if unique_num_channels.size > 1:
-            raise ValueError(
-                "Maps must all have the same number of channels in a batch, "
-                f"but found maps with {unique_num_channels.tolist()} channels."
-            )
-
-        desired_num_channels = unique_num_channels[0].item()
+    desired_num_channels = unique_num_channels[0].item()
 
     # Getting the map patch data and preparing it for batched rotation.
     patch_size_y, patch_size_x = batch_elems[0].map_patch.data.shape[-2:]
