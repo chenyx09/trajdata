@@ -58,9 +58,22 @@ class SceneCache:
         """
         raise NotImplementedError()
 
+    def get_states(self, agent_ids: List[str], scene_ts: int) -> np.ndarray:
+        """
+        Get multiple agents' states at a specific timestep.
+        """
+        raise NotImplementedError()
+
     def transform_data(self, **kwargs) -> None:
         """
         Transform the data before accessing it later, e.g., to make the mean zero or rotate the scene around an agent.
+        This can either be done in this function call or just stored for later lazy application.
+        """
+        raise NotImplementedError()
+
+    def reset_transforms(self) -> None:
+        """
+        Transform the data back to its original coordinate system.
         This can either be done in this function call or just stored for later lazy application.
         """
         raise NotImplementedError()
@@ -88,11 +101,6 @@ class SceneCache:
         scene_ts: int,
         future_sec: Tuple[Optional[float], Optional[float]],
     ) -> Tuple[np.ndarray, np.ndarray]:
-        raise NotImplementedError()
-
-    def get_positions_at(
-        self, scene_ts: int, agents: List[AgentMetadata]
-    ) -> np.ndarray:
         raise NotImplementedError()
 
     def get_agents_history(

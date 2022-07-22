@@ -140,9 +140,9 @@ class SimulationScene:
                 )
             )
 
-            # Need to do reset for each agent since each
+            # Need to reset transformations for each agent since each
             # AgentBatchElement transforms (standardizes) the cache.
-            self.cache.reset()
+            self.cache.reset_transforms()
 
         if collate:
             return agent_collate_fn(
