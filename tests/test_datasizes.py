@@ -86,7 +86,7 @@ class TestDatasetSizes(unittest.TestCase):
 
         self.assertGreaterEqual(len(unfiltered_dataset), len(filtered_dataset))
 
-        for _ in range(100):
+        for _ in range(50):
             sample_idx = random.randint(0, len(filtered_dataset) - 1)
             self.assertEqual(filtered_dataset[sample_idx].agent_type, AgentType.VEHICLE)
 
@@ -96,7 +96,7 @@ class TestDatasetSizes(unittest.TestCase):
             only_predict=[AgentType.VEHICLE, AgentType.PEDESTRIAN],
         )
 
-        for _ in range(100):
+        for _ in range(50):
             sample_idx = random.randint(0, len(filtered_dataset2) - 1)
             self.assertIn(
                 filtered_dataset2[sample_idx].agent_type, filtered_dataset2.only_predict
@@ -155,6 +155,24 @@ class TestDatasetSizes(unittest.TestCase):
         )
 
         self.assertEqual(len(dataset), 11_046)
+
+    def test_simple_scene(self):
+        dataset = UnifiedDataset(
+            desired_data=["nusc_mini-mini_train"],
+            centric="scene",
+            desired_dt=0.1,
+            history_sec=(3.2, 3.2),
+            future_sec=(4.8, 4.8),
+            only_types=[AgentType.VEHICLE],
+            max_agent_num=20,
+            num_workers=0,
+            verbose=True,
+            data_dirs={  # Remember to change this to match your filesystem!
+                "nusc_mini": "~/datasets/nuScenes",
+            },
+        )
+
+        self.assertEqual(len(dataset), 943)
 
 
 if __name__ == "__main__":

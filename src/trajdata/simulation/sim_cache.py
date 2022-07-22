@@ -11,9 +11,6 @@ class SimulationCache(SceneCache):
     def reset(self) -> None:
         raise NotImplementedError()
 
-    def transform_data(self, **kwargs) -> None:
-        raise NotImplementedError()
-
     def append_state(self, xyh_dict: Dict[str, np.ndarray]) -> None:
         raise NotImplementedError()
 

@@ -190,14 +190,18 @@ class UnifiedDataset(Dataset):
                         for scene in scenes_list
                     )
 
-                    all_maps_cached: bool = not env.has_maps or not self.incl_map or all(
-                        self.cache_class.is_map_cached(
-                            self.cache_path,
-                            env.name,
-                            scene.location,
-                            self.map_params["px_per_m"],
+                    all_maps_cached: bool = (
+                        not env.has_maps
+                        or not self.incl_map
+                        or all(
+                            self.cache_class.is_map_cached(
+                                self.cache_path,
+                                env.name,
+                                scene.location,
+                                self.map_params["px_per_m"],
+                            )
+                            for scene in scenes_list
                         )
-                        for scene in scenes_list
                     )
 
                 if (
@@ -471,7 +475,9 @@ class UnifiedDataset(Dataset):
     ) -> List[Path]:
         all_cached: bool = not self.rebuild_cache and all(
             self.env_cache.scene_is_cached(
-                scene_info.env_name, scene_info.name, self.desired_dt if self.desired_dt is not None else scene_info.dt
+                scene_info.env_name,
+                scene_info.name,
+                self.desired_dt if self.desired_dt is not None else scene_info.dt,
             )
             for scene_info in scenes_list
         )

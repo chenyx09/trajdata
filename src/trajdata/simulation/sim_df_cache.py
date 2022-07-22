@@ -54,7 +54,7 @@ class SimulationDataFrameCache(DataFrameCache, SimulationCache):
         if scene_ts >= agent_info.last_timestep:
             # Returning an empty DataFrame with the correct
             # columns. 3 = Extent size.
-            return np.zeros((0, self.state_dim)), np.zeros((0, 3))
+            return np.zeros((0, self.obs_dim)), np.zeros((0, 3))
 
         return super().get_agent_future(agent_info, scene_ts, future_sec)
 
@@ -70,7 +70,7 @@ class SimulationDataFrameCache(DataFrameCache, SimulationCache):
 
         if np.all(np.greater(scene_ts, last_timesteps)):
             return (
-                [np.zeros((0, self.state_dim)) for agent in agents],
+                [np.zeros((0, self.obs_dim)) for agent in agents],
                 [np.zeros((0, 3)) for agent in agents],  # 3 = Extent size.
                 np.zeros_like(last_timesteps),
             )
@@ -81,17 +81,20 @@ class SimulationDataFrameCache(DataFrameCache, SimulationCache):
         self.scene_ts += 1
 
         sim_dict: Dict[str, List[Union[str, float, int]]] = defaultdict(list)
-        for agent, state in xyh_dict.items():
-            prev_state = self.get_state(agent, self.scene_ts - 1)
+        prev_states: np.ndarray = self.get_states(
+            list(xyh_dict.keys()), self.scene_ts - 1
+        )
+        for idx, (agent, new_xyh) in enumerate(xyh_dict.items()):
+            prev_state = prev_states[idx]
 
             sim_dict["agent_id"].append(agent)
             sim_dict["scene_ts"].append(self.scene_ts)
 
-            sim_dict["x"].append(state[0])
-            sim_dict["y"].append(state[1])
+            sim_dict["x"].append(new_xyh[0])
+            sim_dict["y"].append(new_xyh[1])
 
-            vx: float = (state[0] - prev_state[0]) / self.scene.dt
-            vy: float = (state[1] - prev_state[1]) / self.scene.dt
+            vx: float = (new_xyh[0] - prev_state[0]) / self.scene.dt
+            vy: float = (new_xyh[1] - prev_state[1]) / self.scene.dt
             sim_dict["vx"].append(vx)
             sim_dict["vy"].append(vy)
 
@@ -100,7 +103,7 @@ class SimulationDataFrameCache(DataFrameCache, SimulationCache):
             sim_dict["ax"].append(ax)
             sim_dict["ay"].append(ay)
 
-            sim_dict["heading"].append(state[2])
+            sim_dict["heading"].append(new_xyh[2])
 
             if self.extent_cols:
                 sim_dict["length"].append(

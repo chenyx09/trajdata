@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import torch
 import torch.nn.functional as F
-from kornia.geometry.transform import center_crop, rotate
+from kornia.geometry.transform import rotate
 from torch import Tensor
 from torch.nn.utils.rnn import pad_sequence
 
@@ -41,7 +41,7 @@ def map_collate_fn_agent(
     else:
         # All map patches in this batch are from datasets with no maps.
         unique_num_channels = np.unique(patch_channels)
-    
+
     if unique_num_channels.size > 1:
         raise ValueError(
             "Maps must all have the same number of channels in a batch, "
@@ -100,6 +100,10 @@ def map_collate_fn_agent(
         dtype=torch.float,
     )
 
+    center_y: int = patch_size_y // 2
+    center_x: int = patch_size_x // 2
+    half_extent: int = patch_size // 2
+
     if (
         torch.count_nonzero(rot_angles) == 0
         and patch_size == patch_data.shape[-1] == patch_data.shape[-2]
@@ -108,8 +112,8 @@ def map_collate_fn_agent(
             torch.tensor(
                 [
                     [
-                        [1.0, 0.0, patch_size // 2],
-                        [0.0, 1.0, patch_size // 2],
+                        [1.0, 0.0, half_extent],
+                        [0.0, 1.0, half_extent],
                         [0.0, 0.0, 1.0],
                     ]
                 ],
@@ -119,16 +123,23 @@ def map_collate_fn_agent(
             rasters_from_world_tf,
         )
 
-        rot_crop_patches = patch_data
+        rot_crop_patches: Tensor = patch_data
 
     else:
-        rot_crop_patches: Tensor = center_crop(
-            rotate(patch_data, torch.rad2deg(rot_angles)), (patch_size, patch_size)
-        )
+        # Batch rotating patches by rot_angles.
+        rot_patches: Tensor = rotate(patch_data, torch.rad2deg(rot_angles))
+
+        # Center cropping via slicing.
+        rot_crop_patches: Tensor = rot_patches[
+            ...,
+            center_y - half_extent : center_y + half_extent,
+            center_x - half_extent : center_x + half_extent,
+        ]
+
         rasters_from_world_tf = torch.bmm(
             arr_utils.transform_matrices(
                 -rot_angles,
-                torch.tensor([[patch_size // 2, patch_size // 2]]).expand(
+                torch.tensor([[half_extent, half_extent]]).expand(
                     (rot_angles.shape[0], -1)
                 ),
             ),
@@ -184,13 +195,18 @@ def map_collate_fn_scene(
         np.stack(agents_res_list), dtype=torch.float
     )
 
+    patch_size_y, patch_size_x = patch_data.shape[-2:]
+    center_y: int = patch_size_y // 2
+    center_x: int = patch_size_x // 2
+    half_extent: int = patch_size // 2
+
     if torch.count_nonzero(agents_rot_angles) == 0:
         agents_rasters_from_world_tf = torch.bmm(
             torch.tensor(
                 [
                     [
-                        [1.0, 0.0, patch_size // 2],
-                        [0.0, 1.0, patch_size // 2],
+                        [1.0, 0.0, half_extent],
+                        [0.0, 1.0, half_extent],
                         [0.0, 0.0, 1.0],
                     ]
                 ],
@@ -205,16 +221,22 @@ def map_collate_fn_scene(
         agents_rasters_from_world_tf = torch.bmm(
             arr_utils.transform_matrices(
                 -agents_rot_angles,
-                torch.tensor([[patch_size // 2, patch_size // 2]]).expand(
+                torch.tensor([[half_extent, half_extent]]).expand(
                     (agents_rot_angles.shape[0], -1)
                 ),
             ),
             agents_rasters_from_world_tf,
         )
-        rot_crop_patches = center_crop(
-            rotate(patch_data, torch.rad2deg(agents_rot_angles)),
-            (patch_size, patch_size),
-        )
+
+        # Batch rotating patches by rot_angles.
+        rot_patches: Tensor = rotate(patch_data, torch.rad2deg(agents_rot_angles))
+
+        # Center cropping via slicing.
+        rot_crop_patches = rot_patches[
+            ...,
+            center_y - half_extent : center_y + half_extent,
+            center_x - half_extent : center_x + half_extent,
+        ]
 
     rot_crop_patches = split_pad_crop(
         rot_crop_patches, num_agents, pad_value=pad_value, desired_size=max_agent_num

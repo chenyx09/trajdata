@@ -49,6 +49,9 @@ class DataFrameCache(SceneCache):
             # Load the data with the desired dt.
             self._load_agent_data(scene.dt)
 
+        # Setting default data transformation parameters.
+        self.reset_transforms()
+
         if augmentations:
             dataset_augments: List[DatasetAugmentation] = [
                 augment
@@ -98,14 +101,19 @@ class DataFrameCache(SceneCache):
         self.state_cols = (
             self.pos_cols + self.vel_cols + self.acc_cols + self.heading_cols
         )
-        self.state_dim = len(self.state_cols)
+        self._state_dim = len(self.state_cols)
+
+        # While it may seem that obs_dim == _state_dim, obs_dim is meant to
+        # track the output dimension of states (which could differ via
+        # returing sin and cos of heading rather than just heading itself).
+        self.obs_dim = self._state_dim
 
         self.extent_cols: List[int] = list()
         for extent_name in ["length", "width", "height"]:
             if extent_name in self.column_dict:
                 self.extent_cols.append(self.column_dict[extent_name])
 
-    def _load_agent_data(self, scene_dt: float) -> pd.DataFrame:
+    def _load_agent_data(self, scene_dt: float) -> None:
         self.scene_data_df: pd.DataFrame = pd.read_feather(
             self.scene_dir / DataFrameCache._agent_data_file(scene_dt),
             use_threads=False,
@@ -150,47 +158,112 @@ class DataFrameCache(SceneCache):
         )
 
     def get_value(self, agent_id: str, scene_ts: int, attribute: str) -> float:
-        return self.scene_data_df.iat[
-            self.index_dict[(agent_id, scene_ts)], self.column_dict[attribute]
+        col_idx: int = self.column_dict[attribute]
+        value: float = self.scene_data_df.iat[
+            self.index_dict[(agent_id, scene_ts)], col_idx
         ]
 
+        if "y" in attribute:
+            x_value: float = self.scene_data_df.iat[
+                self.index_dict[(agent_id, scene_ts)], col_idx - 1
+            ]
+
+            transformed_pair: np.ndarray = self._transform_pair(
+                np.array([[x_value, value]]), (col_idx - 1, col_idx)
+            )
+            return transformed_pair[0, 1].item()
+        elif "x" in attribute:
+            y_value: float = self.scene_data_df.iat[
+                self.index_dict[(agent_id, scene_ts)], col_idx + 1
+            ]
+
+            transformed_pair: np.ndarray = self._transform_pair(
+                np.array([[value, y_value]]), (col_idx, col_idx + 1)
+            )
+            return transformed_pair[0, 0].item()
+        else:
+            # The 0.0 and 0 here are just placeholders.
+            transformed_pair: np.ndarray = self._transform_pair(
+                np.array([[value, 0.0]]), (col_idx, 0)
+            )
+            return transformed_pair[0, 0].item()
+
     def get_state(self, agent_id: str, scene_ts: int) -> np.ndarray:
-        # Setting copy=True so that the returned state is untouched by any
-        # future transformations (e.g., by a call to the transform_data function).
-        return self.scene_data_df.iloc[
-            self.index_dict[(agent_id, scene_ts)], : self.state_dim
-        ].to_numpy(copy=True)
+        state = self.scene_data_df.iloc[
+            self.index_dict[(agent_id, scene_ts)], : self._state_dim
+        ].to_numpy()
+
+        return self._transform_state(state)
+
+    def get_states(self, agent_ids: List[str], scene_ts: int) -> np.ndarray:
+        row_idxs: List[int] = [
+            self.index_dict[(agent_id, scene_ts)] for agent_id in agent_ids
+        ]
+
+        states = self.scene_data_df.iloc[row_idxs, : self._state_dim].to_numpy()
+
+        return self._transform_state(states)
 
     def transform_data(self, **kwargs) -> None:
         if "shift_mean_to" in kwargs:
             # This standardizes the scene to be relative to the agent being predicted.
-            self.scene_data_df.iloc[:, : self.state_dim] -= kwargs["shift_mean_to"]
+            self._transf_mean = kwargs["shift_mean_to"]
 
         if "rotate_by" in kwargs:
             # This rotates the scene so that the predicted agent's current
             # heading aligns with the x-axis.
             agent_heading: float = kwargs["rotate_by"]
-            self.rot_matrix: np.ndarray = np.array(
+            self._transf_rotmat: np.ndarray = np.array(
                 [
                     [np.cos(agent_heading), -np.sin(agent_heading)],
                     [np.sin(agent_heading), np.cos(agent_heading)],
                 ]
             )
-            self.scene_data_df.iloc[:, self.pos_cols] = (
-                self.scene_data_df.iloc[:, self.pos_cols].to_numpy() @ self.rot_matrix
-            )
-            self.scene_data_df.iloc[:, self.vel_cols] = (
-                self.scene_data_df.iloc[:, self.vel_cols].to_numpy() @ self.rot_matrix
-            )
-            self.scene_data_df.iloc[:, self.acc_cols] = (
-                self.scene_data_df.iloc[:, self.acc_cols].to_numpy() @ self.rot_matrix
-            )
 
         if "sincos_heading" in kwargs:
-            self.scene_data_df["sin_heading"] = np.sin(self.scene_data_df["heading"])
-            self.scene_data_df["cos_heading"] = np.cos(self.scene_data_df["heading"])
-            self.scene_data_df.drop(columns=["heading"], inplace=True)
-            self._get_and_reorder_col_idxs()
+            self._sincos_heading = True
+            self.obs_dim += 1
+
+    def reset_transforms(self) -> None:
+        self._transf_mean: Optional[np.ndarray] = None
+        self._transf_rotmat: Optional[np.ndarray] = None
+        self._sincos_heading: bool = False
+
+        self.obs_dim = self._state_dim
+
+    def _transform_state(self, data: np.ndarray) -> np.ndarray:
+        state = data.copy()  # Don't want to alter the original data.
+
+        if len(state.shape) == 1:
+            state = state[np.newaxis, :]
+
+        if self._transf_mean is not None:
+            state -= self._transf_mean
+
+        if self._transf_rotmat is not None:
+            state[..., self.pos_cols] = state[..., self.pos_cols] @ self._transf_rotmat
+            state[..., self.vel_cols] = state[..., self.vel_cols] @ self._transf_rotmat
+            state[..., self.acc_cols] = state[..., self.acc_cols] @ self._transf_rotmat
+
+        if self._sincos_heading:
+            state[..., -1] = np.sin(state[..., -1])
+            state = np.concatenate([state, np.cos(state[..., [-1]])], axis=-1)
+
+        return state[0] if len(data.shape) == 1 else state
+
+    def _transform_pair(self, data: np.ndarray, col_idxs: Tuple[int, int]) -> float:
+        state = data.copy()  # Don't want to alter the original data.
+
+        if self._transf_mean is not None:
+            state -= self._transf_mean[col_idxs]
+
+        if (
+            self._transf_rotmat is not None
+            and col_idxs[0] in self.pos_cols + self.vel_cols + self.acc_cols
+        ):
+            state = state @ self._transf_rotmat
+
+        return state
 
     def interpolate_data(self, desired_dt: float, method: str = "linear") -> None:
         dt_ratio: float = self.scene.env_metadata.dt / desired_dt
@@ -285,7 +358,12 @@ class DataFrameCache(SceneCache):
         else:
             agent_extent_np = agent_history_df.iloc[:, self.extent_cols].to_numpy()
 
-        return agent_history_df.iloc[:, : self.state_dim].to_numpy(), agent_extent_np
+        return (
+            self._transform_state(
+                agent_history_df.iloc[:, : self._state_dim].to_numpy()
+            ),
+            agent_extent_np,
+        )
 
     def get_agent_future(
         self,
@@ -297,7 +375,7 @@ class DataFrameCache(SceneCache):
         # took care of it.
         if scene_ts >= agent_info.last_timestep:
             # Extent shape = 3
-            return np.zeros((0, self.state_dim)), np.zeros((0, 3))
+            return np.zeros((0, self.obs_dim)), np.zeros((0, 3))
 
         first_index_incl: int = self.index_dict[(agent_info.name, scene_ts + 1)]
         last_index_incl: int
@@ -323,13 +401,12 @@ class DataFrameCache(SceneCache):
         else:
             agent_extent_np = agent_future_df.iloc[:, self.extent_cols].to_numpy()
 
-        return agent_future_df.iloc[:, : self.state_dim].to_numpy(), agent_extent_np
-
-    def get_positions_at(
-        self, scene_ts: int, agents: List[AgentMetadata]
-    ) -> np.ndarray:
-        rows = [self.index_dict[(agent.name, scene_ts)] for agent in agents]
-        return self.scene_data_df.iloc[rows, self.pos_cols].to_numpy()
+        return (
+            self._transform_state(
+                agent_future_df.iloc[:, : self._state_dim].to_numpy()
+            ),
+            agent_extent_np,
+        )
 
     def get_agents_history(
         self,
@@ -360,7 +437,9 @@ class DataFrameCache(SceneCache):
 
         neighbor_history_lens_np = last_index_incl - first_index_incl + 1
 
-        neighbor_histories_np = neighbor_data_df.iloc[:, : self.state_dim].to_numpy()
+        neighbor_histories_np = self._transform_state(
+            neighbor_data_df.iloc[:, : self._state_dim].to_numpy()
+        )
         # The last one will always be empty because of what cumsum returns.
         neighbor_histories: List[np.ndarray] = np.vsplit(
             neighbor_histories_np, neighbor_history_lens_np.cumsum()
@@ -424,7 +503,9 @@ class DataFrameCache(SceneCache):
 
         neighbor_future_lens_np = last_index_incl - first_index_incl + 1
 
-        neighbor_futures_np = neighbor_data_df.iloc[:, : self.state_dim].to_numpy()
+        neighbor_futures_np = self._transform_state(
+            neighbor_data_df.iloc[:, : self._state_dim].to_numpy()
+        )
         # The last one will always be empty because of what cumsum returns.
         neighbor_futures: List[np.ndarray] = np.vsplit(
             neighbor_futures_np, neighbor_future_lens_np.cumsum()
