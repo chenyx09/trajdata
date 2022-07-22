@@ -232,27 +232,36 @@ class DataFrameCache(SceneCache):
         self.obs_dim = self._state_dim
 
     def _transform_state(self, data: np.ndarray) -> np.ndarray:
-        state = data.copy()  # Don't want to alter the original data.
+        state: np.ndarray = data.copy()  # Don't want to alter the original data.
 
         if len(state.shape) == 1:
             state = state[np.newaxis, :]
 
         if self._transf_mean is not None:
-            state -= self._transf_mean
+            # Shift to zero mean, but leave heading
+            # standardization for if rotation is also requested (below).
+            state[..., :-1] -= self._transf_mean[:-1]
 
         if self._transf_rotmat is not None:
             state[..., self.pos_cols] = state[..., self.pos_cols] @ self._transf_rotmat
             state[..., self.vel_cols] = state[..., self.vel_cols] @ self._transf_rotmat
             state[..., self.acc_cols] = state[..., self.acc_cols] @ self._transf_rotmat
+            state[..., -1] -= self._transf_mean[-1]
 
         if self._sincos_heading:
-            state[..., -1] = np.sin(state[..., -1])
-            state = np.concatenate([state, np.cos(state[..., [-1]])], axis=-1)
+            sin_heading: np.ndarray = np.sin(state[..., [-1]])
+            cos_heading: np.ndarray = np.cos(state[..., [-1]])
+            state = np.concatenate([state[..., :-1], sin_heading, cos_heading], axis=-1)
 
         return state[0] if len(data.shape) == 1 else state
 
-    def _transform_pair(self, data: np.ndarray, col_idxs: Tuple[int, int]) -> float:
-        state = data.copy()  # Don't want to alter the original data.
+    def _transform_pair(
+        self, data: np.ndarray, col_idxs: Tuple[int, int]
+    ) -> np.ndarray:
+        state: np.ndarray = data.copy()  # Don't want to alter the original data.
+
+        if len(state.shape) == 1:
+            state = state[np.newaxis, :]
 
         if self._transf_mean is not None:
             state -= self._transf_mean[col_idxs]
@@ -263,7 +272,7 @@ class DataFrameCache(SceneCache):
         ):
             state = state @ self._transf_rotmat
 
-        return state
+        return state[0] if len(data.shape) == 1 else state
 
     def interpolate_data(self, desired_dt: float, method: str = "linear") -> None:
         dt_ratio: float = self.scene.env_metadata.dt / desired_dt
