@@ -1,8 +1,11 @@
+import warnings
+from copy import deepcopy
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Type, Union
 
 import numpy as np
 import pandas as pd
+from nuscenes.eval.prediction.splits import NUM_IN_TRAIN_VAL
 from nuscenes.map_expansion.map_api import NuScenesMap, locations
 from nuscenes.nuscenes import NuScenes
 from nuscenes.utils.splits import create_splits_scenes
@@ -27,15 +30,23 @@ from trajdata.dataset_specific.scene_records import NuscSceneRecord
 
 class NuscDataset(RawDataset):
     def compute_metadata(self, env_name: str, data_dir: str) -> EnvMetadata:
+        # We're using the nuScenes prediction challenge split here.
+        # See https://github.com/nutonomy/nuscenes-devkit/blob/master/python-sdk/nuscenes/eval/prediction/splits.py
+        # for full details on how the splits are obtained below.
         all_scene_splits: Dict[str, List[str]] = create_splits_scenes()
+
+        train_scenes: List[str] = deepcopy(all_scene_splits["train"])
+        all_scene_splits["train"] = train_scenes[NUM_IN_TRAIN_VAL:]
+        all_scene_splits["train_val"] = train_scenes[:NUM_IN_TRAIN_VAL]
+
         if env_name == "nusc_trainval":
             nusc_scene_splits: Dict[str, List[str]] = {
-                k: all_scene_splits[k] for k in ["train", "val"]
+                k: all_scene_splits[k] for k in ["train", "train_val", "val"]
             }
 
             # nuScenes possibilities are the Cartesian product of these
             dataset_parts: List[Tuple[str, ...]] = [
-                ("train", "val"),
+                ("train", "train_val", "val"),
                 ("boston", "singapore"),
             ]
         elif env_name == "nusc_test":
@@ -48,6 +59,8 @@ class NuscDataset(RawDataset):
                 ("test",),
                 ("boston", "singapore"),
             ]
+
+            warnings.warn("Beware, nusc_test has no annotations!")
         elif env_name == "nusc_mini":
             nusc_scene_splits: Dict[str, List[str]] = {
                 k: all_scene_splits[k] for k in ["mini_train", "mini_val"]
