@@ -28,14 +28,24 @@ from trajdata.dataset_specific.scene_records import NuscSceneRecord
 class NuscDataset(RawDataset):
     def compute_metadata(self, env_name: str, data_dir: str) -> EnvMetadata:
         all_scene_splits: Dict[str, List[str]] = create_splits_scenes()
-        if env_name == "nusc":
+        if env_name == "nusc_trainval":
             nusc_scene_splits: Dict[str, List[str]] = {
-                k: all_scene_splits[k] for k in ["train", "val", "test"]
+                k: all_scene_splits[k] for k in ["train", "val"]
             }
 
             # nuScenes possibilities are the Cartesian product of these
             dataset_parts: List[Tuple[str, ...]] = [
-                ("train", "val", "test"),
+                ("train", "val"),
+                ("boston", "singapore"),
+            ]
+        elif env_name == "nusc_test":
+            nusc_scene_splits: Dict[str, List[str]] = {
+                k: all_scene_splits[k] for k in ["test"]
+            }
+
+            # nuScenes possibilities are the Cartesian product of these
+            dataset_parts: List[Tuple[str, ...]] = [
+                ("test",),
                 ("boston", "singapore"),
             ]
         elif env_name == "nusc_mini":
@@ -68,8 +78,10 @@ class NuscDataset(RawDataset):
 
         if self.name == "nusc_mini":
             version_str = "v1.0-mini"
-        elif self.name == "nusc":
+        elif self.name == "nusc_trainval":
             version_str = "v1.0-trainval"
+        elif self.name == "nusc_test":
+            version_str = "v1.0-test"
 
         self.dataset_obj = NuScenes(
             version=version_str, dataroot=self.metadata.data_dir
@@ -244,12 +256,12 @@ class NuscDataset(RawDataset):
         layer_names: List[str],
         cache_path: Path,
         map_cache_class: Type[SceneCache],
-        resolution: int,
+        resolution: float,
     ) -> None:
         """
         resolution is in pixels per meter.
         """
-        if map_cache_class.is_map_cached(cache_path, self.name, map_name):
+        if map_cache_class.is_map_cached(cache_path, self.name, map_name, resolution):
             return
 
         nusc_map: NuScenesMap = NuScenesMap(
@@ -284,7 +296,7 @@ class NuscDataset(RawDataset):
         map_cache_class.cache_map_layers(cache_path, map_info, layer_fn, self.name)
 
     def cache_maps(
-        self, cache_path: Path, map_cache_class: Type[SceneCache], resolution: int = 2
+        self, cache_path: Path, map_cache_class: Type[SceneCache], resolution: float
     ) -> None:
         """
         Stores rasterized maps to disk for later retrieval.
@@ -316,7 +328,9 @@ class NuscDataset(RawDataset):
             "ped_crossing",
             "walkway",
         ]
-        for map_name in tqdm(locations, desc=f"Caching {self.name} Maps"):
+        for map_name in tqdm(
+            locations, desc=f"Caching {self.name} Maps at {resolution:.2f} px/m"
+        ):
             self.cache_map(
                 map_name, layer_names, cache_path, map_cache_class, resolution
             )

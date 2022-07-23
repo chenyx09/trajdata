@@ -5,7 +5,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 import numpy as np
 
 from trajdata.caching import SceneCache
-from trajdata.data_structures.agent import Agent, AgentMetadata, AgentType, FixedExtent
+from trajdata.data_structures.agent import AgentMetadata, AgentType
 from trajdata.data_structures.map_patch import MapPatch
 from trajdata.data_structures.scene import SceneTime, SceneTimeAgent
 
@@ -126,11 +126,13 @@ class AgentBatchElement:
 
         ### MAP ###
         self.map_patch: Optional[MapPatch] = None
-        self.neighbor_map_patch: Optional[List[MapPatch]] = None
         if incl_map:
             self.map_patch = self.get_agent_map_patch(map_params)
 
         self.scene_id = scene_time_agent.scene.name
+
+        # Will be optionally populated by the user's provided functions.
+        self.extras: Dict[str, np.ndarray] = dict()
 
     def get_agent_history(
         self,
@@ -250,13 +252,14 @@ class AgentBatchElement:
     def get_agent_map_patch(self, patch_params: Dict[str, int]) -> MapPatch:
         world_x, world_y = self.curr_agent_state_np[:2]
         desired_patch_size: int = patch_params["map_size_px"]
-        resolution: int = patch_params["px_per_m"]
+        resolution: float = patch_params["px_per_m"]
         offset_xy: Tuple[float, float] = patch_params.get("offset_frac_xy", (0.0, 0.0))
         return_rgb: bool = patch_params.get("return_rgb", True)
+        no_map_fill_val: float = patch_params.get("no_map_fill_value", 0.0)
 
         if self.standardize_data:
             heading = self.curr_agent_state_np[-1]
-            patch_data, raster_from_world_tf = self.cache.load_map_patch(
+            patch_data, raster_from_world_tf, has_data = self.cache.load_map_patch(
                 world_x,
                 world_y,
                 desired_patch_size,
@@ -265,10 +268,11 @@ class AgentBatchElement:
                 heading,
                 return_rgb,
                 rot_pad_factor=sqrt(2),
+                no_map_val=no_map_fill_val,
             )
         else:
             heading = 0.0
-            patch_data, raster_from_world_tf = self.cache.load_map_patch(
+            patch_data, raster_from_world_tf, has_data = self.cache.load_map_patch(
                 world_x,
                 world_y,
                 desired_patch_size,
@@ -276,6 +280,7 @@ class AgentBatchElement:
                 offset_xy,
                 heading,
                 return_rgb,
+                no_map_val=no_map_fill_val,
             )
 
         return MapPatch(
@@ -284,6 +289,7 @@ class AgentBatchElement:
             crop_size=desired_patch_size,
             resolution=resolution,
             raster_from_world_tf=raster_from_world_tf,
+            has_data=has_data,
         )
 
 
@@ -354,7 +360,8 @@ class SceneBatchElement:
                 sincos_heading=True,
             )
         else:
-            self.agent_from_world_tf: np.ndarray = np.eye(3)
+            self.centered_agent_from_world_tf: np.ndarray = np.eye(3)
+            self.centered_world_from_agent_tf: np.ndarray = np.eye(3)
 
         ### NEIGHBOR-SPECIFIC DATA ###
         def distance_limit(agent_types: np.ndarray, target_type: int) -> np.ndarray:
@@ -400,6 +407,9 @@ class SceneBatchElement:
             # (whereas the above returns the current + future, yielding
             # one more timestep).
             self.robot_future_len: int = self.robot_future_np.shape[0] - 1
+
+        # Will be optionally populated by the user's provided functions.
+        self.extras: Dict[str, np.ndarray] = dict()
 
     def get_nearby_agents(
         self,
@@ -465,9 +475,10 @@ class SceneBatchElement:
         world_x, world_y = self.centered_agent_state_np[:2]
         heading = self.centered_agent_state_np[-1]
         desired_patch_size: int = patch_params["map_size_px"]
-        resolution: int = patch_params["px_per_m"]
+        resolution: float = patch_params["px_per_m"]
         offset_xy: Tuple[float, float] = patch_params.get("offset_frac_xy", (0.0, 0.0))
         return_rgb: bool = patch_params.get("return_rgb", True)
+        no_map_fill_val: float = patch_params.get("no_map_fill_value", 0.0)
 
         if len(self.cache.heading_cols) == 1:
             heading_idx = self.cache.heading_cols[0]
@@ -491,7 +502,7 @@ class SceneBatchElement:
                 else:
                     agent_heading = agent_his[-1, heading_idx] + heading
 
-                patch_data, raster_from_world_tf = self.cache.load_map_patch(
+                patch_data, raster_from_world_tf, has_data = self.cache.load_map_patch(
                     world_x + agent_his[-1, x_idx],
                     world_y + agent_his[-1, y_idx],
                     desired_patch_size,
@@ -500,11 +511,12 @@ class SceneBatchElement:
                     agent_heading,
                     return_rgb,
                     rot_pad_factor=sqrt(2),
+                    no_map_val=no_map_fill_val,
                 )
 
             else:
                 agent_heading = 0.0
-                patch_data, raster_from_world_tf = self.cache.load_map_patch(
+                patch_data, raster_from_world_tf, has_data = self.cache.load_map_patch(
                     agent_his[-1, x_idx],
                     agent_his[-1, y_idx],
                     desired_patch_size,
@@ -512,6 +524,7 @@ class SceneBatchElement:
                     offset_xy,
                     agent_heading,
                     return_rgb,
+                    no_map_val=no_map_fill_val,
                 )
 
             map_patches.append(
@@ -521,6 +534,7 @@ class SceneBatchElement:
                     crop_size=desired_patch_size,
                     resolution=resolution,
                     raster_from_world_tf=raster_from_world_tf,
+                    has_data=has_data,
                 )
             )
 

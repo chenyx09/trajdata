@@ -6,7 +6,7 @@ import numpy as np
 from trajdata import filtering
 from trajdata.augmentation import BatchAugmentation
 from trajdata.caching.df_cache import DataFrameCache
-from trajdata.data_structures.agent import AgentMetadata, VariableExtent, AgentType, FixedExtent
+from trajdata.data_structures.agent import AgentMetadata, VariableExtent
 from trajdata.data_structures.batch import AgentBatch
 from trajdata.data_structures.batch_element import AgentBatchElement
 from trajdata.data_structures.collation import agent_collate_fn
@@ -30,27 +30,41 @@ class SimulationScene:
         freeze_agents: bool = True,
         return_dict: bool = False,
     ) -> None:
+        if not freeze_agents:
+            raise NotImplementedError(
+                (
+                    "Agents that change over time (i.e., following the original dataset) "
+                    "are not handled yet internally. Please set freeze_agents=True."
+                )
+            )
+
         self.env_name: str = env_name
         self.scene_name: str = scene_name
-        self.scene_info: Scene = deepcopy(scene)
+        self.scene: Scene = deepcopy(scene)
         self.dataset: UnifiedDataset = dataset
         self.init_scene_ts: int = init_timestep
         self.freeze_agents: bool = freeze_agents
         self.return_dict: bool = return_dict
         self.scene_ts: int = self.init_scene_ts
 
-        agents_present: List[AgentMetadata] = self.scene_info.agent_presence[
-            self.scene_ts
-        ]
+        agents_present: List[AgentMetadata] = self.scene.agent_presence[self.scene_ts]
         self.agents: List[AgentMetadata] = filtering.agent_types(
             agents_present, self.dataset.no_types, self.dataset.only_types
         )
 
+        if len(self.agents) == 0:
+            raise ValueError(
+                (
+                    f"Initial timestep {self.scene_ts} contains no agents after filtering. "
+                    "Please choose another initial timestep."
+                )
+            )
+
         if self.freeze_agents:
-            self.scene_info.agent_presence = self.scene_info.agent_presence[
+            self.scene.agent_presence = self.scene.agent_presence[
                 : self.init_scene_ts + 1
             ]
-            self.scene_info.agents = self.agents
+            self.scene.agents = self.agents
 
         # Note this order of operations is important, we first instantiate
         # the cache with the copied scene_info + modified agents list.
@@ -61,7 +75,7 @@ class SimulationScene:
         if self.dataset.cache_class == DataFrameCache:
             self.cache: SimulationCache = SimulationDataFrameCache(
                 dataset.cache_path,
-                self.scene_info,
+                self.scene,
                 init_timestep,
                 dataset.augmentations,
             )
@@ -88,16 +102,16 @@ class SimulationScene:
         self.cache.append_state(new_xyh_dict)
 
         if not self.freeze_agents:
-            agents_present: List[AgentMetadata] = self.scene_info.agent_presence[
+            agents_present: List[AgentMetadata] = self.scene.agent_presence[
                 self.scene_ts
             ]
             self.agents: List[AgentMetadata] = filtering.agent_types(
                 agents_present, self.dataset.no_types, self.dataset.only_types
             )
 
-            self.scene_info.agent_presence[self.scene_ts] = self.agents
+            self.scene.agent_presence[self.scene_ts] = self.agents
         else:
-            self.scene_info.agent_presence.append(self.agents)
+            self.scene.agent_presence.append(self.agents)
 
         if return_obs:
             return self.get_obs()
@@ -108,7 +122,7 @@ class SimulationScene:
         agent_data_list: List[AgentBatchElement] = list()
         for agent in self.agents:
             scene_time_agent = SceneTimeAgent(
-                self.scene_info, self.scene_ts, self.agents, agent, self.cache
+                self.scene, self.scene_ts, self.agents, agent, self.cache
             )
             agent_data_list.append(
                 AgentBatchElement(
@@ -158,28 +172,14 @@ class SimulationScene:
         for agent in self.agents:
             agent.last_timestep = self.scene_ts
 
-        self.scene_info.length_timesteps = self.scene_ts + 1
+        self.scene.length_timesteps = self.scene_ts + 1
 
-        self.scene_info.agent_presence = self.scene_info.agent_presence[
-            : self.scene_ts + 1
-        ]
+        self.scene.agent_presence = self.scene.agent_presence[: self.scene_ts + 1]
 
-        self.scene_info.env_metadata.name = self.env_name
-        self.scene_info.env_name = self.env_name
-        self.scene_info.name = self.scene_name
+        self.scene.env_metadata.name = self.env_name
+        self.scene.env_name = self.env_name
+        self.scene.name = self.scene_name
 
     def save(self) -> None:
-        self.dataset.env_cache.save_scene(self.scene_info)
-        self.cache.save_sim_scene(self.scene_info)
-
-    def add_new_agents(self,agent_data: list):
-        self.cache.add_agents(agent_data)
-        for data in agent_data:
-            name,state,ts0,agent_type,extent = data
-            metadata = AgentMetadata(name=name,
-                                     agent_type=agent_type,
-                                     first_timestep=ts0,
-                                     last_timestep=ts0+state.shape[0]-1,
-                                     extent = FixedExtent(length=extent[0],width=extent[1],height=extent[2]),
-                                     )
-            self.agents.append(metadata)
+        self.dataset.env_cache.save_scene(self.scene)
+        self.cache.save_sim_scene(self.scene)

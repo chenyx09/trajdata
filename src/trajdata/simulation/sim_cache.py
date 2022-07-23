@@ -17,9 +17,6 @@ class SimulationCache(SceneCache):
     def append_state(self, xyh_dict: Dict[str, np.ndarray]) -> None:
         raise NotImplementedError()
 
-    def add_agents(self,agent_data:list) -> None:
-        raise NotImplementedError
-
     def save_sim_scene(self) -> None:
         raise NotImplementedError()
 

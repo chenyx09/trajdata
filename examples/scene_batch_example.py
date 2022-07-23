@@ -3,7 +3,7 @@ from collections import defaultdict
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from trajdata import AgentBatch, AgentType, UnifiedDataset
+from trajdata import AgentType, SceneBatch, UnifiedDataset
 from trajdata.augmentation import NoiseHistories
 from trajdata.visualization.vis import plot_scene_batch
 
@@ -39,10 +39,9 @@ def main():
         shuffle=True,
         collate_fn=dataset.get_collate_fn(),
         num_workers=4,
-        persistent_workers=True,
     )
 
-    batch: AgentBatch
+    batch: SceneBatch
     for batch in tqdm(dataloader):
         plot_scene_batch(batch, batch_idx=0)
 

@@ -1,3 +1,4 @@
+import random
 import unittest
 
 from trajdata import AgentType, UnifiedDataset
@@ -71,6 +72,38 @@ class TestDatasetSizes(unittest.TestCase):
 
         self.assertEqual(len(dataset), 1_869_002)
 
+    def test_prediction_inclusion(self):
+        unfiltered_dataset = UnifiedDataset(
+            desired_data=["nusc_mini", "lyft_sample"],
+            centric="agent",
+        )
+
+        filtered_dataset = UnifiedDataset(
+            desired_data=["nusc_mini", "lyft_sample"],
+            centric="agent",
+            only_predict=[AgentType.VEHICLE],
+        )
+
+        self.assertGreaterEqual(len(unfiltered_dataset), len(filtered_dataset))
+
+        for _ in range(100):
+            sample_idx = random.randint(0, len(filtered_dataset) - 1)
+            self.assertEqual(filtered_dataset[sample_idx].agent_type, AgentType.VEHICLE)
+
+        filtered_dataset2 = UnifiedDataset(
+            desired_data=["nusc_mini", "lyft_sample"],
+            centric="agent",
+            only_predict=[AgentType.VEHICLE, AgentType.PEDESTRIAN],
+        )
+
+        for _ in range(100):
+            sample_idx = random.randint(0, len(filtered_dataset2) - 1)
+            self.assertIn(
+                filtered_dataset2[sample_idx].agent_type, filtered_dataset2.only_predict
+            )
+
+        self.assertGreaterEqual(len(filtered_dataset2), len(filtered_dataset))
+
     def test_history_future(self):
         dataset = UnifiedDataset(
             desired_data=["nusc_mini", "lyft_sample"],
@@ -98,6 +131,30 @@ class TestDatasetSizes(unittest.TestCase):
         )
 
         self.assertEqual(len(dataset), 1_155_704)
+
+    def test_interpolation(self):
+        dataset = UnifiedDataset(
+            desired_data=["nusc_mini-mini_train"],
+            centric="agent",
+            desired_dt=0.1,
+            history_sec=(3.2, 3.2),
+            future_sec=(4.8, 4.8),
+            only_types=[AgentType.VEHICLE],
+            incl_robot_future=False,
+            incl_map=False,
+            map_params={
+                "px_per_m": 2,
+                "map_size_px": 224,
+                "offset_frac_xy": (-0.5, 0.0),
+            },
+            num_workers=0,
+            verbose=True,
+            data_dirs={  # Remember to change this to match your filesystem!
+                "nusc_mini": "~/datasets/nuScenes",
+            },
+        )
+
+        self.assertEqual(len(dataset), 11_046)
 
 
 if __name__ == "__main__":

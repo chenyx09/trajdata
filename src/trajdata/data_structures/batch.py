@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import namedtuple
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import torch
 from torch import Tensor
@@ -38,6 +38,7 @@ class AgentBatch:
     rasters_from_world_tf: Optional[Tensor]
     agents_from_world_tf: Tensor
     scene_ids: Optional[List]
+    extras: Dict[str, Tensor]
 
     def to(self, device) -> None:
         excl_vals = {
@@ -52,11 +53,15 @@ class AgentBatch:
             "num_neigh",
             "robot_fut_len",
             "scene_ids",
+            "extras",
         }
         for val in vars(self).keys():
             tensor_val = getattr(self, val)
             if val not in excl_vals and tensor_val is not None:
                 setattr(self, val, tensor_val.to(device))
+
+        for key, val in self.extras.items():
+            self.extras[key] = val.to(device)
 
     def agent_types(self) -> List[AgentType]:
         unique_types: Tensor = torch.unique(self.agent_type)
@@ -103,6 +108,7 @@ class AgentBatch:
                 for idx, scene_id in enumerate(self.scene_ids)
                 if match_type[idx]
             ],
+            extras={key: val[match_type] for key, val in self.extras},
         )
 
 
@@ -127,18 +133,26 @@ class SceneBatch:
     centered_agent_from_world_tf: Tensor
     centered_world_from_agent_tf: Tensor
     scene_ids: Tensor
+    extras: Dict[str, Tensor]
 
     def to(self, device) -> None:
+        excl_vals = {
+            "extras",
+        }
+
         for val in vars(self).keys():
             tensor_val = getattr(self, val)
-            if tensor_val is not None:
+            if val not in excl_vals and tensor_val is not None:
                 setattr(self, val, tensor_val.to(device))
+
+        for key, val in self.extras.items():
+            self.extras[key] = val.to(device)
 
     def agent_types(self) -> List[AgentType]:
         unique_types: Tensor = torch.unique(self.agent_type)
         return [AgentType(unique_type.item()) for unique_type in unique_types]
 
-    def for_agent_type(self, agent_type: AgentType) -> AgentBatch:
+    def for_agent_type(self, agent_type: AgentType) -> SceneBatch:
         match_type = self.agent_type == agent_type
         return SceneBatch(
             data_idx=self.data_idx[match_type],
@@ -165,4 +179,5 @@ class SceneBatch:
             else None,
             centered_agent_from_world_tf=self.centered_agent_from_world_tf[match_type],
             centered_world_from_agent_tf=self.centered_world_from_agent_tf[match_type],
+            extras={key: val[match_type] for key, val in self.extras},
         )

@@ -31,12 +31,6 @@ class SimulationDataFrameCache(DataFrameCache, SimulationCache):
             val: idx for idx, val in enumerate(self.scene_data_df.index)
         }
 
-        # Important to first prune self.scene_data_df before interpolation (since it
-        # will use the agents list from the scene_info object which was modified earlier
-        # in the SimulationScene init.
-        if scene.env_metadata.dt != scene.dt:
-            self.interpolate_data(scene.dt)
-
         # This will remain untouched through simulation, only present for
         # metrics computation later.
         self.original_scene_df: pd.DataFrame = self.scene_data_df.copy()
@@ -118,56 +112,16 @@ class SimulationDataFrameCache(DataFrameCache, SimulationCache):
                 sim_dict["height"].append(
                     self.get_value(agent, self.scene_ts - 1, "height")
                 )
-    
 
         sim_step_df = pd.DataFrame(sim_dict)
         sim_step_df.set_index(["agent_id", "scene_ts"], inplace=True)
-        if self.scene_ts < self.scene.length_timesteps:
+        if (
+            self.scene_ts < self.scene.length_timesteps
+            and self.scene_ts in self.persistent_data_df.index.get_level_values(1)
+        ):
             self.persistent_data_df.drop(index=self.scene_ts, level=1, inplace=True)
 
         self.persistent_data_df = pd.concat([self.persistent_data_df, sim_step_df])
-        self.persistent_data_df.sort_index(inplace=True)
-        self.reset()
-
-    def add_agents(self, agent_data):
-        """add agents to the sim dataset
-
-        Args:
-            agent_states (Dict[str, np.ndarray]): directory of agent name and agent state [x,y,heading,L,W,H]
-            initial_ts (Dict[str, int]): directory of agent
-        """
-        new_state_df = list()
-        for data_i in agent_data:
-            name,state,ts0,agent_type,extent = data_i
-            T = state.shape[0]
-            if state.shape[0]==0:
-                vel = np.zeros([1,2])
-                acce = np.zeros([1,2])
-            else:
-                vel = (state[1:,:2]-state[:-1,:2])/self.scene.dt
-                vel = np.vstack((vel[0:1],vel))
-                acce = (vel[1:]-vel[:-1])/self.scene.dt
-                acce = np.vstack((acce[0:1],acce))    
-            data = dict(agent_id=np.array([name]*T),
-                        scene_ts=np.arange(ts0,T+ts0),
-                        x=state[:,0],
-                        y=state[:,1],
-                        heading=state[:,2],
-                        vx=vel[:,0],
-                        vy=vel[:,1],
-                        ax=acce[:,0],
-                        ay=acce[:,1])
-            if self.extent_cols:
-                data["length"] = extent[0]
-                data["width"] = extent[1]
-                data["height"] = extent[2]
-            
-            new_state_df_i = pd.DataFrame(data)
-            new_state_df.append(new_state_df_i)
-            
-        new_state_df = pd.concat(new_state_df)
-        new_state_df.set_index(["agent_id", "scene_ts"], inplace=True)
-        self.persistent_data_df = pd.concat([self.persistent_data_df, new_state_df])
         self.persistent_data_df.sort_index(inplace=True)
         self.reset()
 

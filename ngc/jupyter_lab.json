@@ -4,7 +4,7 @@
     ],
     "aceId":257,
     "aceInstance":"dgx1v.16g.8.norm",
-    "dockerImageName":"nvidian/nvr-av/avdata:1.0",
+    "dockerImageName":"nvidian/nvr-av/trajdata:1.0",
     "aceName":"nv-us-west-2",
     "systemLabels":[
         
@@ -21,7 +21,7 @@
     ],
     "workspaceMounts":[
         {
-            "containerMountPoint":"/workspace/avdata",
+            "containerMountPoint":"/workspace/trajdata",
             "id":"aWUsWZ_5SA6caFr30uWmmw",
             "mountMode":"RW"
         },
@@ -38,7 +38,7 @@
     "reservedLabels":[
         
     ],
-    "name":"ml-model.notamodel-avdata-processing",
+    "name":"ml-model.notamodel-trajdata-processing",
     "command":"pip install -e .; jupyter lab --ip=0.0.0.0 --allow-root --no-browser --NotebookApp.token='' --notebook-dir=/ --NotebookApp.allow_origin='*' & date; nvidia-smi; sleep 1d",
     "runPolicy":{
         "minTimesliceSeconds":1,

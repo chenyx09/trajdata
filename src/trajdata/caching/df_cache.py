@@ -26,7 +26,7 @@ class DataFrameCache(SceneCache):
         self,
         cache_path: Path,
         scene: Scene,
-        scene_ts: int,
+        scene_ts: Optional[int] = 0,
         augmentations: Optional[List[Augmentation]] = None,
     ) -> None:
         """
@@ -37,10 +37,17 @@ class DataFrameCache(SceneCache):
         """
         super().__init__(cache_path, scene, scene_ts, augmentations)
 
-        self.agent_data_path: Path = self.scene_dir / "agent_data.feather"
-
-        self._load_agent_data()
-        self._get_and_reorder_col_idxs()
+        agent_data_path: Path = self.scene_dir / DataFrameCache._agent_data_file(
+            scene.dt
+        )
+        if not agent_data_path.exists():
+            # Load the original dt agent data and then
+            # interpolate it to the desired dt.
+            self._load_agent_data(scene.env_metadata.dt)
+            self.interpolate_data(scene.dt)
+        else:
+            # Load the data with the desired dt.
+            self._load_agent_data(scene.dt)
 
         if augmentations:
             dataset_augments: List[DatasetAugmentation] = [
@@ -50,6 +57,14 @@ class DataFrameCache(SceneCache):
             ]
             for aug in dataset_augments:
                 aug.apply(self.scene_data_df)
+
+    @staticmethod
+    def _agent_data_file(scene_dt: float) -> str:
+        return f"agent_data_dt{scene_dt:.2f}.feather"
+
+    @staticmethod
+    def _agent_data_index_file(scene_dt: float) -> str:
+        return f"scene_index_dt{scene_dt:.2f}.pkl"
 
     # AGENT STATE DATA
     def _get_and_reorder_col_idxs(self) -> None:
@@ -90,13 +105,28 @@ class DataFrameCache(SceneCache):
             if extent_name in self.column_dict:
                 self.extent_cols.append(self.column_dict[extent_name])
 
-    def _load_agent_data(self) -> pd.DataFrame:
+    def _load_agent_data(self, scene_dt: float) -> pd.DataFrame:
         self.scene_data_df: pd.DataFrame = pd.read_feather(
-            self.agent_data_path, use_threads=False
+            self.scene_dir / DataFrameCache._agent_data_file(scene_dt),
+            use_threads=False,
         ).set_index(["agent_id", "scene_ts"])
 
-        with open(self.scene_dir / "scene_index.pkl", "rb") as f:
+        with open(
+            self.scene_dir / DataFrameCache._agent_data_index_file(scene_dt), "rb"
+        ) as f:
             self.index_dict: Dict[Tuple[str, int], int] = pickle.load(f)
+
+        self._get_and_reorder_col_idxs()
+
+    def write_cache_to_disk(self) -> None:
+        with open(
+            self.scene_dir / DataFrameCache._agent_data_index_file(self.dt), "wb"
+        ) as f:
+            pickle.dump(self.index_dict, f)
+
+        self.scene_data_df.reset_index().to_feather(
+            self.scene_dir / DataFrameCache._agent_data_file(self.dt)
+        )
 
     @staticmethod
     def save_agent_data(
@@ -110,10 +140,14 @@ class DataFrameCache(SceneCache):
         index_dict: Dict[Tuple[str, int], int] = {
             val: idx for idx, val in enumerate(agent_data.index)
         }
-        with open(scene_cache_dir / "scene_index.pkl", "wb") as f:
+        with open(
+            scene_cache_dir / DataFrameCache._agent_data_index_file(scene.dt), "wb"
+        ) as f:
             pickle.dump(index_dict, f)
 
-        agent_data.reset_index().to_feather(scene_cache_dir / "agent_data.feather")
+        agent_data.reset_index().to_feather(
+            scene_cache_dir / DataFrameCache._agent_data_file(scene.dt)
+        )
 
     def get_value(self, agent_id: str, scene_ts: int, attribute: str) -> float:
         return self.scene_data_df.iat[
@@ -210,6 +244,7 @@ class DataFrameCache(SceneCache):
             interpolated_df.iloc[:, self.column_dict["heading"]]
         )
 
+        self.dt = desired_dt
         self.scene_data_df = interpolated_df
         self.index_dict: Dict[Tuple[str, int], int] = {
             val: idx for idx, val in enumerate(self.scene_data_df.index)
@@ -424,24 +459,41 @@ class DataFrameCache(SceneCache):
 
     @staticmethod
     def are_maps_cached(cache_path: Path, env_name: str) -> bool:
-        return DataFrameCache.get_maps_path(cache_path, env_name).is_dir()
+        return DataFrameCache.get_maps_path(cache_path, env_name).exists()
 
     @staticmethod
-    def is_map_cached(cache_path: Path, env_name: str, map_name: str) -> bool:
+    def get_map_paths(
+        cache_path: Path, env_name: str, map_name: str, resolution: float
+    ) -> Tuple[Path, Path, Path]:
         maps_path: Path = DataFrameCache.get_maps_path(cache_path, env_name)
-        metadata_file: Path = maps_path / f"{map_name}_metadata.dill"
-        map_file: Path = maps_path / f"{map_name}.zarr"
-        return maps_path.is_dir() and metadata_file.is_file() and map_file.is_file()
+
+        map_path: Path = maps_path / f"{map_name}_{resolution:.2f}px_m.zarr"
+        metadata_path: Path = maps_path / f"{map_name}_{resolution:.2f}px_m.dill"
+
+        return maps_path, map_path, metadata_path
+
+    @staticmethod
+    def is_map_cached(
+        cache_path: Path, env_name: str, map_name: str, resolution: float
+    ) -> bool:
+        maps_path, map_file, metadata_file = DataFrameCache.get_map_paths(
+            cache_path, env_name, map_name, resolution
+        )
+        return maps_path.exists() and metadata_file.exists() and map_file.exists()
 
     @staticmethod
     def cache_map(cache_path: Path, map_obj: Map, env_name: str) -> None:
-        maps_path: Path = DataFrameCache.get_maps_path(cache_path, env_name)
+        maps_path, map_file, metadata_file = DataFrameCache.get_map_paths(
+            cache_path, env_name, map_obj.metadata.name, map_obj.metadata.resolution
+        )
+
+        # Ensuring the maps directory exists.
         maps_path.mkdir(parents=True, exist_ok=True)
 
-        map_file: Path = maps_path / f"{map_obj.metadata.name}.zarr"
+        # Saving the map data.
         zarr.save(map_file, map_obj.data)
 
-        metadata_file: Path = maps_path / f"{map_obj.metadata.name}_metadata.dill"
+        # Saving the map metadata.
         with open(metadata_file, "wb") as f:
             dill.dump(map_obj.metadata, f)
 
@@ -452,22 +504,24 @@ class DataFrameCache(SceneCache):
         layer_fn: Callable[[str], np.ndarray],
         env_name: str,
     ) -> None:
-        maps_path: Path = DataFrameCache.get_maps_path(cache_path, env_name)
+        maps_path, map_file, metadata_file = DataFrameCache.get_map_paths(
+            cache_path, env_name, map_info.name, map_info.resolution
+        )
+
+        # Ensuring the maps directory exists.
         maps_path.mkdir(parents=True, exist_ok=True)
 
-        map_file: Path = maps_path / f"{map_info.name}.zarr"
         disk_data = zarr.open_array(map_file, mode="w", shape=map_info.shape)
         for idx, layer_name in enumerate(map_info.layers):
             disk_data[idx] = layer_fn(layer_name)
 
-        metadata_file: Path = maps_path / f"{map_info.name}_metadata.dill"
         with open(metadata_file, "wb") as f:
             dill.dump(map_info, f)
 
     def pad_map_patch(
         self,
         patch: np.ndarray,
-        # top, bot, left, right
+        #                 top, bot, left, right
         patch_sides: Tuple[int, int, int, int],
         patch_size: int,
         map_dims: Tuple[int, int, int],
@@ -500,15 +554,30 @@ class DataFrameCache(SceneCache):
         world_x: float,
         world_y: float,
         desired_patch_size: int,
-        resolution: int,
+        resolution: float,
         offset_xy: Tuple[float, float],
         agent_heading: float,
         return_rgb: bool,
         rot_pad_factor: float = 1.0,
-    ) -> Tuple[np.ndarray, np.ndarray]:
-        maps_path: Path = DataFrameCache.get_maps_path(self.path, self.scene.env_name)
+        no_map_val: float = 0.0,
+    ) -> Tuple[np.ndarray, np.ndarray, bool]:
+        maps_path, map_file, metadata_file = DataFrameCache.get_map_paths(
+            self.path, self.scene.env_name, self.scene.location, resolution
+        )
+        if not maps_path.exists():
+            # This dataset (or location) does not have any maps,
+            # so we return an empty map.
+            patch_size: int = ceil((rot_pad_factor * desired_patch_size) / 2) * 2
 
-        metadata_file: Path = maps_path / f"{self.scene.location}_metadata.dill"
+            return (
+                np.full(
+                    (1 if not return_rgb else 3, patch_size, patch_size),
+                    fill_value=no_map_val,
+                ),
+                np.eye(3),
+                False,
+            )
+
         with open(metadata_file, "rb") as f:
             map_info: MapMetadata = dill.load(f)
 
@@ -529,6 +598,9 @@ class DataFrameCache(SceneCache):
             @ raster_from_world_tf
         )
 
+        # This first size is how much of the map we
+        # need to extract to match the requested metric size (meters x meters) of
+        # the patch.
         data_patch_size: int = ceil(
             desired_patch_size * map_info.resolution / resolution
         )
@@ -564,16 +636,17 @@ class DataFrameCache(SceneCache):
                 @ raster_from_world_tf
             )
 
-        # Ensuring the size is divisible by two so that the // 2 below does not
-        # chop any information off.
+        # This is the size of the patch taking into account expansion to allow for
+        # rotation to match the agent's heading. We also ensure the final size is
+        # divisible by two so that the // 2 below does not chop any information off.
         data_with_rot_pad_size: int = ceil((rot_pad_factor * data_patch_size) / 2) * 2
 
-        map_file: Path = maps_path / f"{map_info.name}.zarr"
         disk_data = zarr.open_array(map_file, mode="r")
 
         map_x = round(map_x)
         map_y = round(map_y)
 
+        # Half of the patch's side length.
         half_extent: int = data_with_rot_pad_size // 2
 
         top: int = map_y - half_extent
@@ -627,4 +700,4 @@ class DataFrameCache(SceneCache):
                 @ raster_from_world_tf
             )
 
-        return data_patch, raster_from_world_tf
+        return data_patch, raster_from_world_tf, True

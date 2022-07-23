@@ -105,7 +105,7 @@ class EUPedsDataset(RawDataset):
         if verbose:
             print(f"Loading {self.name} dataset...", flush=True)
 
-        self.dataset_obj: Dict[str, Path] = dict()
+        self.dataset_obj: Dict[str, pd.DataFrame] = dict()
         for scene_name in TRAIN_SCENES:
             data_filepath: Path = Path(self.metadata.data_dir) / (scene_name + ".txt")
 
@@ -211,7 +211,7 @@ class EUPedsDataset(RawDataset):
         scene_data: pd.DataFrame = self.dataset_obj[scene_name]
         scene_location: str = get_location(scene_name)
         scene_split: str = self.metadata.scene_split_map[scene_name]
-        scene_length: int = len(scene_data)
+        scene_length: int = scene_data["frame_id"].max().item() + 1
 
         return Scene(
             self.metadata,
@@ -317,7 +317,7 @@ class EUPedsDataset(RawDataset):
         layer_names: List[str],
         cache_path: Path,
         map_cache_class: Type[SceneCache],
-        resolution: int,
+        resolution: float,
     ) -> None:
         """
         No maps in this dataset!
@@ -325,7 +325,7 @@ class EUPedsDataset(RawDataset):
         pass
 
     def cache_maps(
-        self, cache_path: Path, map_cache_class: Type[SceneCache], resolution: int = 2
+        self, cache_path: Path, map_cache_class: Type[SceneCache], resolution: float
     ) -> None:
         """
         No maps in this dataset!
