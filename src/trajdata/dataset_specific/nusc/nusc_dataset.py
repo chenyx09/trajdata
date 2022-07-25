@@ -406,12 +406,24 @@ class NuscDataset(RawDataset):
                 nusc_map, lane_record
             )
 
+            lane_record_token: str = lane_record["token"]
+
             # Adding the element to the map.
             new_element: MapElement = vec_map.elements.add()
-            new_element.id = lane_record["token"].encode()
+            new_element.id = lane_record_token.encode()
 
             new_lane: RoadLane = new_element.road_lane
             map_utils.populate_lane_polylines(new_lane, center_pts, left_pts, right_pts)
+            
+            new_lane.entry_lanes.extend(lane_id.encode() for lane_id in nusc_map.get_incoming_lane_ids(lane_record_token))
+            new_lane.exit_lanes.extend(lane_id.encode() for lane_id in nusc_map.get_outgoing_lane_ids(lane_record_token))
+            
+            # new_lane.adjacent_lanes_left.append(
+            #     l5_lane.adjacent_lane_change_left.id
+            # )
+            # new_lane.adjacent_lanes_right.append(
+            #     l5_lane.adjacent_lane_change_right.id
+            # )
 
             overall_pbar.update()
 
