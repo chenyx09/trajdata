@@ -483,9 +483,6 @@ class NuscDataset(RawDataset):
         """
         resolution is in pixels per meter.
         """
-        if map_cache_class.is_map_cached(cache_path, self.name, map_name, resolution):
-            return
-
         nusc_map: NuScenesMap = NuScenesMap(
             dataroot=self.metadata.data_dir, map_name=map_name
         )

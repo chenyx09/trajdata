@@ -406,10 +406,6 @@ class LyftDataset(RawDataset):
         self, cache_path: Path, map_cache_class: Type[SceneCache], resolution: float
     ) -> None:
         map_name: str = "palo_alto"
-
-        if map_cache_class.is_map_cached(cache_path, self.name, map_name, resolution):
-            return
-
         print(f"Caching {map_name} Map at {resolution:.2f} px/m...", flush=True)
 
         # We have to do this .parent.parent stuff because the data_dir for lyft is scenes/*.zarr
