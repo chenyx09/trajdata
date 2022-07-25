@@ -1,3 +1,4 @@
+from math import ceil
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Type, Union
 
@@ -17,12 +18,12 @@ from trajdata.data_structures.agent import (
     VariableExtent,
 )
 from trajdata.data_structures.environment import EnvMetadata
-from trajdata.maps import RasterizedMapMetadata
 from trajdata.data_structures.scene_metadata import Scene, SceneMetadata
 from trajdata.data_structures.scene_tag import SceneTag
 from trajdata.dataset_specific.nusc import nusc_utils
 from trajdata.dataset_specific.raw_dataset import RawDataset
 from trajdata.dataset_specific.scene_records import NuscSceneRecord
+from trajdata.maps import RasterizedMapMetadata
 
 
 class NuscDataset(RawDataset):
@@ -269,7 +270,7 @@ class NuscDataset(RawDataset):
         )
 
         width_m, height_m = nusc_map.canvas_edge
-        height_px, width_px = round(height_m * resolution), round(width_m * resolution)
+        height_px, width_px = ceil(height_m * resolution), ceil(width_m * resolution)
 
         def layer_fn(layer_name: str) -> np.ndarray:
             # Getting rid of the channels dim by accessing index [0]

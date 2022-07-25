@@ -6,8 +6,8 @@ import numpy as np
 
 from trajdata.caching import SceneCache
 from trajdata.data_structures.agent import AgentMetadata, AgentType
-from trajdata.maps import RasterizedMapPatch
 from trajdata.data_structures.scene import SceneTime, SceneTimeAgent
+from trajdata.maps import RasterizedMapPatch
 
 
 class AgentBatchElement:

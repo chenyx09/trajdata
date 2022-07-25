@@ -5,8 +5,8 @@ import numpy as np
 
 from trajdata.augmentation.augmentation import Augmentation
 from trajdata.data_structures.agent import AgentMetadata
-from trajdata.maps import RasterizedMap, RasterizedMapMetadata
 from trajdata.data_structures.scene_metadata import Scene
+from trajdata.maps import RasterizedMap, RasterizedMapMetadata
 
 
 class SceneCache:

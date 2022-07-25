@@ -13,8 +13,8 @@ import zarr
 from trajdata.augmentation.augmentation import Augmentation, DatasetAugmentation
 from trajdata.caching.scene_cache import SceneCache
 from trajdata.data_structures.agent import AgentMetadata, FixedExtent
-from trajdata.maps import RasterizedMap, RasterizedMapMetadata
 from trajdata.data_structures.scene_metadata import Scene
+from trajdata.maps import RasterizedMap, RasterizedMapMetadata
 from trajdata.utils import arr_utils
 
 STATE_COLS: Final[List[str]] = ["x", "y", "vx", "vy", "ax", "ay"]

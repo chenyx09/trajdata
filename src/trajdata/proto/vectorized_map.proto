@@ -5,6 +5,11 @@ package trajdata;
 message VectorizedMap {
   // The full set of map elements.
   repeated MapElement elements = 1;
+
+  // The coordinates of the cuboid (in m)
+  // containing all elements in this map.
+  optional Point max_pt = 2;
+  optional Point min_pt = 3;
 }
 
 message MapElement {
@@ -18,11 +23,21 @@ message MapElement {
   }
 }
 
+message Point {
+  optional double x = 1;
+  optional double y = 2;
+  optional double z = 3;
+}
+
 message Polyline {
-  // Positions in meters. The origin is an arbitrary location.
-  repeated float x = 1;
-  repeated float y = 2;
-  repeated float z = 3;
+  // Position deltas in millimeters. The origin is an arbitrary location.
+  // From https://github.com/woven-planet/l5kit/blob/master/l5kit/l5kit/data/proto/road_network.proto#L446
+  // The delta for the first point is just its coordinates tuple, i.e. it is a "delta" from
+  // the origin. For subsequent points, this field stores the difference between the point's
+  // coordinates and the previous point's coordinates. This is for representation efficiency.
+  repeated sint32 dx_mm = 1;
+  repeated sint32 dy_mm = 2;
+  repeated sint32 dz_mm = 3;
 }
 
 message Lane {

@@ -7,68 +7,102 @@ from google.protobuf import descriptor_pool as _descriptor_pool
 from google.protobuf import message as _message
 from google.protobuf import reflection as _reflection
 from google.protobuf import symbol_database as _symbol_database
+
 # @@protoc_insertion_point(imports)
 
 _sym_db = _symbol_database.Default()
 
 
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(
+    b'\n\x14vectorized_map.proto\x12\x08trajdata"\x99\x01\n\rVectorizedMap\x12&\n\x08\x65lements\x18\x01 \x03(\x0b\x32\x14.trajdata.MapElement\x12$\n\x06max_pt\x18\x02 \x01(\x0b\x32\x0f.trajdata.PointH\x00\x88\x01\x01\x12$\n\x06min_pt\x18\x03 \x01(\x0b\x32\x0f.trajdata.PointH\x01\x88\x01\x01\x42\t\n\x07_max_ptB\t\n\x07_min_pt"r\n\nMapElement\x12\n\n\x02id\x18\x01 \x01(\x03\x12\x1e\n\x04lane\x18\x02 \x01(\x0b\x32\x0e.trajdata.LaneH\x00\x12(\n\tcrosswalk\x18\x03 \x01(\x0b\x32\x13.trajdata.CrosswalkH\x00\x42\x0e\n\x0c\x65lement_data"I\n\x05Point\x12\x0e\n\x01x\x18\x01 \x01(\x01H\x00\x88\x01\x01\x12\x0e\n\x01y\x18\x02 \x01(\x01H\x01\x88\x01\x01\x12\x0e\n\x01z\x18\x03 \x01(\x01H\x02\x88\x01\x01\x42\x04\n\x02_xB\x04\n\x02_yB\x04\n\x02_z"7\n\x08Polyline\x12\r\n\x05\x64x_mm\x18\x01 \x03(\x11\x12\r\n\x05\x64y_mm\x18\x02 \x03(\x11\x12\r\n\x05\x64z_mm\x18\x03 \x03(\x11"\xe5\x01\n\x04Lane\x12"\n\x06\x63\x65nter\x18\x01 \x01(\x0b\x32\x12.trajdata.Polyline\x12)\n\rleft_boundary\x18\x02 \x01(\x0b\x32\x12.trajdata.Polyline\x12*\n\x0eright_boundary\x18\x03 \x01(\x0b\x32\x12.trajdata.Polyline\x12\x13\n\x0b\x65ntry_lanes\x18\x04 \x03(\x03\x12\x12\n\nexit_lanes\x18\x05 \x03(\x03\x12\x1b\n\x13\x61\x64jacent_lanes_left\x18\x06 \x03(\x03\x12\x1c\n\x14\x61\x64jacent_lanes_right\x18\x07 \x03(\x03"0\n\tCrosswalk\x12#\n\x07polygon\x18\x01 \x01(\x0b\x32\x12.trajdata.Polylineb\x06proto3'
+)
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x14vectorized_map.proto\x12\x08trajdata\"7\n\rVectorizedMap\x12&\n\x08\x65lements\x18\x01 \x03(\x0b\x32\x14.trajdata.MapElement\"r\n\nMapElement\x12\n\n\x02id\x18\x01 \x01(\x03\x12\x1e\n\x04lane\x18\x02 \x01(\x0b\x32\x0e.trajdata.LaneH\x00\x12(\n\tcrosswalk\x18\x03 \x01(\x0b\x32\x13.trajdata.CrosswalkH\x00\x42\x0e\n\x0c\x65lement_data\"+\n\x08Polyline\x12\t\n\x01x\x18\x01 \x03(\x02\x12\t\n\x01y\x18\x02 \x03(\x02\x12\t\n\x01z\x18\x03 \x03(\x02\"\xe5\x01\n\x04Lane\x12\"\n\x06\x63\x65nter\x18\x01 \x01(\x0b\x32\x12.trajdata.Polyline\x12)\n\rleft_boundary\x18\x02 \x01(\x0b\x32\x12.trajdata.Polyline\x12*\n\x0eright_boundary\x18\x03 \x01(\x0b\x32\x12.trajdata.Polyline\x12\x13\n\x0b\x65ntry_lanes\x18\x04 \x03(\x03\x12\x12\n\nexit_lanes\x18\x05 \x03(\x03\x12\x1b\n\x13\x61\x64jacent_lanes_left\x18\x06 \x03(\x03\x12\x1c\n\x14\x61\x64jacent_lanes_right\x18\x07 \x03(\x03\"0\n\tCrosswalk\x12#\n\x07polygon\x18\x01 \x01(\x0b\x32\x12.trajdata.Polylineb\x06proto3')
-
-
-
-_VECTORIZEDMAP = DESCRIPTOR.message_types_by_name['VectorizedMap']
-_MAPELEMENT = DESCRIPTOR.message_types_by_name['MapElement']
-_POLYLINE = DESCRIPTOR.message_types_by_name['Polyline']
-_LANE = DESCRIPTOR.message_types_by_name['Lane']
-_CROSSWALK = DESCRIPTOR.message_types_by_name['Crosswalk']
-VectorizedMap = _reflection.GeneratedProtocolMessageType('VectorizedMap', (_message.Message,), {
-  'DESCRIPTOR' : _VECTORIZEDMAP,
-  '__module__' : 'vectorized_map_pb2'
-  # @@protoc_insertion_point(class_scope:trajdata.VectorizedMap)
-  })
+_VECTORIZEDMAP = DESCRIPTOR.message_types_by_name["VectorizedMap"]
+_MAPELEMENT = DESCRIPTOR.message_types_by_name["MapElement"]
+_POINT = DESCRIPTOR.message_types_by_name["Point"]
+_POLYLINE = DESCRIPTOR.message_types_by_name["Polyline"]
+_LANE = DESCRIPTOR.message_types_by_name["Lane"]
+_CROSSWALK = DESCRIPTOR.message_types_by_name["Crosswalk"]
+VectorizedMap = _reflection.GeneratedProtocolMessageType(
+    "VectorizedMap",
+    (_message.Message,),
+    {
+        "DESCRIPTOR": _VECTORIZEDMAP,
+        "__module__": "vectorized_map_pb2"
+        # @@protoc_insertion_point(class_scope:trajdata.VectorizedMap)
+    },
+)
 _sym_db.RegisterMessage(VectorizedMap)
 
-MapElement = _reflection.GeneratedProtocolMessageType('MapElement', (_message.Message,), {
-  'DESCRIPTOR' : _MAPELEMENT,
-  '__module__' : 'vectorized_map_pb2'
-  # @@protoc_insertion_point(class_scope:trajdata.MapElement)
-  })
+MapElement = _reflection.GeneratedProtocolMessageType(
+    "MapElement",
+    (_message.Message,),
+    {
+        "DESCRIPTOR": _MAPELEMENT,
+        "__module__": "vectorized_map_pb2"
+        # @@protoc_insertion_point(class_scope:trajdata.MapElement)
+    },
+)
 _sym_db.RegisterMessage(MapElement)
 
-Polyline = _reflection.GeneratedProtocolMessageType('Polyline', (_message.Message,), {
-  'DESCRIPTOR' : _POLYLINE,
-  '__module__' : 'vectorized_map_pb2'
-  # @@protoc_insertion_point(class_scope:trajdata.Polyline)
-  })
+Point = _reflection.GeneratedProtocolMessageType(
+    "Point",
+    (_message.Message,),
+    {
+        "DESCRIPTOR": _POINT,
+        "__module__": "vectorized_map_pb2"
+        # @@protoc_insertion_point(class_scope:trajdata.Point)
+    },
+)
+_sym_db.RegisterMessage(Point)
+
+Polyline = _reflection.GeneratedProtocolMessageType(
+    "Polyline",
+    (_message.Message,),
+    {
+        "DESCRIPTOR": _POLYLINE,
+        "__module__": "vectorized_map_pb2"
+        # @@protoc_insertion_point(class_scope:trajdata.Polyline)
+    },
+)
 _sym_db.RegisterMessage(Polyline)
 
-Lane = _reflection.GeneratedProtocolMessageType('Lane', (_message.Message,), {
-  'DESCRIPTOR' : _LANE,
-  '__module__' : 'vectorized_map_pb2'
-  # @@protoc_insertion_point(class_scope:trajdata.Lane)
-  })
+Lane = _reflection.GeneratedProtocolMessageType(
+    "Lane",
+    (_message.Message,),
+    {
+        "DESCRIPTOR": _LANE,
+        "__module__": "vectorized_map_pb2"
+        # @@protoc_insertion_point(class_scope:trajdata.Lane)
+    },
+)
 _sym_db.RegisterMessage(Lane)
 
-Crosswalk = _reflection.GeneratedProtocolMessageType('Crosswalk', (_message.Message,), {
-  'DESCRIPTOR' : _CROSSWALK,
-  '__module__' : 'vectorized_map_pb2'
-  # @@protoc_insertion_point(class_scope:trajdata.Crosswalk)
-  })
+Crosswalk = _reflection.GeneratedProtocolMessageType(
+    "Crosswalk",
+    (_message.Message,),
+    {
+        "DESCRIPTOR": _CROSSWALK,
+        "__module__": "vectorized_map_pb2"
+        # @@protoc_insertion_point(class_scope:trajdata.Crosswalk)
+    },
+)
 _sym_db.RegisterMessage(Crosswalk)
 
 if _descriptor._USE_C_DESCRIPTORS == False:
 
-  DESCRIPTOR._options = None
-  _VECTORIZEDMAP._serialized_start=34
-  _VECTORIZEDMAP._serialized_end=89
-  _MAPELEMENT._serialized_start=91
-  _MAPELEMENT._serialized_end=205
-  _POLYLINE._serialized_start=207
-  _POLYLINE._serialized_end=250
-  _LANE._serialized_start=253
-  _LANE._serialized_end=482
-  _CROSSWALK._serialized_start=484
-  _CROSSWALK._serialized_end=532
+    DESCRIPTOR._options = None
+    _VECTORIZEDMAP._serialized_start = 35
+    _VECTORIZEDMAP._serialized_end = 188
+    _MAPELEMENT._serialized_start = 190
+    _MAPELEMENT._serialized_end = 304
+    _POINT._serialized_start = 306
+    _POINT._serialized_end = 379
+    _POLYLINE._serialized_start = 381
+    _POLYLINE._serialized_end = 436
+    _LANE._serialized_start = 439
+    _LANE._serialized_end = 668
+    _CROSSWALK._serialized_start = 670
+    _CROSSWALK._serialized_end = 718
 # @@protoc_insertion_point(module_scope)
