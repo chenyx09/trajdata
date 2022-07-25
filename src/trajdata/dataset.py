@@ -444,9 +444,17 @@ class UnifiedDataset(Dataset):
         query_tuples = [set(data.split("-")) for data in queries]
 
         matching_scene_tags: List[SceneTag] = list()
-        for query_tuple in query_tuples:
+        for idx, query_tuple in enumerate(query_tuples):
+            matched_tags: List[SceneTag] = list()
             for env in self.envs:
-                matching_scene_tags += env.get_matching_scene_tags(query_tuple)
+                matched_tags += env.get_matching_scene_tags(query_tuple)
+
+            if len(matched_tags) == 0:
+                raise ValueError(
+                    f"No matched tags for {queries[idx]}, please ensure the relevant dataset is in data_dirs."
+                )
+
+            matching_scene_tags += matched_tags
 
         return matching_scene_tags
 

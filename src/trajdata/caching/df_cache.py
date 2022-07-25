@@ -15,6 +15,7 @@ from trajdata.caching.scene_cache import SceneCache
 from trajdata.data_structures.agent import AgentMetadata, FixedExtent
 from trajdata.data_structures.scene_metadata import Scene
 from trajdata.maps import RasterizedMap, RasterizedMapMetadata
+from trajdata.proto.vectorized_map_pb2 import VectorizedMap
 from trajdata.utils import arr_utils
 
 STATE_COLS: Final[List[str]] = ["x", "y", "vx", "vy", "ax", "ay"]
@@ -554,37 +555,57 @@ class DataFrameCache(SceneCache):
     @staticmethod
     def get_map_paths(
         cache_path: Path, env_name: str, map_name: str, resolution: float
-    ) -> Tuple[Path, Path, Path]:
+    ) -> Tuple[Path, Path, Path, Path]:
         maps_path: Path = DataFrameCache.get_maps_path(cache_path, env_name)
 
-        map_path: Path = maps_path / f"{map_name}_{resolution:.2f}px_m.zarr"
-        metadata_path: Path = maps_path / f"{map_name}_{resolution:.2f}px_m.dill"
+        vector_map_path: Path = maps_path / f"{map_name}.pb"
+        raster_map_path: Path = maps_path / f"{map_name}_{resolution:.2f}px_m.zarr"
+        raster_metadata_path: Path = maps_path / f"{map_name}_{resolution:.2f}px_m.dill"
 
-        return maps_path, map_path, metadata_path
+        return maps_path, vector_map_path, raster_map_path, raster_metadata_path
 
     @staticmethod
     def is_map_cached(
         cache_path: Path, env_name: str, map_name: str, resolution: float
     ) -> bool:
-        maps_path, map_file, metadata_file = DataFrameCache.get_map_paths(
-            cache_path, env_name, map_name, resolution
+        (
+            maps_path,
+            vector_map_path,
+            raster_map_path,
+            raster_metadata_path,
+        ) = DataFrameCache.get_map_paths(cache_path, env_name, map_name, resolution)
+        return (
+            maps_path.exists()
+            and vector_map_path.exists()
+            and raster_metadata_path.exists()
+            and raster_map_path.exists()
         )
-        return maps_path.exists() and metadata_file.exists() and map_file.exists()
 
     @staticmethod
-    def cache_map(cache_path: Path, map_obj: RasterizedMap, env_name: str) -> None:
-        maps_path, map_file, metadata_file = DataFrameCache.get_map_paths(
+    def cache_map(
+        cache_path: Path, vec_map: VectorizedMap, map_obj: RasterizedMap, env_name: str
+    ) -> None:
+        (
+            maps_path,
+            vector_map_path,
+            raster_map_path,
+            raster_metadata_path,
+        ) = DataFrameCache.get_map_paths(
             cache_path, env_name, map_obj.metadata.name, map_obj.metadata.resolution
         )
 
         # Ensuring the maps directory exists.
         maps_path.mkdir(parents=True, exist_ok=True)
 
-        # Saving the map data.
-        zarr.save(map_file, map_obj.data)
+        # Saving the vectorized map data.
+        with open(vector_map_path, "wb") as f:
+            f.write(vec_map.SerializeToString())
 
-        # Saving the map metadata.
-        with open(metadata_file, "wb") as f:
+        # Saving the rasterized map data.
+        zarr.save(raster_map_path, map_obj.data)
+
+        # Saving the rasterized map metadata.
+        with open(raster_metadata_path, "wb") as f:
             dill.dump(map_obj.metadata, f)
 
     @staticmethod
@@ -594,18 +615,23 @@ class DataFrameCache(SceneCache):
         layer_fn: Callable[[str], np.ndarray],
         env_name: str,
     ) -> None:
-        maps_path, map_file, metadata_file = DataFrameCache.get_map_paths(
+        (
+            maps_path,
+            _,
+            raster_map_path,
+            raster_metadata_path,
+        ) = DataFrameCache.get_map_paths(
             cache_path, env_name, map_info.name, map_info.resolution
         )
 
         # Ensuring the maps directory exists.
         maps_path.mkdir(parents=True, exist_ok=True)
 
-        disk_data = zarr.open_array(map_file, mode="w", shape=map_info.shape)
+        disk_data = zarr.open_array(raster_map_path, mode="w", shape=map_info.shape)
         for idx, layer_name in enumerate(map_info.layers):
             disk_data[idx] = layer_fn(layer_name)
 
-        with open(metadata_file, "wb") as f:
+        with open(raster_metadata_path, "wb") as f:
             dill.dump(map_info, f)
 
     def pad_map_patch(
@@ -651,7 +677,12 @@ class DataFrameCache(SceneCache):
         rot_pad_factor: float = 1.0,
         no_map_val: float = 0.0,
     ) -> Tuple[np.ndarray, np.ndarray, bool]:
-        maps_path, map_file, metadata_file = DataFrameCache.get_map_paths(
+        (
+            maps_path,
+            _,
+            raster_map_path,
+            raster_metadata_path,
+        ) = DataFrameCache.get_map_paths(
             self.path, self.scene.env_name, self.scene.location, resolution
         )
         if not maps_path.exists():
@@ -668,7 +699,7 @@ class DataFrameCache(SceneCache):
                 False,
             )
 
-        with open(metadata_file, "rb") as f:
+        with open(raster_metadata_path, "rb") as f:
             map_info: RasterizedMapMetadata = dill.load(f)
 
         raster_from_world_tf: np.ndarray = map_info.map_from_world
@@ -731,7 +762,7 @@ class DataFrameCache(SceneCache):
         # divisible by two so that the // 2 below does not chop any information off.
         data_with_rot_pad_size: int = ceil((rot_pad_factor * data_patch_size) / 2) * 2
 
-        disk_data = zarr.open_array(map_file, mode="r")
+        disk_data = zarr.open_array(raster_map_path, mode="r")
 
         map_x = round(map_x)
         map_y = round(map_y)

@@ -1,15 +1,14 @@
 from math import ceil
-from typing import Final, List, Tuple
+from typing import Any, Dict, Final, List, Optional, Tuple
 
 import cv2
 import numpy as np
 from tqdm import tqdm
 
 from trajdata.proto.vectorized_map_pb2 import (
-    Crosswalk,
-    Lane,
     MapElement,
     Polyline,
+    RoadLane,
     VectorizedMap,
 )
 
@@ -17,8 +16,6 @@ from trajdata.proto.vectorized_map_pb2 import (
 # See https://github.com/woven-planet/l5kit/blob/master/l5kit/l5kit/rasterization/semantic_rasterizer.py#L16
 CV2_SUB_VALUES = {"shift": 9, "lineType": cv2.LINE_AA}
 CV2_SHIFT_VALUE = 2 ** CV2_SUB_VALUES["shift"]
-
-INTERPOLATION_POINTS = 20
 
 MM_PER_M: Final[float] = 1000
 
@@ -50,7 +47,10 @@ def compress_values(data: np.ndarray) -> np.ndarray:
 
 
 def populate_lane_polylines(
-    new_lane: Lane, midlane_pts: np.ndarray, left_pts: np.ndarray, right_pts: np.ndarray
+    new_lane: RoadLane,
+    midlane_pts: np.ndarray,
+    left_pts: np.ndarray,
+    right_pts: np.ndarray,
 ) -> None:
     """Fill a Lane object's polyline attributes.
     All points should be in world coordinates.
@@ -61,9 +61,6 @@ def populate_lane_polylines(
         left_pts (np.ndarray): _description_
         right_pts (np.ndarray): _description_
     """
-
-    assert midlane_pts.shape == left_pts.shape == right_pts.shape
-
     compressed_mid_pts: np.ndarray = compress_values(midlane_pts)
     compressed_left_pts: np.ndarray = compress_values(left_pts)
     compressed_right_pts: np.ndarray = compress_values(right_pts)
@@ -83,8 +80,8 @@ def populate_lane_polylines(
         new_lane.right_boundary.dz_mm.extend(compressed_right_pts[:, 2].tolist())
 
 
-def populate_crosswalk_polygon(
-    new_crosswalk: Crosswalk,
+def populate_polygon(
+    polygon: Polyline,
     polygon_pts: np.ndarray,
 ) -> None:
     """Fill a Crosswalk object's polygon attribute.
@@ -97,19 +94,23 @@ def populate_crosswalk_polygon(
 
     compressed_pts: np.ndarray = compress_values(polygon_pts)
 
-    new_crosswalk.polygon.dx_mm.extend(compressed_pts[:, 0].tolist())
-    new_crosswalk.polygon.dy_mm.extend(compressed_pts[:, 1].tolist())
+    polygon.dx_mm.extend(compressed_pts[:, 0].tolist())
+    polygon.dy_mm.extend(compressed_pts[:, 1].tolist())
 
     if compressed_pts.shape[-1] == 3:
-        new_crosswalk.polygon.dz_mm.extend(compressed_pts[:, 2].tolist())
+        polygon.dz_mm.extend(compressed_pts[:, 2].tolist())
 
 
 def proto_to_np(polyline: Polyline) -> np.ndarray:
     dx: np.ndarray = np.asarray(polyline.dx_mm)
     dy: np.ndarray = np.asarray(polyline.dy_mm)
-    dz: np.ndarray = np.asarray(polyline.dz_mm)
 
-    pts: np.ndarray = np.stack([dx, dy, dz], axis=1)
+    if len(polyline.dz_mm) > 0:
+        dz: np.ndarray = np.asarray(polyline.dz_mm)
+        pts: np.ndarray = np.stack([dx, dy, dz], axis=1)
+    else:
+        pts: np.ndarray = np.stack([dx, dy], axis=1)
+
     return decompress_values(pts)
 
 
@@ -118,7 +119,36 @@ def transform_points(points: np.ndarray, transf_mat: np.ndarray):
     return points @ transf_mat[:n_dim, :n_dim] + transf_mat[:n_dim, -1]
 
 
-def rasterize_map(vec_map: VectorizedMap, resolution: float) -> np.ndarray:
+def interpolate(pts: np.ndarray, num_pts: int) -> np.ndarray:
+    """
+    Interpolate points based on cumulative distances from the first one. In particular,
+    interpolate using a variable step such that we always get step values.
+
+    Args:
+        xyz (np.ndarray): XYZ coords.
+        num_pts (int): How many points to interpolate to.
+
+    Returns:
+        np.ndarray: The new interpolated coordinates.
+    """
+    cum_dist = np.cumsum(np.linalg.norm(np.diff(pts, axis=0), axis=-1))
+    cum_dist = np.insert(cum_dist, 0, 0)
+
+    assert num_pts > 1, f"num_pts must be at least 2, but got {num_pts}"
+    steps = np.linspace(cum_dist[0], cum_dist[-1], num_pts)
+
+    xyz_inter = np.empty((len(steps), pts.shape[-1]), dtype=pts.dtype)
+    xyz_inter[:, 0] = np.interp(steps, xp=cum_dist, fp=pts[:, 0])
+    xyz_inter[:, 1] = np.interp(steps, xp=cum_dist, fp=pts[:, 1])
+    if pts.shape[-1] == 3:
+        xyz_inter[:, 2] = np.interp(steps, xp=cum_dist, fp=pts[:, 2])
+
+    return xyz_inter
+
+
+def rasterize_map(
+    vec_map: VectorizedMap, resolution: float, **pbar_kwargs
+) -> np.ndarray:
     """Renders the semantic map at the given resolution.
 
     Args:
@@ -167,11 +197,13 @@ def rasterize_map(vec_map: VectorizedMap, resolution: float) -> np.ndarray:
 
     map_elem: MapElement
     for map_elem in tqdm(
-        vec_map.elements, desc=f"Rasterizing Map at {resolution:.2f} px/m"
+        vec_map.elements,
+        desc=f"Rasterizing Map at {resolution:.2f} px/m",
+        **pbar_kwargs,
     ):
-        if map_elem.HasField("lane"):
-            left_pts: np.ndarray = proto_to_np(map_elem.lane.left_boundary)
-            right_pts: np.ndarray = proto_to_np(map_elem.lane.right_boundary)
+        if map_elem.HasField("road_lane"):
+            left_pts: np.ndarray = proto_to_np(map_elem.road_lane.left_boundary)
+            right_pts: np.ndarray = proto_to_np(map_elem.road_lane.right_boundary)
 
             lane_area: np.ndarray = cv2_subpixel(
                 transform_points(
@@ -197,8 +229,36 @@ def rasterize_map(vec_map: VectorizedMap, resolution: float) -> np.ndarray:
                 **CV2_SUB_VALUES,
             )
 
-        elif map_elem.HasField("crosswalk"):
-            xyz_pts: np.ndarray = proto_to_np(map_elem.crosswalk.polygon)
+        elif map_elem.HasField("road_area"):
+            xyz_pts: np.ndarray = proto_to_np(map_elem.road_area.exterior_polygon)
+            road_area: np.ndarray = cv2_subpixel(
+                transform_points(xyz_pts[:, :2], raster_from_world)
+            )
+
+            # Drawing general road areas.
+            cv2.fillPoly(
+                img=lane_area_img,
+                pts=[road_area],
+                color=(255, 0, 0),
+                **CV2_SUB_VALUES,
+            )
+
+            for interior_hole in map_elem.road_area.interior_holes:
+                xyz_pts: np.ndarray = proto_to_np(interior_hole)
+                road_area: np.ndarray = cv2_subpixel(
+                    transform_points(xyz_pts[:, :2], raster_from_world)
+                )
+
+                # Removing holes.
+                cv2.fillPoly(
+                    img=lane_area_img,
+                    pts=[road_area],
+                    color=(0, 0, 0),
+                    **CV2_SUB_VALUES,
+                )
+
+        elif map_elem.HasField("ped_crosswalk"):
+            xyz_pts: np.ndarray = proto_to_np(map_elem.ped_crosswalk.polygon)
             crosswalk_area: np.ndarray = cv2_subpixel(
                 transform_points(xyz_pts[:, :2], raster_from_world)
             )
@@ -207,6 +267,20 @@ def rasterize_map(vec_map: VectorizedMap, resolution: float) -> np.ndarray:
             cv2.fillPoly(
                 img=ped_area_img,
                 pts=[crosswalk_area],
+                color=(0, 0, 255),
+                **CV2_SUB_VALUES,
+            )
+
+        elif map_elem.HasField("ped_walkway"):
+            xyz_pts: np.ndarray = proto_to_np(map_elem.ped_walkway.polygon)
+            walkway_area: np.ndarray = cv2_subpixel(
+                transform_points(xyz_pts[:, :2], raster_from_world)
+            )
+
+            # Drawing walkways.
+            cv2.fillPoly(
+                img=ped_area_img,
+                pts=[walkway_area],
                 color=(0, 0, 255),
                 **CV2_SUB_VALUES,
             )

@@ -14,12 +14,14 @@ message VectorizedMap {
 
 message MapElement {
   // A unique ID to identify this element.
-  int64 id = 1;
+  bytes id = 1;
 
   // Type specific data.
   oneof element_data {
-    Lane lane = 2;
-    Crosswalk crosswalk = 3;
+    RoadLane road_lane = 2;
+    RoadArea road_area = 3;
+    PedCrosswalk ped_crosswalk = 4;
+    PedWalkway ped_walkway = 5;
   }
 }
 
@@ -40,7 +42,7 @@ message Polyline {
   repeated sint32 dz_mm = 3;
 }
 
-message Lane {
+message RoadLane {
   // The polyline data for the lane. A polyline is a list of points with
   // segments defined between consecutive points.
   Polyline center = 1;
@@ -52,23 +54,40 @@ message Lane {
   Polyline right_boundary = 3;
 
   // A list of IDs for lanes that this lane may be entered from.
-  repeated int64 entry_lanes = 4;
+  repeated bytes entry_lanes = 4;
 
   // A list of IDs for lanes that this lane may exit to.
-  repeated int64 exit_lanes = 5;
+  repeated bytes exit_lanes = 5;
   
   // A list of neighbors to the left of this lane. Neighbor lanes
   // include only adjacent lanes going the same direction.
-  repeated int64 adjacent_lanes_left = 6;
+  repeated bytes adjacent_lanes_left = 6;
 
   // A list of neighbors to the right of this lane. Neighbor lanes
   // include only adjacent lanes going the same direction.
-  repeated int64 adjacent_lanes_right = 7;
+  repeated bytes adjacent_lanes_right = 7;
 }
 
-message Crosswalk {
+message RoadArea {
+  // The polygon defining the outline of general driveable area. This acts as a 
+  // catch-all when there's a road segment without lane information.
+  // For example, intersections in nuScenes are not "lanes".
+  Polyline exterior_polygon = 1;
+
+  // The area within these polygons is NOT included.
+  repeated Polyline interior_holes = 2;
+}
+
+message PedCrosswalk {
   // The polygon defining the outline of the crosswalk. The polygon is assumed
   // to be closed (i.e. a segment exists between the last point and the first
   // point).
+  Polyline polygon = 1;
+}
+
+message PedWalkway {
+  // The polygon defining the outline of the pedestrian walkway (e.g., sidewalk).
+  // The polygon is assumed to be closed (i.e. a segment exists between the last
+  // point and the first point).
   Polyline polygon = 1;
 }

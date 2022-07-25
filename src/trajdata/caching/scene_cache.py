@@ -7,6 +7,7 @@ from trajdata.augmentation.augmentation import Augmentation
 from trajdata.data_structures.agent import AgentMetadata
 from trajdata.data_structures.scene_metadata import Scene
 from trajdata.maps import RasterizedMap, RasterizedMapMetadata
+from trajdata.proto.vectorized_map_pb2 import VectorizedMap
 
 
 class SceneCache:
@@ -131,7 +132,9 @@ class SceneCache:
         raise NotImplementedError()
 
     @staticmethod
-    def cache_map(cache_path: Path, map_obj: RasterizedMap, env_name: str) -> None:
+    def cache_map(
+        cache_path: Path, vec_map: VectorizedMap, map_obj: RasterizedMap, env_name: str
+    ) -> None:
         raise NotImplementedError()
 
     @staticmethod

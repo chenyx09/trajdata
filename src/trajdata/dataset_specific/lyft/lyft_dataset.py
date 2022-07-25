@@ -28,7 +28,12 @@ from trajdata.dataset_specific.lyft.rasterizer import MapSemanticRasterizer
 from trajdata.dataset_specific.raw_dataset import RawDataset
 from trajdata.dataset_specific.scene_records import LyftSceneRecord
 from trajdata.maps import RasterizedMap, RasterizedMapMetadata, map_utils
-from trajdata.proto.vectorized_map_pb2 import Crosswalk, Lane, MapElement, VectorizedMap
+from trajdata.proto.vectorized_map_pb2 import (
+    MapElement,
+    PedCrosswalk,
+    RoadLane,
+    VectorizedMap,
+)
 from trajdata.utils import arr_utils
 
 
@@ -360,21 +365,19 @@ class LyftDataset(RawDataset):
 
                 # Adding the element to the map.
                 new_element: MapElement = vec_map.elements.add()
-                new_element.id = hash(l5_element_id)
+                new_element.id = l5_element.id.id
 
-                new_lane: Lane = new_element.lane
+                new_lane: RoadLane = new_element.road_lane
                 map_utils.populate_lane_polylines(
                     new_lane, midlane_pts, left_pts, right_pts
                 )
 
-                new_lane.exit_lanes.extend(
-                    [hash(mapAPI.id_as_str(gid)) for gid in l5_lane.lanes_ahead]
-                )
+                new_lane.exit_lanes.extend([gid.id for gid in l5_lane.lanes_ahead])
                 new_lane.adjacent_lanes_left.append(
-                    hash(mapAPI.id_as_str(l5_lane.adjacent_lane_change_left))
+                    l5_lane.adjacent_lane_change_left.id
                 )
                 new_lane.adjacent_lanes_right.append(
-                    hash(mapAPI.id_as_str(l5_lane.adjacent_lane_change_right))
+                    l5_lane.adjacent_lane_change_right.id
                 )
 
             if mapAPI.is_crosswalk(l5_element):
@@ -388,10 +391,10 @@ class LyftDataset(RawDataset):
                 minimum_bound = np.fmin(minimum_bound, crosswalk_pts.min(axis=0))
 
                 new_element: MapElement = vec_map.elements.add()
-                new_element.id = hash(l5_element_id)
+                new_element.id = l5_element.id.id
 
-                new_crosswalk: Crosswalk = new_element.crosswalk
-                map_utils.populate_crosswalk_polygon(new_crosswalk, crosswalk_pts)
+                new_crosswalk: PedCrosswalk = new_element.ped_crosswalk
+                map_utils.populate_polygon(new_crosswalk.polygon, crosswalk_pts)
 
         # Setting the map bounds.
         vec_map.max_pt.x, vec_map.max_pt.y, vec_map.max_pt.z = maximum_bound
@@ -418,21 +421,17 @@ class LyftDataset(RawDataset):
         mapAPI = MapAPI(semantic_map_filepath, world_to_ecef)
 
         vectorized_map: VectorizedMap = self.extract_vectorized(mapAPI)
-        map_data, raster_from_world = map_utils.rasterize_map(
-            vectorized_map, resolution
-        )
+        map_data, map_from_world = map_utils.rasterize_map(vectorized_map, resolution)
 
-        # f = open("/home/bivanovic/test_smaller.pb", "wb")
-        # f.write(vec_map.SerializeToString())
-        # f.close()
-
-        map_info: RasterizedMapMetadata = RasterizedMapMetadata(
+        rasterized_map_info: RasterizedMapMetadata = RasterizedMapMetadata(
             name=map_name,
             shape=map_data.shape,
-            layers=["drivable_area", "lane_divider", "ped_crossing"],
+            layers=["drivable_area", "lane_divider", "ped_area"],
             layer_rgb_groups=([0], [1], [2]),
             resolution=resolution,
-            map_from_world=raster_from_world,
+            map_from_world=map_from_world,
         )
-        map_obj: RasterizedMap = RasterizedMap(map_info, map_data)
-        map_cache_class.cache_map(cache_path, map_obj, self.name)
+        rasterized_map_obj: RasterizedMap = RasterizedMap(rasterized_map_info, map_data)
+        map_cache_class.cache_map(
+            cache_path, vectorized_map, rasterized_map_obj, self.name
+        )
