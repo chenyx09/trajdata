@@ -177,7 +177,7 @@ class UnifiedDataset(Dataset):
         for env in self.envs:
             if any(env.name in dataset_tuple for dataset_tuple in matching_datasets):
                 all_data_cached: bool = False
-                all_maps_cached: bool = not self.incl_map
+                all_maps_cached: bool = not env.has_maps or not self.incl_map
                 if self.env_cache.env_is_cached(env.name) and not self.rebuild_cache:
                     scenes_list: List[Scene] = self.get_desired_scenes_from_env(
                         matching_datasets, scene_description_contains, env
@@ -190,14 +190,18 @@ class UnifiedDataset(Dataset):
                         for scene in scenes_list
                     )
 
-                    all_maps_cached: bool = not self.incl_map or all(
-                        self.cache_class.is_map_cached(
-                            self.cache_path,
-                            env.name,
-                            scene.location,
-                            self.map_params["px_per_m"],
+                    all_maps_cached: bool = (
+                        not env.has_maps
+                        or not self.incl_map
+                        or all(
+                            self.cache_class.is_map_cached(
+                                self.cache_path,
+                                env.name,
+                                scene.location,
+                                self.map_params["px_per_m"],
+                            )
+                            for scene in scenes_list
                         )
-                        for scene in scenes_list
                     )
 
                 if (
@@ -471,18 +475,16 @@ class UnifiedDataset(Dataset):
     ) -> List[Path]:
         all_cached: bool = not self.rebuild_cache and all(
             self.env_cache.scene_is_cached(
-                scene_info.env_name, scene_info.name, scene_info.dt
+                scene_info.env_name,
+                scene_info.name,
+                self.desired_dt if self.desired_dt is not None else scene_info.dt,
             )
             for scene_info in scenes_list
         )
 
-        all_correct_dt: bool = self.desired_dt is None or all(
-            scene_info.dt == self.desired_dt for scene_info in scenes_list
-        )
-
         serial_scenes: List[SceneMetadata]
         parallel_scenes: List[SceneMetadata]
-        if num_workers > 1 and (not all_cached or not all_correct_dt):
+        if num_workers > 1 and not all_cached:
             serial_scenes = [
                 scene_info
                 for scene_info in scenes_list
