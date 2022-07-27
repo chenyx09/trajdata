@@ -5,8 +5,8 @@ from typing import Dict, List, Optional, Tuple, Type, Union
 
 import numpy as np
 import pandas as pd
-from nuscenes.map_expansion import arcline_path_utils
 from nuscenes.eval.prediction.splits import NUM_IN_TRAIN_VAL
+from nuscenes.map_expansion import arcline_path_utils
 from nuscenes.map_expansion.map_api import NuScenesMap, locations
 from nuscenes.nuscenes import NuScenes
 from nuscenes.utils.splits import create_splits_scenes
@@ -426,10 +426,16 @@ class NuscDataset(RawDataset):
 
             new_lane: RoadLane = new_element.road_lane
             map_utils.populate_lane_polylines(new_lane, center_pts, left_pts, right_pts)
-            
-            new_lane.entry_lanes.extend(lane_id.encode() for lane_id in nusc_map.get_incoming_lane_ids(lane_record_token))
-            new_lane.exit_lanes.extend(lane_id.encode() for lane_id in nusc_map.get_outgoing_lane_ids(lane_record_token))
-            
+
+            new_lane.entry_lanes.extend(
+                lane_id.encode()
+                for lane_id in nusc_map.get_incoming_lane_ids(lane_record_token)
+            )
+            new_lane.exit_lanes.extend(
+                lane_id.encode()
+                for lane_id in nusc_map.get_outgoing_lane_ids(lane_record_token)
+            )
+
             # new_lane.adjacent_lanes_left.append(
             #     l5_lane.adjacent_lane_change_left.id
             # )
