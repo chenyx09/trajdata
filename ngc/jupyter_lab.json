@@ -11,11 +11,11 @@
     ],
     "datasetMounts":[
         {
-            "containerMountPoint":"/workspace/datasets/lyft",
+            "containerMountPoint":"/workspace/lyft",
             "id":90893
         },
         {
-            "containerMountPoint":"/workspace/datasets/nuScenes",
+            "containerMountPoint":"/workspace/nuScenes",
             "id":78251
         }
     ],
@@ -26,8 +26,8 @@
             "mountMode":"RW"
         },
         {
-            "containerMountPoint":"/workspace/av_cache",
-            "id":"p9wWSygMTMaF4MlbwFxJlA",
+            "containerMountPoint":"/workspace/trajdata_cache",
+            "id":"BgHSNdSaR0ywsc-UY-xm3w",
             "mountMode":"RW"
         }
     ],
