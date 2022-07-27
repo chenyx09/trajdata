@@ -58,10 +58,11 @@ class AgentBatch:
         for val in vars(self).keys():
             tensor_val = getattr(self, val)
             if val not in excl_vals and tensor_val is not None:
-                setattr(self, val, tensor_val.to(device))
+                tensor_val: Tensor
+                setattr(self, val, tensor_val.to(device, non_blocking=True))
 
         for key, val in self.extras.items():
-            self.extras[key] = val.to(device)
+            self.extras[key] = val.to(device, non_blocking=True)
 
     def agent_types(self) -> List[AgentType]:
         unique_types: Tensor = torch.unique(self.agent_type)
