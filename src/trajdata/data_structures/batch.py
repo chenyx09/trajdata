@@ -32,7 +32,7 @@ class AgentBatch:
     neigh_fut_extents: Tensor
     neigh_fut_len: Tensor
     robot_fut: Optional[Tensor]
-    robot_fut_len: Tensor
+    robot_fut_len: Optional[Tensor]
     maps: Optional[Tensor]
     maps_resolution: Optional[Tensor]
     rasters_from_world_tf: Optional[Tensor]
@@ -95,7 +95,9 @@ class AgentBatch:
             robot_fut=self.robot_fut[match_type]
             if self.robot_fut is not None
             else None,
-            robot_fut_len=self.robot_fut_len[match_type],
+            robot_fut_len=self.robot_fut_len[match_type]
+            if self.robot_fut_len is not None
+            else None,
             maps=self.maps[match_type] if self.maps is not None else None,
             maps_resolution=self.maps_resolution[match_type]
             if self.maps_resolution is not None
@@ -133,6 +135,7 @@ class SceneBatch:
     rasters_from_world_tf: Optional[Tensor]
     centered_agent_from_world_tf: Tensor
     centered_world_from_agent_tf: Tensor
+    scene_ids: Optional[List]
     extras: Dict[str, Tensor]
 
     def to(self, device) -> None:
@@ -169,7 +172,9 @@ class SceneBatch:
             robot_fut=self.robot_fut[match_type]
             if self.robot_fut is not None
             else None,
-            robot_fut_len=self.robot_fut_len[match_type],
+            robot_fut_len=self.robot_fut_len[match_type]
+            if self.robot_fut_len is not None
+            else None,
             maps=self.maps[match_type] if self.maps is not None else None,
             maps_resolution=self.maps_resolution[match_type]
             if self.maps_resolution is not None
@@ -179,5 +184,10 @@ class SceneBatch:
             else None,
             centered_agent_from_world_tf=self.centered_agent_from_world_tf[match_type],
             centered_world_from_agent_tf=self.centered_world_from_agent_tf[match_type],
+            scene_ids=[
+                scene_id
+                for idx, scene_id in enumerate(self.scene_ids)
+                if match_type[idx]
+            ],
             extras={key: val[match_type] for key, val in self.extras},
         )
