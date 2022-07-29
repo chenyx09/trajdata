@@ -34,6 +34,8 @@ class AgentBatchElement:
         self.data_index: int = data_index
         self.dt: float = scene_time_agent.scene.dt
         self.scene_ts: int = scene_time_agent.ts
+        self.history_sec = history_sec
+        self.future_sec = future_sec
 
         agent_info: AgentMetadata = scene_time_agent.agent
         self.agent_name: str = agent_info.name
@@ -407,6 +409,8 @@ class SceneBatchElement:
             # (whereas the above returns the current + future, yielding
             # one more timestep).
             self.robot_future_len: int = self.robot_future_np.shape[0] - 1
+
+        self.scene_id = scene_time.scene.name
 
         # Will be optionally populated by the user's provided functions.
         self.extras: Dict[str, np.ndarray] = dict()
