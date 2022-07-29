@@ -472,6 +472,40 @@ def agent_collate_fn(
         agent_future_extent, batch_first=True, padding_value=np.nan
     )
 
+    # Padding history/future in case the length is less than
+    # the minimum desired history/future length.
+    if elem.history_sec[0] is not None:
+        hist_len = int(elem.history_sec[0] / elem.dt) + 1
+        if agent_history_t.shape[-2] < hist_len:
+            agent_history_t = F.pad(
+                agent_history_t,
+                (0, 0, hist_len - agent_history_t.shape[-2], 0),
+                value=np.nan,
+            )
+
+        if agent_history_extent_t.shape[-2] < hist_len:
+            agent_history_extent_t = F.pad(
+                agent_history_extent_t,
+                (0, 0, hist_len - agent_history_extent_t.shape[-2], 0),
+                value=np.nan,
+            )
+
+    if elem.future_sec[0] is not None:
+        fut_len = int(elem.future_sec[0] / elem.dt)
+        if agent_future_t.shape[-2] < fut_len:
+            agent_future_t = F.pad(
+                agent_future_t,
+                (0, 0, 0, fut_len - agent_future_t.shape[-2]),
+                value=np.nan,
+            )
+
+        if agent_future_extent_t.shape[-2] < fut_len:
+            agent_future_extent_t = F.pad(
+                agent_future_extent_t,
+                (0, 0, 0, fut_len - agent_future_extent_t.shape[-2]),
+                value=np.nan,
+            )
+
     if max_num_neighbors > 0:
         neighbor_types_t: Tensor = pad_sequence(
             neighbor_types, batch_first=True, padding_value=-1
@@ -810,6 +844,8 @@ def scene_collate_fn(
         else None
     )
 
+    scene_ids = [batch_elem.scene_id for batch_elem in batch_elems]
+
     extras: Dict[str, Tensor] = {}
     for key in batch_elems[0].extras.keys():
         extras[key] = torch.as_tensor(
@@ -835,6 +871,7 @@ def scene_collate_fn(
         rasters_from_world_tf=rasters_from_world_tf,
         centered_agent_from_world_tf=centered_agent_from_world_tf,
         centered_world_from_agent_tf=centered_world_from_agent_tf,
+        scene_ids=scene_ids,
         extras=extras,
     )
 

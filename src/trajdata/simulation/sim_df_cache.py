@@ -128,6 +128,54 @@ class SimulationDataFrameCache(DataFrameCache, SimulationCache):
         self.persistent_data_df.sort_index(inplace=True)
         self.reset()
 
+    def add_agents(self, agent_data: List[Tuple]):
+        """Add new agents to the simulation data.
+
+        Args:
+            agent_data (List[Tuple]): _description_
+        """
+        new_state_df = list()
+        for data_i in agent_data:
+            name, state, ts0, _, extent = data_i
+
+            T = state.shape[0]
+            if T == 0:
+                vel = np.zeros([1, 2])
+                acc = np.zeros([1, 2])
+            else:
+                vel = (state[1:, :2] - state[:-1, :2]) / self.scene.dt
+                vel = np.vstack((vel[0:1], vel))
+
+                acc = (vel[1:] - vel[:-1]) / self.scene.dt
+                acc = np.vstack((acc[0:1], acc))
+
+            data = dict(
+                agent_id=np.array([name] * T),
+                scene_ts=np.arange(ts0, ts0 + T),
+                x=state[:, 0],
+                y=state[:, 1],
+                vx=vel[:, 0],
+                vy=vel[:, 1],
+                ax=acc[:, 0],
+                ay=acc[:, 1],
+                heading=state[:, 2],
+            )
+
+            if self.extent_cols:
+                data["length"] = extent[0]
+                data["width"] = extent[1]
+                data["height"] = extent[2]
+
+            new_state_df_i = pd.DataFrame(data)
+            new_state_df.append(new_state_df_i)
+
+        new_state_df = pd.concat(new_state_df)
+        new_state_df.set_index(["agent_id", "scene_ts"], inplace=True)
+
+        self.persistent_data_df = pd.concat([self.persistent_data_df, new_state_df])
+        self.persistent_data_df.sort_index(inplace=True)
+        self.reset()
+
     def save_sim_scene(self, sim_scene: Scene) -> None:
         history_idxs = (
             self.persistent_data_df.index.get_level_values("scene_ts") <= self.scene_ts
