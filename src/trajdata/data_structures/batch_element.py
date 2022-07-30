@@ -500,18 +500,27 @@ class SceneBatchElement:
 
         x_idx, y_idx = self.cache.pos_cols
 
-
         map_patches = list()
 
         curr_state = [state[-1] for state in agent_histories]
         curr_state = np.stack(curr_state)
         if self.standardize_data:
-            Rot = np.array([[np.cos(heading),-np.sin(heading)],[np.sin(heading),np.cos(heading)]])
+            Rot = np.array(
+                [
+                    [np.cos(heading), -np.sin(heading)],
+                    [np.sin(heading), np.cos(heading)],
+                ]
+            )
             if sincos:
-                agent_heading = np.arctan2(curr_state[:,heading_sin_idx],curr_state[:,heading_cos_idx])+heading
+                agent_heading = (
+                    np.arctan2(
+                        curr_state[:, heading_sin_idx], curr_state[:, heading_cos_idx]
+                    )
+                    + heading
+                )
             else:
                 agent_heading = curr_state[:, heading_idx] + heading
-            world_dxy = curr_state[:,[x_idx, y_idx]]@(Rot.T)
+            world_dxy = curr_state[:, [x_idx, y_idx]] @ (Rot.T)
             for i in range(curr_state.shape[0]):
                 patch_data, raster_from_world_tf, has_data = self.cache.load_map_patch(
                     world_x + world_dxy[i, 0],
