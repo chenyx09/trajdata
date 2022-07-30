@@ -86,7 +86,7 @@ class TestDatasetSizes(unittest.TestCase):
 
         self.assertGreaterEqual(len(unfiltered_dataset), len(filtered_dataset))
 
-        for _ in range(50):
+        for _ in range(20):
             sample_idx = random.randint(0, len(filtered_dataset) - 1)
             self.assertEqual(filtered_dataset[sample_idx].agent_type, AgentType.VEHICLE)
 
@@ -96,7 +96,7 @@ class TestDatasetSizes(unittest.TestCase):
             only_predict=[AgentType.VEHICLE, AgentType.PEDESTRIAN],
         )
 
-        for _ in range(50):
+        for _ in range(20):
             sample_idx = random.randint(0, len(filtered_dataset2) - 1)
             self.assertIn(
                 filtered_dataset2[sample_idx].agent_type, filtered_dataset2.only_predict

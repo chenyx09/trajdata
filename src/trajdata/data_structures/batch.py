@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections import namedtuple
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
@@ -8,6 +7,7 @@ import torch
 from torch import Tensor
 
 from trajdata.data_structures.agent import AgentType
+from trajdata.utils.arr_utils import PadDirection
 
 
 @dataclass
@@ -38,6 +38,7 @@ class AgentBatch:
     rasters_from_world_tf: Optional[Tensor]
     agents_from_world_tf: Tensor
     scene_ids: Optional[List]
+    history_pad_dir: PadDirection
     extras: Dict[str, Tensor]
 
     def to(self, device) -> None:
@@ -53,6 +54,7 @@ class AgentBatch:
             "num_neigh",
             "robot_fut_len",
             "scene_ids",
+            "history_pad_dir",
             "extras",
         }
         for val in vars(self).keys():
@@ -111,6 +113,7 @@ class AgentBatch:
                 for idx, scene_id in enumerate(self.scene_ids)
                 if match_type[idx]
             ],
+            history_pad_dir=self.history_pad_dir,
             extras={key: val[match_type] for key, val in self.extras},
         )
 
@@ -136,10 +139,12 @@ class SceneBatch:
     centered_agent_from_world_tf: Tensor
     centered_world_from_agent_tf: Tensor
     scene_ids: Optional[List]
+    history_pad_dir: PadDirection
     extras: Dict[str, Tensor]
 
     def to(self, device) -> None:
         excl_vals = {
+            "history_pad_dir",
             "extras",
         }
 
@@ -189,5 +194,6 @@ class SceneBatch:
                 for idx, scene_id in enumerate(self.scene_ids)
                 if match_type[idx]
             ],
+            history_pad_dir=self.history_pad_dir,
             extras={key: val[match_type] for key, val in self.extras},
         )

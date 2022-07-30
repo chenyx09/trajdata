@@ -1,4 +1,5 @@
 from dataclasses import asdict
+from enum import IntEnum
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
@@ -258,9 +259,15 @@ def map_collate_fn_scene(
 def agent_collate_fn(
     batch_elems: List[AgentBatchElement],
     return_dict: bool,
+    pad_format: str,
     batch_augments: Optional[List[BatchAugmentation]] = None,
 ) -> Union[AgentBatch, Dict[str, Any]]:
     batch_size: int = len(batch_elems)
+    history_pad_dir: arr_utils.PadDirection = (
+        arr_utils.PadDirection.BEFORE
+        if pad_format == "outside"
+        else arr_utils.PadDirection.AFTER
+    )
 
     data_index_t: Tensor = torch.zeros((batch_size,), dtype=torch.int)
     dt_t: Tensor = torch.zeros((batch_size,), dtype=torch.float)
@@ -331,10 +338,20 @@ def agent_collate_fn(
         )
 
         agent_history.append(
-            torch.as_tensor(elem.agent_history_np, dtype=torch.float).flip(-2)
+            arr_utils.convert_with_dir(
+                elem.agent_history_np,
+                dtype=torch.float,
+                time_dim=-2,
+                pad_dir=history_pad_dir,
+            )
         )
         agent_history_extent.append(
-            torch.as_tensor(elem.agent_history_extent_np, dtype=torch.float).flip(-2)
+            arr_utils.convert_with_dir(
+                elem.agent_history_extent_np,
+                dtype=torch.float,
+                time_dim=-2,
+                pad_dir=history_pad_dir,
+            )
         )
         agent_history_len[idx] = elem.agent_history_len
 
@@ -350,33 +367,37 @@ def agent_collate_fn(
 
         if elem.num_neighbors > 0:
             # History
-            padded_neighbor_histories = pad_sequence(
-                [
-                    torch.as_tensor(nh, dtype=torch.float).flip(-2)
-                    for nh in elem.neighbor_histories
-                ],
+            padded_neighbor_histories = arr_utils.pad_sequences(
+                elem.neighbor_histories,
+                dtype=torch.float,
+                time_dim=-2,
+                pad_dir=history_pad_dir,
                 batch_first=True,
                 padding_value=np.nan,
-            ).flip(-2)
-            padded_neighbor_history_extents = pad_sequence(
-                [
-                    torch.as_tensor(nh, dtype=torch.float).flip(-2)
-                    for nh in elem.neighbor_history_extents
-                ],
+            )
+            padded_neighbor_history_extents = arr_utils.pad_sequences(
+                elem.neighbor_history_extents,
+                dtype=torch.float,
+                time_dim=-2,
+                pad_dir=history_pad_dir,
                 batch_first=True,
                 padding_value=np.nan,
-            ).flip(-2)
+            )
             if padded_neighbor_histories.shape[-2] < max_neigh_history_len:
                 to_add = max_neigh_history_len - padded_neighbor_histories.shape[-2]
                 padded_neighbor_histories = F.pad(
                     padded_neighbor_histories,
-                    pad=(0, 0, to_add, 0),
+                    pad=(0, 0, to_add, 0)
+                    if history_pad_dir == arr_utils.PadDirection.BEFORE
+                    else (0, 0, 0, to_add),
                     mode="constant",
                     value=np.nan,
                 )
                 padded_neighbor_history_extents = F.pad(
                     padded_neighbor_history_extents,
-                    pad=(0, 0, to_add, 0),
+                    pad=(0, 0, to_add, 0)
+                    if history_pad_dir == arr_utils.PadDirection.BEFORE
+                    else (0, 0, 0, to_add),
                     mode="constant",
                     value=np.nan,
                 )
@@ -458,12 +479,20 @@ def agent_collate_fn(
 
     curr_agent_state_t: Tensor = torch.stack(curr_agent_state)
 
-    agent_history_t: Tensor = pad_sequence(
-        agent_history, batch_first=True, padding_value=np.nan
-    ).flip(-2)
-    agent_history_extent_t: Tensor = pad_sequence(
-        agent_history_extent, batch_first=True, padding_value=np.nan
-    ).flip(-2)
+    agent_history_t: Tensor = arr_utils.pad_with_dir(
+        agent_history,
+        time_dim=-2,
+        pad_dir=history_pad_dir,
+        batch_first=True,
+        padding_value=np.nan,
+    )
+    agent_history_extent_t: Tensor = arr_utils.pad_with_dir(
+        agent_history_extent,
+        time_dim=-2,
+        pad_dir=history_pad_dir,
+        batch_first=True,
+        padding_value=np.nan,
+    )
 
     agent_future_t: Tensor = pad_sequence(
         agent_future, batch_first=True, padding_value=np.nan
@@ -477,16 +506,22 @@ def agent_collate_fn(
     if elem.history_sec[0] is not None:
         hist_len = int(elem.history_sec[0] / elem.dt) + 1
         if agent_history_t.shape[-2] < hist_len:
+            to_add: int = hist_len - agent_history_t.shape[-2]
             agent_history_t = F.pad(
                 agent_history_t,
-                (0, 0, hist_len - agent_history_t.shape[-2], 0),
+                (0, 0, to_add, 0)
+                if history_pad_dir == arr_utils.PadDirection.BEFORE
+                else (0, 0, 0, to_add),
                 value=np.nan,
             )
 
         if agent_history_extent_t.shape[-2] < hist_len:
+            to_add: int = hist_len - agent_history_extent_t.shape[-2]
             agent_history_extent_t = F.pad(
                 agent_history_extent_t,
-                (0, 0, hist_len - agent_history_extent_t.shape[-2], 0),
+                (0, 0, to_add, 0)
+                if history_pad_dir == arr_utils.PadDirection.BEFORE
+                else (0, 0, 0, to_add),
                 value=np.nan,
             )
 
@@ -507,6 +542,8 @@ def agent_collate_fn(
             )
 
     if max_num_neighbors > 0:
+        # This is padding over number of neighbors, so no need
+        # to do any padding direction malarkey.
         neighbor_types_t: Tensor = pad_sequence(
             neighbor_types, batch_first=True, padding_value=-1
         )
@@ -623,6 +660,7 @@ def agent_collate_fn(
         rasters_from_world_tf=rasters_from_world_tf,
         agents_from_world_tf=agents_from_world_tf,
         scene_ids=scene_ids,
+        history_pad_dir=history_pad_dir,
         extras=extras,
     )
 
@@ -684,9 +722,16 @@ def split_pad_crop(
 def scene_collate_fn(
     batch_elems: List[SceneBatchElement],
     return_dict: bool,
+    pad_format: str,
     batch_augments: Optional[List[BatchAugmentation]] = None,
 ) -> SceneBatch:
     batch_size: int = len(batch_elems)
+    history_pad_dir: arr_utils.PadDirection = (
+        arr_utils.PadDirection.BEFORE
+        if pad_format == "outside"
+        else arr_utils.PadDirection.AFTER
+    )
+
     data_index_t: Tensor = torch.zeros((batch_size,), dtype=torch.int)
     dt_t: Tensor = torch.zeros((batch_size,), dtype=torch.float)
 
@@ -730,33 +775,37 @@ def scene_collate_fn(
         agents_future_len[idx, : elem.num_agents] = future_len_i
 
         # History
-        padded_agents_histories = pad_sequence(
-            [
-                torch.as_tensor(nh, dtype=torch.float).flip(-2)
-                for nh in elem.agent_histories[:max_agent_num]
-            ],
+        padded_agents_histories = arr_utils.pad_sequences(
+            elem.agent_histories[:max_agent_num],
+            dtype=torch.float,
+            time_dim=-2,
+            pad_dir=history_pad_dir,
             batch_first=True,
             padding_value=np.nan,
-        ).flip(-2)
-        padded_agents_history_extents = pad_sequence(
-            [
-                torch.as_tensor(nh, dtype=torch.float).flip(-2)
-                for nh in elem.agent_history_extents[:max_agent_num]
-            ],
+        )
+        padded_agents_history_extents = arr_utils.pad_sequences(
+            elem.agent_history_extents[:max_agent_num],
+            dtype=torch.float,
+            time_dim=-2,
+            pad_dir=history_pad_dir,
             batch_first=True,
             padding_value=np.nan,
-        ).flip(-2)
+        )
         if padded_agents_histories.shape[-2] < max_history_len:
             to_add = max_history_len - padded_agents_histories.shape[-2]
             padded_agents_histories = F.pad(
                 padded_agents_histories,
-                pad=(0, 0, to_add, 0),
+                pad=(0, 0, to_add, 0)
+                if history_pad_dir == arr_utils.PadDirection.BEFORE
+                else (0, 0, 0, to_add),
                 mode="constant",
                 value=np.nan,
             )
             padded_agents_history_extents = F.pad(
                 padded_agents_history_extents,
-                pad=(0, 0, to_add, 0),
+                pad=(0, 0, to_add, 0)
+                if history_pad_dir == arr_utils.PadDirection.BEFORE
+                else (0, 0, 0, to_add),
                 mode="constant",
                 value=np.nan,
             )
@@ -843,6 +892,7 @@ def scene_collate_fn(
         if robot_future
         else None
     )
+    scene_ids = [batch_elem.scene_id for batch_elem in batch_elems]
 
     scene_ids = [batch_elem.scene_id for batch_elem in batch_elems]
 
@@ -872,6 +922,7 @@ def scene_collate_fn(
         centered_agent_from_world_tf=centered_agent_from_world_tf,
         centered_world_from_agent_tf=centered_world_from_agent_tf,
         scene_ids=scene_ids,
+        history_pad_dir=history_pad_dir,
         extras=extras,
     )
 

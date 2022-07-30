@@ -415,7 +415,12 @@ class UnifiedDataset(Dataset):
             index_elems,
         )
 
-    def get_collate_fn(self, return_dict: bool = False) -> Callable:
+    def get_collate_fn(
+        self, return_dict: bool = False, pad_format: str = "outside"
+    ) -> Callable:
+        if pad_format not in {"outside", "right"}:
+            raise ValueError("Padding format must be one of {'outside', 'right'}")
+
         batch_augments: Optional[List[BatchAugmentation]] = None
         if self.augmentations:
             batch_augments = [
@@ -426,12 +431,16 @@ class UnifiedDataset(Dataset):
 
         if self.centric == "agent":
             collate_fn = partial(
-                agent_collate_fn, return_dict=return_dict, batch_augments=batch_augments
+                agent_collate_fn,
+                return_dict=return_dict,
+                pad_format=pad_format,
+                batch_augments=batch_augments,
             )
         elif self.centric == "scene":
             collate_fn = partial(
                 scene_collate_fn,
                 return_dict=return_dict,
+                pad_format=pad_format,
                 batch_augments=batch_augments,
             )
 
