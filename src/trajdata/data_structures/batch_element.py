@@ -484,63 +484,74 @@ class SceneBatchElement:
         return_rgb: bool = patch_params.get("return_rgb", True)
         no_map_fill_val: float = patch_params.get("no_map_fill_value", 0.0)
 
-        if len(self.cache.heading_cols) == 1:
+        if self.cache._sincos_heading:
+            if len(self.cache.heading_cols)==2:
+                heading_sin_idx, heading_cos_idx = self.cache.heading_cols
+            else:
+                heading_sin_idx, heading_cos_idx = self.cache.heading_cols[0],self.cache.heading_cols[0]+1
+            sincos = True
+            
+        else:
             heading_idx = self.cache.heading_cols[0]
             sincos = False
-        else:
-            heading_sin_idx, heading_cos_idx = self.cache.heading_cols
-            sincos = True
         x_idx, y_idx = self.cache.pos_cols
 
-        map_patches = list()
-        for agent_his in agent_histories:
-            if self.standardize_data:
-                if sincos:
-                    agent_heading = (
-                        np.arctan2(
-                            agent_his[-1, heading_sin_idx],
-                            agent_his[-1, heading_cos_idx],
-                        )
-                        + heading
-                    )
-                else:
-                    agent_heading = agent_his[-1, heading_idx] + heading
 
+        map_patches = list()
+
+        curr_state = [state[-1] for state in agent_histories]
+        curr_state = np.stack(curr_state)
+        if self.standardize_data:
+            Rot = np.array([[np.cos(heading),-np.sin(heading)],[np.sin(heading),np.cos(heading)]])
+            if sincos:
+                agent_heading = np.arctan2(curr_state[:,heading_sin_idx],curr_state[:,heading_cos_idx])+heading
+            else:
+                agent_heading = curr_state[:, heading_idx] + heading
+            world_dxy = curr_state[:,[x_idx, y_idx]]@(Rot.T)
+            for i in range(curr_state.shape[0]):
                 patch_data, raster_from_world_tf, has_data = self.cache.load_map_patch(
-                    world_x + agent_his[-1, x_idx],
-                    world_y + agent_his[-1, y_idx],
+                    world_x + world_dxy[i, 0],
+                    world_y + world_dxy[i, 1],
                     desired_patch_size,
                     resolution,
                     offset_xy,
-                    agent_heading,
+                    agent_heading[i],
                     return_rgb,
                     rot_pad_factor=sqrt(2),
                     no_map_val=no_map_fill_val,
                 )
-
-            else:
-                agent_heading = 0.0
+                map_patches.append(
+                    MapPatch(
+                        data=patch_data,
+                        rot_angle=agent_heading[i],
+                        crop_size=desired_patch_size,
+                        resolution=resolution,
+                        raster_from_world_tf=raster_from_world_tf,
+                        has_data=has_data,
+                    )
+                )
+        else:
+            for i in range(curr_state.shape[0]):
                 patch_data, raster_from_world_tf, has_data = self.cache.load_map_patch(
-                    agent_his[-1, x_idx],
-                    agent_his[-1, y_idx],
+                    curr_state[i, x_idx],
+                    curr_state[i, y_idx],
                     desired_patch_size,
                     resolution,
                     offset_xy,
-                    agent_heading,
+                    0,
                     return_rgb,
                     no_map_val=no_map_fill_val,
                 )
-
-            map_patches.append(
-                MapPatch(
-                    data=patch_data,
-                    rot_angle=agent_heading,
-                    crop_size=desired_patch_size,
-                    resolution=resolution,
-                    raster_from_world_tf=raster_from_world_tf,
-                    has_data=has_data,
+                map_patches.append(
+                    MapPatch(
+                        data=patch_data,
+                        rot_angle=0,
+                        crop_size=desired_patch_size,
+                        resolution=resolution,
+                        raster_from_world_tf=raster_from_world_tf,
+                        has_data=has_data,
+                    )
                 )
-            )
 
         return map_patches
 
