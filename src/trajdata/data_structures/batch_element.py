@@ -396,9 +396,7 @@ class SceneBatchElement:
             self.map_patches = self.get_agents_map_patch(
                 map_params, self.agent_histories
             )
-
         self.scene_id = scene_time.scene.name
-
         ### ROBOT DATA ###
         self.robot_future_np: Optional[np.ndarray] = None
 
@@ -502,29 +500,19 @@ class SceneBatchElement:
 
         x_idx, y_idx = self.cache.pos_cols
 
+
         map_patches = list()
-        agent_histories_np = np.stack(agent_histories)
+
+        curr_state = [state[-1] for state in agent_histories]
+        curr_state = np.stack(curr_state)
         if self.standardize_data:
-            Rot = np.array(
-                [
-                    [np.cos(heading), -np.sin(heading)],
-                    [np.sin(heading), np.cos(heading)],
-                ]
-            )
-
+            Rot = np.array([[np.cos(heading),-np.sin(heading)],[np.sin(heading),np.cos(heading)]])
             if sincos:
-                agent_heading = (
-                    np.arctan2(
-                        agent_histories_np[:, -1, heading_sin_idx],
-                        agent_histories_np[:, -1, heading_cos_idx],
-                    )
-                    + heading
-                )
+                agent_heading = np.arctan2(curr_state[:,heading_sin_idx],curr_state[:,heading_cos_idx])+heading
             else:
-                agent_heading = agent_histories_np[:, -1, heading_idx] + heading
-
-            world_dxy = agent_histories_np[:, -1, [x_idx, y_idx]] @ (Rot.T)
-            for i in range(agent_histories_np.shape[0]):
+                agent_heading = curr_state[:, heading_idx] + heading
+            world_dxy = curr_state[:,[x_idx, y_idx]]@(Rot.T)
+            for i in range(curr_state.shape[0]):
                 patch_data, raster_from_world_tf, has_data = self.cache.load_map_patch(
                     world_x + world_dxy[i, 0],
                     world_y + world_dxy[i, 1],
@@ -536,7 +524,6 @@ class SceneBatchElement:
                     rot_pad_factor=sqrt(2),
                     no_map_val=no_map_fill_val,
                 )
-
                 map_patches.append(
                     MapPatch(
                         data=patch_data,
@@ -548,10 +535,10 @@ class SceneBatchElement:
                     )
                 )
         else:
-            for i in range(agent_histories_np.shape[0]):
+            for i in range(curr_state.shape[0]):
                 patch_data, raster_from_world_tf, has_data = self.cache.load_map_patch(
-                    agent_histories_np[i, -1, x_idx],
-                    agent_histories_np[i, -1, y_idx],
+                    curr_state[i, x_idx],
+                    curr_state[i, y_idx],
                     desired_patch_size,
                     resolution,
                     offset_xy,
@@ -559,7 +546,6 @@ class SceneBatchElement:
                     return_rgb,
                     no_map_val=no_map_fill_val,
                 )
-
                 map_patches.append(
                     MapPatch(
                         data=patch_data,
