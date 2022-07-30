@@ -485,15 +485,19 @@ class SceneBatchElement:
         no_map_fill_val: float = patch_params.get("no_map_fill_value", 0.0)
 
         if self.cache._sincos_heading:
-            if len(self.cache.heading_cols)==2:
+            if len(self.cache.heading_cols) == 2:
                 heading_sin_idx, heading_cos_idx = self.cache.heading_cols
             else:
-                heading_sin_idx, heading_cos_idx = self.cache.heading_cols[0],self.cache.heading_cols[0]+1
+                heading_sin_idx, heading_cos_idx = (
+                    self.cache.heading_cols[0],
+                    self.cache.heading_cols[0] + 1,
+                )
             sincos = True
-            
+
         else:
             heading_idx = self.cache.heading_cols[0]
             sincos = False
+
         x_idx, y_idx = self.cache.pos_cols
 
 
