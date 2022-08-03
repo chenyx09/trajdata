@@ -148,6 +148,7 @@ class SimulationScene:
             return agent_collate_fn(
                 agent_data_list,
                 return_dict=self.return_dict,
+                pad_format="outside",
                 batch_augments=self.batch_augments,
             )
         else:
