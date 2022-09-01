@@ -275,15 +275,62 @@ class DataFrameCache(SceneCache):
 
         return state[0] if len(data.shape) == 1 else state
 
+    def _upsample_data(
+        self, new_index: pd.MultiIndex, upsample_dt_ratio: float, method: str
+    ) -> pd.DataFrame:
+        upsample_dt_factor: int = int(upsample_dt_ratio)
+
+        interpolated_df: pd.DataFrame = pd.DataFrame(
+            index=new_index, columns=self.scene_data_df.columns
+        )
+        interpolated_df = interpolated_df.astype(self.scene_data_df.dtypes.to_dict())
+
+        scene_data: np.ndarray = self.scene_data_df.to_numpy()
+        unwrapped_heading: np.ndarray = np.unwrap(self.scene_data_df["heading"])
+
+        # Getting the data initially in the new df, making sure to unwrap angles above
+        # in preparation for interpolation.
+        scene_data_idxs: np.ndarray = np.nonzero(
+            new_index.get_level_values("scene_ts") % upsample_dt_factor == 0
+        )[0]
+        interpolated_df.iloc[scene_data_idxs] = scene_data
+        interpolated_df.iloc[
+            scene_data_idxs, self.column_dict["heading"]
+        ] = unwrapped_heading
+
+        # Interpolation.
+        interpolated_df.interpolate(method=method, limit_area="inside", inplace=True)
+
+        # Wrapping angles back to [-pi, pi).
+        interpolated_df.iloc[:, self.column_dict["heading"]] = arr_utils.angle_wrap(
+            interpolated_df.iloc[:, self.column_dict["heading"]]
+        )
+
+        return interpolated_df
+
+    def _downsample_data(
+        self, new_index: pd.MultiIndex, downsample_dt_ratio: float
+    ) -> pd.DataFrame:
+        downsample_dt_factor: int = int(downsample_dt_ratio)
+
+        subsample_index: pd.MultiIndex = new_index.set_levels(
+            new_index.levels[1] * downsample_dt_factor, level=1
+        )
+
+        subsampled_df: pd.DataFrame = self.scene_data_df.reindex(
+            index=subsample_index
+        ).set_index(new_index)
+
+        return subsampled_df
+
     def interpolate_data(self, desired_dt: float, method: str = "linear") -> None:
-        dt_ratio: float = self.scene.env_metadata.dt / desired_dt
-        if not dt_ratio.is_integer():
+        upsample_dt_ratio: float = self.scene.env_metadata.dt / desired_dt
+        downsample_dt_ratio: float = desired_dt / self.scene.env_metadata.dt
+        if not upsample_dt_ratio.is_integer() and not downsample_dt_ratio.is_integer():
             raise ValueError(
                 f"{str(self.scene)}'s dt of {self.scene.dt}s "
-                f"is not divisible by the desired dt {desired_dt}s."
+                f"is not integer divisible by the desired dt {desired_dt}s."
             )
-
-        dt_factor: int = int(dt_ratio)
 
         agent_info_dict: Dict[str, AgentMetadata] = {
             agent.name: agent for agent in self.scene.agents
@@ -301,31 +348,10 @@ class DataFrameCache(SceneCache):
             names=["agent_id", "scene_ts"],
         )
 
-        interpolated_df: pd.DataFrame = pd.DataFrame(
-            index=new_index, columns=self.scene_data_df.columns
-        )
-        interpolated_df = interpolated_df.astype(self.scene_data_df.dtypes.to_dict())
-
-        scene_data: np.ndarray = self.scene_data_df.to_numpy()
-        unwrapped_heading: np.ndarray = np.unwrap(self.scene_data_df["heading"])
-
-        # Getting the data initially in the new df, making sure to unwrap angles above
-        # in preparation for interpolation.
-        scene_data_idxs: np.ndarray = np.nonzero(
-            new_index.get_level_values("scene_ts") % dt_factor == 0
-        )[0]
-        interpolated_df.iloc[scene_data_idxs] = scene_data
-        interpolated_df.iloc[
-            scene_data_idxs, self.column_dict["heading"]
-        ] = unwrapped_heading
-
-        # Interpolation.
-        interpolated_df.interpolate(method=method, limit_area="inside", inplace=True)
-
-        # Wrapping angles back to [-pi, pi).
-        interpolated_df.iloc[:, self.column_dict["heading"]] = arr_utils.angle_wrap(
-            interpolated_df.iloc[:, self.column_dict["heading"]]
-        )
+        if upsample_dt_ratio >= 1:
+            interpolated_df = self._upsample_data(new_index, upsample_dt_ratio, method)
+        elif downsample_dt_ratio >= 1:
+            interpolated_df = self._downsample_data(new_index, downsample_dt_ratio)
 
         self.dt = desired_dt
         self.scene_data_df = interpolated_df
