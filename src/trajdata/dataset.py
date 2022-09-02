@@ -1,7 +1,10 @@
+import dill
 import gc
+import time
 from collections import defaultdict
 from functools import partial
 from itertools import chain
+from os.path import isfile
 from pathlib import Path
 from typing import Callable, Dict, Final, List, Optional, Set, Tuple, Union
 
@@ -264,6 +267,53 @@ class UnifiedDataset(Dataset):
         )
         self._data_len: int = len(self._data_index)
 
+        self._cached_batch_elements = None
+
+    def load_or_create_cache(self, cache_path: str, num_workers=0, filter_fn=None):
+        if isfile(cache_path):
+            print (f"Loading cache from {cache_path} ...", end='')
+            t = time.time()
+            with open(cache_path, 'rb') as f:
+                self._cached_batch_elements, keep_mask = dill.load(f, encoding='latin1')
+            print (f" done in {time.time() - t:.1f}s.")
+
+        else:
+            # Build cache
+            cached_batch_elements = []
+            keep_mask = []
+
+            if num_workers <= 0:
+                cache_data_iterator = self
+            else:
+                # Use DataLoader as a generic multiprocessing framework. 
+                # We set batchsize=1 and a custom collate function. In effect this will just call self.__getitem__ in parallel.
+                cache_data_iterator = DataLoader(self, batch_size=1, num_workers=num_workers, shuffle=False, collate_fn=lambda xlist: xlist[0])
+            for element in tqdm(cache_data_iterator, desc=f'Caching batch elements ({num_workers} CPUs): ', disable=False):
+                if filter_fn is None or filter_fn(element):
+                    cached_batch_elements.append(element)
+                    keep_mask.append(True)
+                else:
+                    keep_mask.append(False)
+            del cache_data_iterator
+
+            print (f"Saving cache to {cache_path} ....", end='')
+            t = time.time()
+            with open(cache_path, 'wb') as f:
+                dill.dump((cached_batch_elements, keep_mask), f)
+            print (f" done in {time.time() - t:.1f}s.")
+
+            self._cached_batch_elements = cached_batch_elements
+
+        # Verify
+        if len(keep_mask) != self._data_len:
+            raise ValueError("Current data and keep_mask lengths mismatch.")
+
+        # Remove unwanted elements
+        self.remove_elements(keep_mask=keep_mask)
+
+        # Verify
+        if len(self._cached_batch_elements) != self._data_len:
+            raise ValueError("Current data and cahced data lengths mismatch.")
 
     def remove_elements(self, keep_mask: List[int]):
         assert len(keep_mask) == self._data_len
@@ -650,6 +700,9 @@ class UnifiedDataset(Dataset):
         return self._data_len
 
     def __getitem__(self, idx: int) -> Union[SceneBatchElement, AgentBatchElement]:
+        if self._cached_batch_elements is not None:
+            return self._cached_batch_elements[idx]
+
         if self.centric == "scene":
             scene_path, ts = self._data_index[idx]
         elif self.centric == "agent":
