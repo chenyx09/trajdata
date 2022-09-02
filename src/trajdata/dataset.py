@@ -264,6 +264,15 @@ class UnifiedDataset(Dataset):
         )
         self._data_len: int = len(self._data_index)
 
+
+    def remove_elements(self, keep_mask: List[int]):
+        assert len(keep_mask) == self._data_len
+        old_len = self._data_len
+        self._data_index = [self._data_index[i] for i in range(len(keep_mask)) if keep_mask[i]]
+        self._data_len = len(self._data_index)
+
+        print (f"Kept {self._data_len}/{old_len} elements, {self._data_len/old_len*100.0:.2f}%.")
+
     def get_data_index(
         self, num_workers: int, scene_paths: List[Path]
     ) -> Union[
