@@ -81,6 +81,8 @@ class LyftDataset(RawDataset):
             ]
 
             scene_split_map = defaultdict(partial(const_lambda, const_val="val"))
+        else:
+            raise ValueError(f"Unknown NuScenes environment name: {env_name}")
 
         return EnvMetadata(
             name=env_name,

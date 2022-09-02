@@ -82,6 +82,8 @@ class NuscDataset(RawDataset):
                 ("mini_train", "mini_val"),
                 ("boston", "singapore"),
             ]
+        else:
+            raise ValueError(f"Unknown NuScenes environment name: {env_name}")
 
         # Inverting the dict from above, associating every scene with its data split.
         nusc_scene_split_map: Dict[str, str] = {
