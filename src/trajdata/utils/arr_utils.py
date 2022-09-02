@@ -164,6 +164,22 @@ def batch_nd_transform_points_np(points, Mat):
         raise Exception("wrong shape")
 
 
+def batch_nd_transform_angles_np(angles, Mat):
+    cos_vals, sin_vals = Mat[..., 0, 0], Mat[..., 1, 0]
+    rot_angle = np.arctan2(sin_vals, cos_vals)
+    angles = angles + rot_angle
+    angles = angle_wrap(angles)
+    return angles
+
+
+def batch_nd_transform_points_angles_np(points_angles, Mat):
+    assert points_angles.shape[-1] == 3
+    points = batch_nd_transform_points_np(points_angles[..., :2], Mat)
+    angles = batch_nd_transform_angles_np(points_angles[..., 2:3], Mat)
+    points_angles = np.concatenate([points, angles], axis=-1)
+    return points_angles
+
+
 def agent_aware_diff(values: np.ndarray, agent_ids: np.ndarray) -> np.ndarray:
     values_diff: np.ndarray = np.diff(
         values, axis=0, prepend=values[[0]] - (values[[1]] - values[[0]])
