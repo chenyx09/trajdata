@@ -65,6 +65,7 @@ class UnifiedDataset(Dataset):
         incl_robot_future: bool = False,
         incl_map: bool = False,
         map_params: Optional[Dict[str, int]] = None,
+        require_map_cache: bool = True,
         only_types: Optional[List[AgentType]] = None,
         only_predict: Optional[List[AgentType]] = None,
         no_types: Optional[List[AgentType]] = None,
@@ -109,6 +110,7 @@ class UnifiedDataset(Dataset):
             incl_robot_future (bool, optional): Include the ego agent's future trajectory in batches (accordingly, never predict the ego's future). Defaults to False.
             incl_map (bool, optional): Include a local cropping of the rasterized map (if the dataset provides a map) per agent. Defaults to False.
             map_params (Optional[Dict[str, int]], optional): Local map cropping parameters, must be specified if incl_map is True. Must contain keys {"px_per_m", "map_size_px"} and can optionally contain {"offset_frac_xy"}. Defaults to None.
+            require_map_cache (bool, optional): Cache map objects (if the dataset provides a map) regardless of the value of incl_map. Defaults to True.
             only_types (Optional[List[AgentType]], optional): Filter out all agents EXCEPT for those of the specified types. Defaults to None.
             only_predict (Optional[List[AgentType]], optional): Only predict the specified types of agents. Importantly, this keeps other agent types in the scene, e.g., as neighbors of the agent to be predicted. Defaults to None.
             no_types (Optional[List[AgentType]], optional): Filter out all agents with the specified types. Defaults to None.
@@ -144,6 +146,8 @@ class UnifiedDataset(Dataset):
             assert (
                 map_params["map_size_px"] % 2 == 0
             ), "Patch parameter 'map_size_px' must be divisible by 2"
+        
+        require_map_cache = require_map_cache or incl_map
 
         self.history_sec = history_sec
         self.future_sec = future_sec
@@ -183,7 +187,7 @@ class UnifiedDataset(Dataset):
         for env in self.envs:
             if any(env.name in dataset_tuple for dataset_tuple in matching_datasets):
                 all_data_cached: bool = False
-                all_maps_cached: bool = not env.has_maps or not self.incl_map
+                all_maps_cached: bool = not env.has_maps or not require_map_cache
                 if self.env_cache.env_is_cached(env.name) and not self.rebuild_cache:
                     scenes_list: List[Scene] = self.get_desired_scenes_from_env(
                         matching_datasets, scene_description_contains, env
@@ -198,7 +202,7 @@ class UnifiedDataset(Dataset):
 
                     all_maps_cached: bool = (
                         not env.has_maps
-                        or not self.incl_map
+                        or not require_map_cache
                         or all(
                             self.cache_class.is_map_cached(
                                 self.cache_path,
@@ -223,9 +227,7 @@ class UnifiedDataset(Dataset):
                     if (
                         rebuild_maps
                         or not all_maps_cached
-                        or not self.cache_class.are_maps_cached(
-                            self.cache_path, env.name
-                        )
+                        or not self.cache_class.are_maps_cached(self.cache_path, env.name)
                     ):
                         env.cache_maps(
                             self.cache_path,

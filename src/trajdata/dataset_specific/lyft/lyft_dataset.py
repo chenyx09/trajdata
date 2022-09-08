@@ -28,6 +28,7 @@ from trajdata.dataset_specific.lyft.rasterizer import MapSemanticRasterizer
 from trajdata.dataset_specific.raw_dataset import RawDataset
 from trajdata.dataset_specific.scene_records import LyftSceneRecord
 from trajdata.maps import RasterizedMap, RasterizedMapMetadata, map_utils
+from trajdata.maps.map_kdtree import LaneCenterKDTree
 from trajdata.proto.vectorized_map_pb2 import (
     MapElement,
     PedCrosswalk,
@@ -429,7 +430,11 @@ class LyftDataset(RawDataset):
             resolution=resolution,
             map_from_world=map_from_world,
         )
+
+        lanecenter_kdtree = LaneCenterKDTree(vectorized_map)
+        kdtrees = {"lanecenter": lanecenter_kdtree}
+
         rasterized_map_obj: RasterizedMap = RasterizedMap(rasterized_map_info, map_data)
         map_cache_class.cache_map(
-            cache_path, vectorized_map, rasterized_map_obj, self.name
+            cache_path, vectorized_map, kdtrees, rasterized_map_obj, self.name
         )

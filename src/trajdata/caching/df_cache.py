@@ -15,6 +15,7 @@ from trajdata.caching.scene_cache import SceneCache
 from trajdata.data_structures.agent import AgentMetadata, FixedExtent
 from trajdata.data_structures.scene_metadata import Scene
 from trajdata.maps import RasterizedMap, RasterizedMapMetadata
+from trajdata.maps.map_kdtree import MapElementKDTree
 from trajdata.proto.vectorized_map_pb2 import VectorizedMap
 from trajdata.utils import arr_utils
 
@@ -52,6 +53,8 @@ class DataFrameCache(SceneCache):
 
         # Setting default data transformation parameters.
         self.reset_transforms()
+
+        self._kdtrees = None
 
         if augmentations:
             dataset_augments: List[DatasetAugmentation] = [
@@ -585,10 +588,11 @@ class DataFrameCache(SceneCache):
         maps_path: Path = DataFrameCache.get_maps_path(cache_path, env_name)
 
         vector_map_path: Path = maps_path / f"{map_name}.pb"
+        kdtrees_path: Path = maps_path / f"{map_name}_kdtrees.pb"
         raster_map_path: Path = maps_path / f"{map_name}_{resolution:.2f}px_m.zarr"
         raster_metadata_path: Path = maps_path / f"{map_name}_{resolution:.2f}px_m.dill"
 
-        return maps_path, vector_map_path, raster_map_path, raster_metadata_path
+        return maps_path, vector_map_path, kdtrees_path, raster_map_path, raster_metadata_path
 
     @staticmethod
     def is_map_cached(
@@ -597,23 +601,26 @@ class DataFrameCache(SceneCache):
         (
             maps_path,
             vector_map_path,
+            kdtrees_path,
             raster_map_path,
             raster_metadata_path,
         ) = DataFrameCache.get_map_paths(cache_path, env_name, map_name, resolution)
         return (
             maps_path.exists()
             and vector_map_path.exists()
+            and kdtrees_path.exists()
             and raster_metadata_path.exists()
             and raster_map_path.exists()
         )
 
     @staticmethod
     def cache_map(
-        cache_path: Path, vec_map: VectorizedMap, map_obj: RasterizedMap, env_name: str
+        cache_path: Path, vec_map: VectorizedMap, kdtrees: Dict[str, MapElementKDTree], map_obj: RasterizedMap, env_name: str
     ) -> None:
         (
             maps_path,
             vector_map_path,
+            kdtrees_path,
             raster_map_path,
             raster_metadata_path,
         ) = DataFrameCache.get_map_paths(
@@ -626,6 +633,10 @@ class DataFrameCache(SceneCache):
         # Saving the vectorized map data.
         with open(vector_map_path, "wb") as f:
             f.write(vec_map.SerializeToString())
+
+        # Saving precomputed map element kdtrees.
+        with open(kdtrees_path, "wb") as f:
+            dill.dump(kdtrees, f)
 
         # Saving the rasterized map data.
         zarr.save(raster_map_path, map_obj.data)
@@ -643,6 +654,7 @@ class DataFrameCache(SceneCache):
     ) -> None:
         (
             maps_path,
+            _,
             _,
             raster_map_path,
             raster_metadata_path,
@@ -691,6 +703,27 @@ class DataFrameCache(SceneCache):
 
         return np.pad(patch, [(0, 0), (pad_top, pad_bot), (pad_left, pad_right)])
 
+    def load_kdtrees(self) -> Dict[str, MapElementKDTree]:
+        _, _, kdtrees_path, _, _ = DataFrameCache.get_map_paths(
+            self.path, self.scene.env_name, self.scene.location, 0.)
+        with open(kdtrees_path, "rb") as f:
+            kdtrees: Dict[str, MapElementKDTree] = dill.load(f)
+        return kdtrees
+
+    def get_kdtrees(self, load_only_once: bool = True):
+        """Loads and returns the kdtrees dictionary from the cache file.
+        Args:
+            load_only_once (bool): store the kdtree dictionary in self so that we 
+                dont have to load it from the cache file more than once.
+        """
+        if self._kdtrees is None:
+            kdtrees = self.load_kdtrees()
+            if load_only_once:
+                self._kdtrees = kdtrees
+            return kdtrees
+        else:
+            return self._kdtrees
+        
     def load_map_patch(
         self,
         world_x: float,
@@ -705,6 +738,7 @@ class DataFrameCache(SceneCache):
     ) -> Tuple[np.ndarray, np.ndarray, bool]:
         (
             maps_path,
+            _,
             _,
             raster_map_path,
             raster_metadata_path,
