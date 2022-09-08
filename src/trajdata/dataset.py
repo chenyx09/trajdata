@@ -6,7 +6,7 @@ from functools import partial
 from itertools import chain
 from os.path import isfile
 from pathlib import Path
-from typing import Callable, Dict, Final, List, Optional, Set, Tuple, Union
+from typing import Callable, Dict, Final, Iterable, List, Optional, Set, Tuple, Union
 
 import numpy as np
 from torch.utils.data import DataLoader, Dataset
@@ -93,6 +93,7 @@ class UnifiedDataset(Dataset):
         num_workers: int = 0,
         verbose: bool = False,
         extras: Dict[str, Callable[..., np.ndarray]] = dict(),
+        transforms: Iterable[Callable[..., Union[AgentBatchElement, SceneBatchElement]]] = (),
     ) -> None:
         """Instantiates a PyTorch Dataset object which aggregates data
         from multiple trajectory forecasting datasets.
@@ -123,6 +124,7 @@ class UnifiedDataset(Dataset):
             num_workers (int, optional): Number of parallel workers to use for dataset preprocessing and loading. Defaults to 0.
             verbose (bool, optional):  If True, print internal data loading information. Defaults to False.
             extras (Dict[str, Callable[..., np.ndarray]], optional): Adds extra data to each batch element. Each Callable must take as input a filled {Agent,Scene}BatchElement and return an ndarray which will subsequently be added to the batch element's `extra` dict.
+            transforms (Iterable[Callable], optional): Allows for custom modifications of batch elements. Each Callable must take in a filled {Agent,Scene}BatchElement and return a {Agent,Scene}BatchElement.
         """
         self.centric: str = centric
         self.desired_dt: float = desired_dt
@@ -158,6 +160,7 @@ class UnifiedDataset(Dataset):
         self.standardize_derivatives = standardize_derivatives
         self.augmentations = augmentations
         self.extras = extras
+        self.transforms = transforms
         self.verbose = verbose
         self.max_agent_num = max_agent_num
 
@@ -764,5 +767,8 @@ class UnifiedDataset(Dataset):
 
         for key, extra_fn in self.extras.items():
             batch_element.extras[key] = extra_fn(batch_element)
+
+        for transform_fn in self.transforms:
+            batch_element = transform_fn(batch_element)
 
         return batch_element
