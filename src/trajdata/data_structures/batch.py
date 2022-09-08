@@ -64,7 +64,11 @@ class AgentBatch:
                 setattr(self, val, tensor_val.to(device, non_blocking=True))
 
         for key, val in self.extras.items():
-            self.extras[key] = val.to(device, non_blocking=True)
+            # Allow for custom .to() method for objects that define a __to__ function.
+            if hasattr(val, '__to__'):
+                self.extras[key] = val.__to__(device, non_blocking=True)
+            else:
+                self.extras[key] = val.to(device, non_blocking=True)
 
     def agent_types(self) -> List[AgentType]:
         unique_types: Tensor = torch.unique(self.agent_type)

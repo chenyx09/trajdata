@@ -15,6 +15,22 @@ from trajdata.data_structures.batch_element import AgentBatchElement, SceneBatch
 from trajdata.utils import arr_utils
 
 
+class CustomCollateData:
+    @staticmethod
+    def __collate__(elements: list) -> any:
+        raise NotImplementedError
+
+    def __to__(self, device, non_blocking=False):
+        raise NotImplementedError
+
+
+def _collate_data(elems):
+    if hasattr(elems[0], '__collate__'):
+        return elems[0].__collate__(elems)
+    else:
+        return torch.as_tensor(np.stack(elems))
+
+
 def map_collate_fn_agent(
     batch_elems: List[AgentBatchElement],
 ):
@@ -629,9 +645,7 @@ def agent_collate_fn(
 
     extras: Dict[str, Tensor] = {}
     for key in batch_elems[0].extras.keys():
-        extras[key] = torch.as_tensor(
-            np.stack([batch_elem.extras[key] for batch_elem in batch_elems])
-        )
+        extras[key] = _collate_data([batch_elem.extras[key] for batch_elem in batch_elems])
 
     batch = AgentBatch(
         data_idx=data_index_t,
