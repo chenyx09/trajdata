@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Callable, Dict, Final, Iterable, List, Optional, Set, Tuple, Union
 
 import numpy as np
+import torch
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
@@ -95,6 +96,7 @@ class UnifiedDataset(Dataset):
         verbose: bool = False,
         extras: Dict[str, Callable[..., np.ndarray]] = dict(),
         transforms: Iterable[Callable[..., Union[AgentBatchElement, SceneBatchElement]]] = (),
+        rank: int = 0,
     ) -> None:
         """Instantiates a PyTorch Dataset object which aggregates data
         from multiple trajectory forecasting datasets.
@@ -127,6 +129,7 @@ class UnifiedDataset(Dataset):
             verbose (bool, optional):  If True, print internal data loading information. Defaults to False.
             extras (Dict[str, Callable[..., np.ndarray]], optional): Adds extra data to each batch element. Each Callable must take as input a filled {Agent,Scene}BatchElement and return an ndarray which will subsequently be added to the batch element's `extra` dict.
             transforms (Iterable[Callable], optional): Allows for custom modifications of batch elements. Each Callable must take in a filled {Agent,Scene}BatchElement and return a {Agent,Scene}BatchElement.
+            rank (int, optional): Proccess rank when using torch DistributedDataParallel for multi-GPU training. Only the rank 0 process will be used for caching.
         """
         self.centric: str = centric
         self.desired_dt: float = desired_dt
@@ -229,11 +232,16 @@ class UnifiedDataset(Dataset):
                         or not all_maps_cached
                         or not self.cache_class.are_maps_cached(self.cache_path, env.name)
                     ):
-                        env.cache_maps(
-                            self.cache_path,
-                            self.cache_class,
-                            resolution=self.map_params["px_per_m"],
-                        )
+                        # Use only rank 0 process for caching when using multi-GPU torch training.
+                        if rank == 0: 
+                            env.cache_maps(
+                                self.cache_path,
+                                self.cache_class,
+                                resolution=self.map_params["px_per_m"],
+                            )
+                        # Wait for rank 0 process to be done with caching.
+                        if torch.cuda.is_available():
+                            torch.distributed.barrier()                
 
                     scenes_list: List[SceneMetadata] = self.get_desired_scenes_from_env(
                         matching_datasets, scene_description_contains, env
