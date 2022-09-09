@@ -334,8 +334,26 @@ class NuscDataset(RawDataset):
 
         # Determining which indices are on the right of the lane center.
         on_right: np.ndarray = perp_dot_product < 0
+
+        # Handle edge case where less than 2 polygon points appear to be on the left/right based 
+        # on the logic above. This can happen for short and curved lanes, typically lane_connectors.
+        # In this case we find the pair of neighbors closest to the other side.
+        on_right_count = np.count_nonzero(on_right)
+        if on_right_count < 2:
+            perp_dot_product_pair = perp_dot_product + np.roll(perp_dot_product, 1)
+            closest_i = np.argmin(perp_dot_product_pair)
+            on_right[closest_i] = True
+            on_right[closest_i - 1] = True  # For closest_i == 0 this will index to -1.
+        elif on_right_count > on_right.shape[0] - 2:
+            perp_dot_product_pair = perp_dot_product + np.roll(perp_dot_product, 1)
+            closest_i = np.argmax(perp_dot_product_pair)
+            on_right[closest_i] = False
+            on_right[closest_i - 1] = False  # For closest_i == 0 this will index to -1.
+
         # Determining the boundary between the left/right polygon vertices
         # (they will be together in blocks due to the ordering of the polygon vertices).
+        # TODO(pkarkus) It is possible that a heaviliy curved lane would result in  
+        # non-consecutive left-right classification. We should handle this case.
         idx_changes: int = np.where(np.roll(on_right, 1) < on_right)[0].item()
 
         if idx_changes > 0:
@@ -408,6 +426,7 @@ class NuscDataset(RawDataset):
 
         overall_pbar = tqdm(
             total=len(nusc_map.lane)
+            + len(nusc_map.lane_connector)
             + len(nusc_map.drivable_area[0]["polygon_tokens"])
             + len(nusc_map.ped_crossing)
             + len(nusc_map.walkway),
@@ -416,7 +435,8 @@ class NuscDataset(RawDataset):
             leave=False,
         )
 
-        for lane_record in nusc_map.lane:
+        # for lane_record in nusc_map.lane:
+        for lane_record in itertools.chain(nusc_map.lane, nusc_map.lane_connector):
             center_pts, left_pts, right_pts = self.extract_lane_and_edges(
                 nusc_map, lane_record
             )
