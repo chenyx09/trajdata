@@ -328,6 +328,31 @@ class UnifiedDataset(Dataset):
         if len(self._cached_batch_elements) != self._data_len:
             raise ValueError("Current data and cahced data lengths mismatch.")
 
+    def apply_filter(
+        self, filter_fn: Callable[[Union[AgentBatchElement, SceneBatchElement]], bool], num_workers: int = 0
+    ) -> None:
+        keep_mask = []
+
+        if num_workers <= 0:
+            cache_data_iterator = self
+        else:
+            # Use DataLoader as a generic multiprocessing framework. 
+            # We set batchsize=1 and a custom collate function. In effect this will just call self.__getitem__ in parallel.
+            cache_data_iterator = DataLoader(self, batch_size=1, num_workers=num_workers, shuffle=False, collate_fn=lambda xlist: xlist[0])
+        for element in tqdm(cache_data_iterator, desc=f'Filtering dataset ({num_workers} CPUs): ', disable=False):
+            if filter_fn is None or filter_fn(element):
+                keep_mask.append(True)
+            else:
+                keep_mask.append(False)
+        del cache_data_iterator        
+
+        # Verify
+        if len(keep_mask) != self._data_len:
+            raise ValueError("Current data and keep_mask lengths mismatch.")
+
+        # Remove unwanted elements
+        self.remove_elements(keep_mask=keep_mask)
+
     def remove_elements(self, keep_mask: List[int]):
         assert len(keep_mask) == self._data_len
         old_len = self._data_len
@@ -708,6 +733,10 @@ class UnifiedDataset(Dataset):
     def scenes(self) -> Scene:
         for scene_idx in range(self.num_scenes()):
             yield self.get_scene(scene_idx)
+
+    def __iter__(self):
+        for i in range(len(self)):
+            yield self[i]
 
     def __len__(self) -> int:
         return self._data_len
