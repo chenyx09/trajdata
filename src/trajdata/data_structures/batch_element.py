@@ -6,8 +6,8 @@ import numpy as np
 
 from trajdata.caching import SceneCache
 from trajdata.data_structures.agent import AgentMetadata, AgentType
-from trajdata.data_structures.map_patch import MapPatch
 from trajdata.data_structures.scene import SceneTime, SceneTimeAgent
+from trajdata.maps import RasterizedMapPatch
 
 
 class AgentBatchElement:
@@ -127,7 +127,7 @@ class AgentBatchElement:
             self.robot_future_len: int = self.robot_future_np.shape[0] - 1
 
         ### MAP ###
-        self.map_patch: Optional[MapPatch] = None
+        self.map_patch: Optional[RasterizedMapPatch] = None
         if incl_map:
             self.map_patch = self.get_agent_map_patch(map_params)
 
@@ -251,7 +251,7 @@ class AgentBatchElement:
         )
         return robot_curr_and_fut_np
 
-    def get_agent_map_patch(self, patch_params: Dict[str, int]) -> MapPatch:
+    def get_agent_map_patch(self, patch_params: Dict[str, int]) -> RasterizedMapPatch:
         world_x, world_y = self.curr_agent_state_np[:2]
         desired_patch_size: int = patch_params["map_size_px"]
         resolution: float = patch_params["px_per_m"]
@@ -285,7 +285,7 @@ class AgentBatchElement:
                 no_map_val=no_map_fill_val,
             )
 
-        return MapPatch(
+        return RasterizedMapPatch(
             data=patch_data,
             rot_angle=heading,
             crop_size=desired_patch_size,
@@ -391,7 +391,7 @@ class SceneBatchElement:
         ) = self.get_agents_future(future_sec, nearby_agents)
 
         ### MAP ###
-        self.map_patches: Optional[MapPatch] = None
+        self.map_patches: Optional[RasterizedMapPatch] = None
         if incl_map:
             self.map_patches = self.get_agents_map_patch(
                 map_params, self.agent_histories
@@ -475,7 +475,7 @@ class SceneBatchElement:
 
     def get_agents_map_patch(
         self, patch_params: Dict[str, int], agent_histories: List[np.ndarray]
-    ) -> List[MapPatch]:
+    ) -> List[RasterizedMapPatch]:
         world_x, world_y = self.centered_agent_state_np[:2]
         heading = self.centered_agent_state_np[-1]
         desired_patch_size: int = patch_params["map_size_px"]
@@ -534,7 +534,7 @@ class SceneBatchElement:
                     no_map_val=no_map_fill_val,
                 )
                 map_patches.append(
-                    MapPatch(
+                    RasterizedMapPatch(
                         data=patch_data,
                         rot_angle=agent_heading[i],
                         crop_size=desired_patch_size,
@@ -556,7 +556,7 @@ class SceneBatchElement:
                     no_map_val=no_map_fill_val,
                 )
                 map_patches.append(
-                    MapPatch(
+                    RasterizedMapPatch(
                         data=patch_data,
                         rot_angle=0,
                         crop_size=desired_patch_size,
