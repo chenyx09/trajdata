@@ -65,7 +65,7 @@ class AgentBatch:
 
         for key, val in self.extras.items():
             # Allow for custom .to() method for objects that define a __to__ function.
-            if hasattr(val, '__to__'):
+            if hasattr(val, "__to__"):
                 self.extras[key] = val.__to__(device, non_blocking=True)
             else:
                 self.extras[key] = val.to(device, non_blocking=True)

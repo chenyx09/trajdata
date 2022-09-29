@@ -1,10 +1,10 @@
 from math import ceil
-from typing import Any, Dict, Final, List, Optional, Tuple
+from typing import Final, Tuple
 
 import cv2
 import numpy as np
-from tqdm import tqdm
 from scipy.stats import circmean
+from tqdm import tqdm
 
 from trajdata.proto.vectorized_map_pb2 import (
     MapElement,
@@ -149,14 +149,16 @@ def interpolate(pts: np.ndarray, num_pts: int) -> np.ndarray:
 
 def get_polyline_headings(points: np.ndarray) -> np.ndarray:
     """Get approximate heading angles for points in a polyline.
+
     Args:
         points: XY points, np.ndarray of shape [N, 2]
+
     Returns:
-        np.ndarray: approximate heading angles in radians, shape [N, 1]   
+        np.ndarray: approximate heading angles in radians, shape [N, 1]
     """
-    if points.ndim < 2 and points.shape[-1] != 2 and  points.shape[-2] <= 1:
+    if points.ndim < 2 and points.shape[-1] != 2 and points.shape[-2] <= 1:
         raise ValueError("Unexpected shape")
-    
+
     vectors = points[..., 1:, :] - points[..., :-1, :]
     vec_headings = np.arctan2(vectors[..., 1], vectors[..., 0])  # -pi..pi
 
@@ -165,37 +167,47 @@ def get_polyline_headings(points: np.ndarray) -> np.ndarray:
     # TODO(pkarkus) this would be more accurate if weighted with the distance to the neighbor
     if vec_headings.shape[-1] <= 1:
         # Handle special case because circmean unfortunately returns nan for such input.
-        mean_consec_headings = np.zeros(list(vec_headings.shape[:-1]) + [0], dtype=vec_headings.dtype)
+        mean_consec_headings = np.zeros(
+            list(vec_headings.shape[:-1]) + [0], dtype=vec_headings.dtype
+        )
     else:
         mean_consec_headings = circmean(
             np.stack([vec_headings[..., :-1], vec_headings[..., 1:]], axis=-1),
             high=np.pi,
             low=-np.pi,
-            axis=-1)
+            axis=-1,
+        )
 
-    headings = np.concatenate([
-        vec_headings[..., :1],  # heading of first segment
-        mean_consec_headings,  # mean heading of consecutive segments
-        vec_headings[..., -1:]  # heading of last segment
-    ], axis=-1)
+    headings = np.concatenate(
+        [
+            vec_headings[..., :1],  # heading of first segment
+            mean_consec_headings,  # mean heading of consecutive segments
+            vec_headings[..., -1:],  # heading of last segment
+        ],
+        axis=-1,
+    )
     return headings[..., np.newaxis]
 
 
-def densify_polyline(pts: np.ndarray, max_dist: float, last_coord_is_heading: bool = False) -> np.ndarray:
+def densify_polyline(
+    pts: np.ndarray, max_dist: float, last_coord_is_heading: bool = False
+) -> np.ndarray:
     """Add extra points to polyline to satisfy max distance between points.
+
     Args:
         pts (np.ndarray): XY or XYZ or XYH coordinates.
-        max_dist (float): Maximum distance between points of the polyline
-        last_coord_is_heading: treat the last coordinate as heading when averaging 
+        max_dist (float): Maximum distance between points of the polyline.
+        last_coord_is_heading: treat the last coordinate as heading when averaging.
+
     Returns:
-        np.ndarray: New polyline where all points are withing max_dist distance.
+        np.ndarray: New polyline where all points are within max_dist distance.
     """
     if pts.ndim != 2:
         raise ValueError("pts is expected to be 2 dimensional")
     if last_coord_is_heading:
         raise NotImplementedError
 
-    pos_dim = pts.shape[-1]-1 if last_coord_is_heading else pts.shape[-1]
+    pos_dim = pts.shape[-1] - 1 if last_coord_is_heading else pts.shape[-1]
     segments = pts[..., 1:, :pos_dim] - pts[..., :-1, :pos_dim]
     seg_lens = np.linalg.norm(segments, axis=-1)
     new_pts = [pts[..., 0:1, :]]
@@ -203,11 +215,16 @@ def densify_polyline(pts: np.ndarray, max_dist: float, last_coord_is_heading: bo
         num_extra_points = seg_lens[..., i] // max_dist
         if num_extra_points > 0:
             step_vec = segments[..., i, :] / (num_extra_points + 1)
-            new_pts.append( 
-               pts[..., i, np.newaxis, :] +
-               step_vec[..., np.newaxis, :] * np.arange(1, num_extra_points+1)  # TODO only step that assumes 2d array
+            new_pts.append(
+                pts[..., i, np.newaxis, :]
+                + step_vec[..., np.newaxis, :]
+                * np.arange(
+                    1, num_extra_points + 1
+                )  # TODO only step that assumes 2d array
             )
-        new_pts.append(pts[..., i+1:i+2, :])
+
+        new_pts.append(pts[..., i + 1 : i + 2, :])
+
     new_pts = np.concatenate(new_pts, axis=-2)
     return new_pts
 

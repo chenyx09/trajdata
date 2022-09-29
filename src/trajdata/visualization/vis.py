@@ -81,6 +81,7 @@ def plot_agent_batch(
     #     history_xy[..., -2],
     #     color="k",
     # )
+
     ax.plot(future_xy[..., 0], future_xy[..., 1], c="violet", label="Agent Future")
     ax.scatter(center_xy[0], center_xy[1], s=20, c="orangered", label="Agent Current")
 

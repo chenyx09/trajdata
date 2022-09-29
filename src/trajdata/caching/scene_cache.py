@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any, Callable, List, Optional, Tuple, Dict
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -134,7 +134,11 @@ class SceneCache:
 
     @staticmethod
     def cache_map(
-        cache_path: Path, vec_map: VectorizedMap, kdtrees: Dict[str, MapElementKDTree], map_obj: RasterizedMap, env_name: str
+        cache_path: Path,
+        vec_map: VectorizedMap,
+        kdtrees: Dict[str, MapElementKDTree],
+        map_obj: RasterizedMap,
+        env_name: str,
     ) -> None:
         raise NotImplementedError()
 

@@ -2,7 +2,6 @@ import warnings
 from copy import deepcopy
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Type, Union
-import itertools
 
 import numpy as np
 import pandas as pd

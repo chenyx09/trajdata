@@ -2,23 +2,18 @@
 This is an example of how to extend a batch with lane information
 """
 
-import random
-import numpy as np
-
 from collections import defaultdict
-from functools import partial
-from typing import Tuple, Union
+
+import matplotlib.pyplot as plt
+import numpy as np
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from trajdata import AgentBatch, AgentType, UnifiedDataset
-from trajdata.augmentation import NoiseHistories
 from trajdata.data_structures.batch_element import AgentBatchElement, SceneBatchElement
-from trajdata.visualization.vis import plot_agent_batch
-from trajdata.utils.arr_utils import batch_nd_transform_points_np
 from trajdata.maps.map_kdtree import LaneCenterKDTree
-
-import matplotlib.pyplot as plt
+from trajdata.utils.arr_utils import batch_nd_transform_points_np
+from trajdata.visualization.vis import plot_agent_batch
 
 
 def get_closest_lane_point(element: AgentBatchElement) -> np.ndarray:
@@ -26,7 +21,9 @@ def get_closest_lane_point(element: AgentBatchElement) -> np.ndarray:
 
     # Transform from agent coordinate frame to world coordinate frame.
     world_from_agent_tf = np.linalg.inv(element.agent_from_world_tf)
-    agent_future_xy_world = batch_nd_transform_points_np(element.agent_future_np[:, :2], world_from_agent_tf)
+    agent_future_xy_world = batch_nd_transform_points_np(
+        element.agent_future_np[:, :2], world_from_agent_tf
+    )
 
     # Use cached kdtree to find closest lane point
     lane_kdtree: LaneCenterKDTree = element.cache.get_kdtrees()["lanecenter"]
@@ -37,7 +34,9 @@ def get_closest_lane_point(element: AgentBatchElement) -> np.ndarray:
     lane_points_world = np.stack(lane_points_world, axis=0)
 
     # Transform lane points to agent coordinate frame
-    lane_points = batch_nd_transform_points_np(lane_points_world, element.agent_from_world_tf)
+    lane_points = batch_nd_transform_points_np(
+        lane_points_world, element.agent_from_world_tf
+    )
 
     return lane_points
 
@@ -47,7 +46,7 @@ def main():
         desired_data=[
             "nusc_mini-mini_train",
             "lyft_sample-mini_val",
-            ],
+        ],
         centric="agent",
         desired_dt=0.1,
         history_sec=(3.2, 3.2),
@@ -58,13 +57,14 @@ def main():
         incl_map=True,
         map_params={"px_per_m": 2, "map_size_px": 224, "offset_frac_xy": (-0.5, 0.0)},
         num_workers=0,
-        rebuild_cache=True,
         verbose=True,
         data_dirs={  # Remember to change this to match your filesystem!
-            "nusc_mini": "~/data/nuscenes_raw_annot",
-            "lyft_sample": "~/data/lyft/scenes/sample.zarr",
+            "nusc_mini": "~/datasets/nuScenes",
+            "lyft_sample": "~/datasets/lyft/scenes/sample.zarr",
         },
-        extras={  # a dictionary that contains functions that generate our custom data. Can be any function and has access to the batch element.
+        # A dictionary that contains functions that generate our custom data.
+        # Can be any function and has access to the batch element.
+        extras={
             "closest_lane_point": get_closest_lane_point,
         },
     )
@@ -89,16 +89,24 @@ def main():
     assert "closest_lane_point" in batch.extras
 
     for batch_i in range(num_plots):
-        ax = plot_agent_batch(batch, batch_idx=batch_i, legend=False, show=False, close=False)
+        ax = plot_agent_batch(
+            batch, batch_idx=batch_i, legend=False, show=False, close=False
+        )
         lane_points = batch.extras["closest_lane_point"][batch_i]
-        ax.plot(lane_points[:, 0], lane_points[:, 1], 'o-',  markersize=3, label="Lane points")
+        ax.plot(
+            lane_points[:, 0],
+            lane_points[:, 1],
+            "o-",
+            markersize=3,
+            label="Lane points",
+        )
         ax.legend(loc="best", frameon=True)
     plt.show()
-    plt.close('all')
+    plt.close("all")
 
     # Scan through dataset
     batch: AgentBatch
-    for data_i, batch in tqdm(enumerate(dataloader)):
+    for batch in tqdm(dataloader):
         assert "closest_lane_point" in batch.extras
 
 

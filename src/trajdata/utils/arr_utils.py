@@ -147,7 +147,7 @@ def transform_matrices(angles: Tensor, translations: Tensor) -> Tensor:
     )
 
 
-def batch_nd_transform_points_np(points, Mat):
+def batch_nd_transform_points_np(points: np.ndarray, Mat: np.ndarray) -> np.ndarray:
     ndim = Mat.shape[-1] - 1
     batch = list(range(Mat.ndim - 2)) + [Mat.ndim - 1] + [Mat.ndim - 2]
     Mat = np.transpose(Mat, batch)
@@ -164,7 +164,7 @@ def batch_nd_transform_points_np(points, Mat):
         raise Exception("wrong shape")
 
 
-def batch_nd_transform_angles_np(angles, Mat):
+def batch_nd_transform_angles_np(angles: np.ndarray, Mat: np.ndarray) -> np.ndarray:
     cos_vals, sin_vals = Mat[..., 0, 0], Mat[..., 1, 0]
     rot_angle = np.arctan2(sin_vals, cos_vals)
     angles = angles + rot_angle
@@ -172,7 +172,9 @@ def batch_nd_transform_angles_np(angles, Mat):
     return angles
 
 
-def batch_nd_transform_points_angles_np(points_angles, Mat):
+def batch_nd_transform_points_angles_np(
+    points_angles: np.ndarray, Mat: np.ndarray
+) -> np.ndarray:
     assert points_angles.shape[-1] == 3
     points = batch_nd_transform_points_np(points_angles[..., :2], Mat)
     angles = batch_nd_transform_angles_np(points_angles[..., 2:3], Mat)
@@ -230,6 +232,7 @@ def batch_proj(x, line):
             delta_y,
             torch.unsqueeze(delta_psi, dim=-1),
         )
+
     elif isinstance(x, np.ndarray):
         delta = line[..., 0:2] - np.repeat(
             x[..., np.newaxis, 0:2], line_length, axis=-2

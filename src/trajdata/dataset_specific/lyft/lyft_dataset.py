@@ -1,6 +1,5 @@
 from collections import defaultdict
 from functools import partial
-from math import ceil
 from pathlib import Path
 from random import Random
 from typing import Any, Dict, List, Optional, Tuple, Type
@@ -11,7 +10,6 @@ import pandas as pd
 from l5kit.configs.config import load_metadata
 from l5kit.data import ChunkedDataset, LocalDataManager
 from l5kit.data.map_api import InterpolationMethod, MapAPI
-from l5kit.rasterization import RenderContext
 from tqdm import tqdm
 
 from trajdata.caching import EnvCache, SceneCache
@@ -24,7 +22,6 @@ from trajdata.data_structures import (
 )
 from trajdata.data_structures.agent import Agent, AgentType, VariableExtent
 from trajdata.dataset_specific.lyft import lyft_utils
-from trajdata.dataset_specific.lyft.rasterizer import MapSemanticRasterizer
 from trajdata.dataset_specific.raw_dataset import RawDataset
 from trajdata.dataset_specific.scene_records import LyftSceneRecord
 from trajdata.maps import RasterizedMap, RasterizedMapMetadata, map_utils
@@ -83,7 +80,7 @@ class LyftDataset(RawDataset):
 
             scene_split_map = defaultdict(partial(const_lambda, const_val="val"))
         else:
-            raise ValueError(f"Unknown NuScenes environment name: {env_name}")
+            raise ValueError(f"Unknown Lyft environment name: {env_name}")
 
         return EnvMetadata(
             name=env_name,

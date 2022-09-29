@@ -1,4 +1,3 @@
-import dill
 import gc
 import time
 from collections import defaultdict
@@ -8,6 +7,7 @@ from os.path import isfile
 from pathlib import Path
 from typing import Callable, Dict, Final, Iterable, List, Optional, Set, Tuple, Union
 
+import dill
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset
@@ -95,7 +95,9 @@ class UnifiedDataset(Dataset):
         num_workers: int = 0,
         verbose: bool = False,
         extras: Dict[str, Callable[..., np.ndarray]] = dict(),
-        transforms: Iterable[Callable[..., Union[AgentBatchElement, SceneBatchElement]]] = (),
+        transforms: Iterable[
+            Callable[..., Union[AgentBatchElement, SceneBatchElement]]
+        ] = (),
         rank: int = 0,
     ) -> None:
         """Instantiates a PyTorch Dataset object which aggregates data
@@ -149,7 +151,7 @@ class UnifiedDataset(Dataset):
             assert (
                 map_params["map_size_px"] % 2 == 0
             ), "Patch parameter 'map_size_px' must be divisible by 2"
-        
+
         require_map_cache = require_map_cache or incl_map
 
         self.history_sec = history_sec
@@ -230,10 +232,12 @@ class UnifiedDataset(Dataset):
                     if (
                         rebuild_maps
                         or not all_maps_cached
-                        or not self.cache_class.are_maps_cached(self.cache_path, env.name)
+                        or not self.cache_class.are_maps_cached(
+                            self.cache_path, env.name
+                        )
                     ):
                         # Use only rank 0 process for caching when using multi-GPU torch training.
-                        if rank == 0: 
+                        if rank == 0:
                             env.cache_maps(
                                 self.cache_path,
                                 self.cache_class,
@@ -241,7 +245,7 @@ class UnifiedDataset(Dataset):
                             )
                         # Wait for rank 0 process to be done with caching.
                         if torch.cuda.is_available():
-                            torch.distributed.barrier()                
+                            torch.distributed.barrier()
 
                     scenes_list: List[SceneMetadata] = self.get_desired_scenes_from_env(
                         matching_datasets, scene_description_contains, env
@@ -282,13 +286,15 @@ class UnifiedDataset(Dataset):
 
         self._cached_batch_elements = None
 
-    def load_or_create_cache(self, cache_path: str, num_workers=0, filter_fn=None):
+    def load_or_create_cache(
+        self, cache_path: str, num_workers=0, filter_fn=None
+    ) -> None:
         if isfile(cache_path):
-            print (f"Loading cache from {cache_path} ...", end='')
+            print(f"Loading cache from {cache_path} ...", end="")
             t = time.time()
-            with open(cache_path, 'rb') as f:
-                self._cached_batch_elements, keep_mask = dill.load(f, encoding='latin1')
-            print (f" done in {time.time() - t:.1f}s.")
+            with open(cache_path, "rb") as f:
+                self._cached_batch_elements, keep_mask = dill.load(f, encoding="latin1")
+            print(f" done in {time.time() - t:.1f}s.")
 
         else:
             # Build cache
@@ -298,68 +304,104 @@ class UnifiedDataset(Dataset):
             if num_workers <= 0:
                 cache_data_iterator = self
             else:
-                # Use DataLoader as a generic multiprocessing framework. 
-                # We set batchsize=1 and a custom collate function. In effect this will just call self.__getitem__ in parallel.
-                cache_data_iterator = DataLoader(self, batch_size=1, num_workers=num_workers, shuffle=False, collate_fn=lambda xlist: xlist[0])
-            for element in tqdm(cache_data_iterator, desc=f'Caching batch elements ({num_workers} CPUs): ', disable=False):
+                # Use DataLoader as a generic multiprocessing framework.
+                # We set batchsize=1 and a custom collate function.
+                # In effect this will just call self.__getitem__ in parallel.
+                cache_data_iterator = DataLoader(
+                    self,
+                    batch_size=1,
+                    num_workers=num_workers,
+                    shuffle=False,
+                    collate_fn=lambda xlist: xlist[0],
+                )
+
+            for element in tqdm(
+                cache_data_iterator,
+                desc=f"Caching batch elements ({num_workers} CPUs): ",
+                disable=False,
+            ):
                 if filter_fn is None or filter_fn(element):
                     cached_batch_elements.append(element)
                     keep_mask.append(True)
                 else:
                     keep_mask.append(False)
+
+            # Just deletes the variable cache_data_iterator,
+            # not self (in case it is set to that)!
             del cache_data_iterator
 
-            print (f"Saving cache to {cache_path} ....", end='')
+            print(f"Saving cache to {cache_path} ....", end="")
             t = time.time()
-            with open(cache_path, 'wb') as f:
+            with open(cache_path, "wb") as f:
                 dill.dump((cached_batch_elements, keep_mask), f)
-            print (f" done in {time.time() - t:.1f}s.")
+            print(f" done in {time.time() - t:.1f}s.")
 
             self._cached_batch_elements = cached_batch_elements
 
         # Verify
         if len(keep_mask) != self._data_len:
-            raise ValueError("Current data and keep_mask lengths mismatch.")
+            raise ValueError("Current data and keep_mask lengths do not match!")
 
         # Remove unwanted elements
         self.remove_elements(keep_mask=keep_mask)
 
         # Verify
         if len(self._cached_batch_elements) != self._data_len:
-            raise ValueError("Current data and cahced data lengths mismatch.")
+            raise ValueError("Current data and cached data lengths do not match!")
 
     def apply_filter(
-        self, filter_fn: Callable[[Union[AgentBatchElement, SceneBatchElement]], bool], num_workers: int = 0
+        self,
+        filter_fn: Callable[[Union[AgentBatchElement, SceneBatchElement]], bool],
+        num_workers: int = 0,
     ) -> None:
         keep_mask = []
 
         if num_workers <= 0:
             cache_data_iterator = self
         else:
-            # Use DataLoader as a generic multiprocessing framework. 
-            # We set batchsize=1 and a custom collate function. In effect this will just call self.__getitem__ in parallel.
-            cache_data_iterator = DataLoader(self, batch_size=1, num_workers=num_workers, shuffle=False, collate_fn=lambda xlist: xlist[0])
-        for element in tqdm(cache_data_iterator, desc=f'Filtering dataset ({num_workers} CPUs): ', disable=False):
+            # Use DataLoader as a generic multiprocessing framework.
+            # We set batchsize=1 and a custom collate function.
+            # In effect this will just call self.__getitem__ in parallel.
+            cache_data_iterator = DataLoader(
+                self,
+                batch_size=1,
+                num_workers=num_workers,
+                shuffle=False,
+                collate_fn=lambda xlist: xlist[0],
+            )
+
+        for element in tqdm(
+            cache_data_iterator,
+            desc=f"Filtering dataset ({num_workers} CPUs): ",
+            disable=False,
+        ):
             if filter_fn is None or filter_fn(element):
                 keep_mask.append(True)
             else:
                 keep_mask.append(False)
-        del cache_data_iterator        
+
+        # Just deletes the variable cache_data_iterator,
+        # not self (in case it is set to that)!
+        del cache_data_iterator
 
         # Verify
         if len(keep_mask) != self._data_len:
-            raise ValueError("Current data and keep_mask lengths mismatch.")
+            raise ValueError("Current data and keep_mask lengths do not match!")
 
         # Remove unwanted elements
         self.remove_elements(keep_mask=keep_mask)
 
-    def remove_elements(self, keep_mask: List[int]):
+    def remove_elements(self, keep_mask: List[bool]):
         assert len(keep_mask) == self._data_len
         old_len = self._data_len
-        self._data_index = [self._data_index[i] for i in range(len(keep_mask)) if keep_mask[i]]
+        self._data_index = [
+            self._data_index[i] for i in range(len(keep_mask)) if keep_mask[i]
+        ]
         self._data_len = len(self._data_index)
 
-        print (f"Kept {self._data_len}/{old_len} elements, {self._data_len/old_len*100.0:.2f}%.")
+        print(
+            f"Kept {self._data_len}/{old_len} elements, {self._data_len/old_len*100.0:.2f}%."
+        )
 
     def get_data_index(
         self, num_workers: int, scene_paths: List[Path]

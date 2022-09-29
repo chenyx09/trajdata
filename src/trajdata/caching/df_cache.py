@@ -584,15 +584,21 @@ class DataFrameCache(SceneCache):
     @staticmethod
     def get_map_paths(
         cache_path: Path, env_name: str, map_name: str, resolution: float
-    ) -> Tuple[Path, Path, Path, Path]:
+    ) -> Tuple[Path, Path, Path, Path, Path]:
         maps_path: Path = DataFrameCache.get_maps_path(cache_path, env_name)
 
         vector_map_path: Path = maps_path / f"{map_name}.pb"
-        kdtrees_path: Path = maps_path / f"{map_name}_kdtrees.pb"
+        kdtrees_path: Path = maps_path / f"{map_name}_kdtrees.dill"
         raster_map_path: Path = maps_path / f"{map_name}_{resolution:.2f}px_m.zarr"
         raster_metadata_path: Path = maps_path / f"{map_name}_{resolution:.2f}px_m.dill"
 
-        return maps_path, vector_map_path, kdtrees_path, raster_map_path, raster_metadata_path
+        return (
+            maps_path,
+            vector_map_path,
+            kdtrees_path,
+            raster_map_path,
+            raster_metadata_path,
+        )
 
     @staticmethod
     def is_map_cached(
@@ -615,7 +621,11 @@ class DataFrameCache(SceneCache):
 
     @staticmethod
     def cache_map(
-        cache_path: Path, vec_map: VectorizedMap, kdtrees: Dict[str, MapElementKDTree], map_obj: RasterizedMap, env_name: str
+        cache_path: Path,
+        vec_map: VectorizedMap,
+        kdtrees: Dict[str, MapElementKDTree],
+        map_obj: RasterizedMap,
+        env_name: str,
     ) -> None:
         (
             maps_path,
@@ -705,25 +715,31 @@ class DataFrameCache(SceneCache):
 
     def load_kdtrees(self) -> Dict[str, MapElementKDTree]:
         _, _, kdtrees_path, _, _ = DataFrameCache.get_map_paths(
-            self.path, self.scene.env_name, self.scene.location, 0.)
+            self.path, self.scene.env_name, self.scene.location, 0.0
+        )
+
         with open(kdtrees_path, "rb") as f:
             kdtrees: Dict[str, MapElementKDTree] = dill.load(f)
+
         return kdtrees
 
     def get_kdtrees(self, load_only_once: bool = True):
         """Loads and returns the kdtrees dictionary from the cache file.
+
         Args:
-            load_only_once (bool): store the kdtree dictionary in self so that we 
+            load_only_once (bool): store the kdtree dictionary in self so that we
                 dont have to load it from the cache file more than once.
         """
         if self._kdtrees is None:
             kdtrees = self.load_kdtrees()
             if load_only_once:
                 self._kdtrees = kdtrees
+
             return kdtrees
+
         else:
             return self._kdtrees
-        
+
     def load_map_patch(
         self,
         world_x: float,
