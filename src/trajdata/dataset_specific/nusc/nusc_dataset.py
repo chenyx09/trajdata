@@ -5,6 +5,7 @@ from typing import Dict, List, Optional, Tuple, Type, Union
 
 import numpy as np
 import pandas as pd
+import itertools
 from nuscenes.eval.prediction.splits import NUM_IN_TRAIN_VAL
 from nuscenes.map_expansion import arcline_path_utils
 from nuscenes.map_expansion.map_api import NuScenesMap, locations

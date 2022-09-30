@@ -40,6 +40,8 @@ from trajdata.parallel import (
 )
 from trajdata.utils import agent_utils, env_utils, scene_utils, string_utils
 
+from trajectron.trajectron.utils.comm import all_gather  # TODO(pkarkus) remove, hacky
+
 # TODO(bivanovic): Move this to a better place in the codebase.
 DEFAULT_PX_PER_M: Final[float] = 2.0
 
@@ -172,6 +174,7 @@ class UnifiedDataset(Dataset):
         self.transforms = transforms
         self.verbose = verbose
         self.max_agent_num = max_agent_num
+        self.rank = rank
 
         # Ensuring scene description queries are all lowercase
         if scene_description_contains is not None:
@@ -350,46 +353,66 @@ class UnifiedDataset(Dataset):
             raise ValueError("Current data and cached data lengths do not match!")
 
     def apply_filter(
-        self,
-        filter_fn: Callable[[Union[AgentBatchElement, SceneBatchElement]], bool],
-        num_workers: int = 0,
+        self, 
+        filter_fn: Callable[[Union[AgentBatchElement, SceneBatchElement]], bool], 
+        num_workers: int = 0, 
+        max_count: Optional[int] = None
     ) -> None:
         keep_mask = []
+        keep_count = 0
 
-        if num_workers <= 0:
-            cache_data_iterator = self
-        else:
-            # Use DataLoader as a generic multiprocessing framework.
-            # We set batchsize=1 and a custom collate function.
-            # In effect this will just call self.__getitem__ in parallel.
-            cache_data_iterator = DataLoader(
-                self,
-                batch_size=1,
-                num_workers=num_workers,
-                shuffle=False,
-                collate_fn=lambda xlist: xlist[0],
-            )
-
-        for element in tqdm(
-            cache_data_iterator,
-            desc=f"Filtering dataset ({num_workers} CPUs): ",
-            disable=False,
-        ):
-            if filter_fn is None or filter_fn(element):
-                keep_mask.append(True)
+        # Only do filtering with rank=0
+        if self.rank == 0:
+            if num_workers <= 0:
+                cache_data_iterator = self
             else:
-                keep_mask.append(False)
+                # Multiply num_workers by the number of torch processes, because 
+                # we will only be using rank 0 process, whereas 
+                # num_workers is typically defined per torch process. 
+                num_workers = num_workers * torch.distributed.get_world_size()
 
-        # Just deletes the variable cache_data_iterator,
-        # not self (in case it is set to that)!
-        del cache_data_iterator
+                # Use DataLoader as a generic multiprocessing framework. 
+                # We set batchsize=1 and a custom collate function.
+                # In effect this will just call self.__getitem__ in parallel.
+                cache_data_iterator = DataLoader(
+                    self, 
+                    batch_size=1, 
+                    num_workers=num_workers, 
+                    shuffle=False, 
+                    collate_fn=lambda xlist: xlist[0])
 
-        # Verify
-        if len(keep_mask) != self._data_len:
-            raise ValueError("Current data and keep_mask lengths do not match!")
+            # Iterate over data    
+            for element in tqdm(cache_data_iterator, desc=f'Filtering dataset ({num_workers} CPUs): ', disable=False):
+                if filter_fn is None or filter_fn(element):
+                    keep_mask.append(True)
+                    keep_count += 1
+                else:
+                    keep_mask.append(False)
+                if max_count is not None and keep_count >= max_count:
+                    # Add False for remaining samples and break loop
+                    print (f"Reached maximum number of {max_count} elements, terminating early.")
+                    while len(keep_mask) < self._data_len:
+                        keep_mask.append(False)
+                    break
+                
+            del cache_data_iterator        
 
-        # Remove unwanted elements
-        self.remove_elements(keep_mask=keep_mask)
+            # Verify
+            if len(keep_mask) != self._data_len:
+                raise ValueError("Current data and keep_mask lengths mismatch.")
+
+            # Remove unwanted elements
+            self.remove_elements(keep_mask=keep_mask)
+            
+        # Wait for rank 0 process to be done with caching.
+        # Note that the default timeout is 30 minutes. If filtering is expected to exceed this, the timeout can be
+        # increased when initializing the process group, i.e., torch.distributed.init_process_group(timeout=...)
+        if torch.distributed.get_world_size() > 1:
+            gathered_values = all_gather(self._data_index)
+            # All proceses use the indices from rank 0
+            self._data_index = gathered_values[0]
+            self._data_len = len(self._data_index)
+            print (f"Rank {self.rank} has {self._data_len} elements.")
 
     def remove_elements(self, keep_mask: List[bool]):
         assert len(keep_mask) == self._data_len
