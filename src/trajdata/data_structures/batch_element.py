@@ -83,6 +83,7 @@ class AgentBatchElement:
             agent_info, future_sec
         )
         self.agent_future_len: int = self.agent_future_np.shape[0]
+        self.agent_meta_dict = self.get_agent_meta_dict(agent_info)
 
         ### NEIGHBOR-SPECIFIC DATA ###
         def distance_limit(agent_types: np.ndarray, target_type: int) -> np.ndarray:
@@ -112,6 +113,7 @@ class AgentBatchElement:
         ) = self.get_neighbor_future(
             scene_time_agent, agent_info, future_sec, distance_limit
         )
+        self.neighbor_meta_dicts = self.get_neighbor_meta_dicts(scene_time_agent, agent_info, distance_limit)
 
         ### ROBOT DATA ###
         self.robot_future_np: Optional[np.ndarray] = None
@@ -155,6 +157,50 @@ class AgentBatchElement:
             agent_info, self.scene_ts, future_sec
         )
         return agent_future_np, agent_extent_future_np
+
+    def is_agent_parked(self, agent_info: AgentMetadata) -> bool:
+        # Agent is considered parked if it moves less than 1m between the first and last valid timestep.
+        first_state: np.ndarray = self.cache.get_state(agent_info.name, agent_info.first_timestep)
+        last_state: np.ndarray = self.cache.get_state(agent_info.name, agent_info.last_timestep)
+        is_parked = np.square(last_state[:2] - first_state[:2]).sum(0) < 1. 
+        return is_parked
+
+    def get_agent_meta_dict(
+        self,
+        agent_info: AgentMetadata,
+    ) -> Dict[str, np.ndarray]:
+        is_parked = self.is_agent_parked(agent_info)
+        meta_info_dict = {
+            "is_parked": is_parked
+        } 
+        return meta_info_dict
+
+    def get_neighbor_meta_dicts(
+        self,
+        scene_time: SceneTimeAgent,
+        agent_info: AgentMetadata,
+        distance_limit: Callable[[np.ndarray, int], np.ndarray],
+    ) -> List[Dict[str, np.ndarray]]:
+        # TODO(pkarkus) get_neighbor_history and get_neighbor_future and get_neighbor_metainfo should be merged, they generate
+        #  a bunch of repeated computation for filtering agents
+
+        # The indices of the returned ndarray match the scene_time agents list (including the index of the central agent,
+        # which would have a distance of 0 to itself).
+        agent_distances: np.ndarray = scene_time.get_agent_distances_to(agent_info)
+        agent_idx: int = scene_time.agents.index(agent_info)
+        neighbor_types: np.ndarray = np.array([a.type.value for a in scene_time.agents])
+        nearby_mask: np.ndarray = agent_distances <= distance_limit(
+            neighbor_types, agent_info.type
+        )
+        nearby_mask[agent_idx] = False
+
+        nearby_agents: List[AgentMetadata] = [
+            agent for (idx, agent) in enumerate(scene_time.agents) if nearby_mask[idx]
+        ]
+
+        neighbor_meta_dicts = [self.get_agent_meta_dict(agent) for agent in nearby_agents]
+
+        return neighbor_meta_dicts
 
     def get_neighbor_history(
         self,
