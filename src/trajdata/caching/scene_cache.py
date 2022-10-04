@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any, Callable, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -7,6 +7,7 @@ from trajdata.augmentation.augmentation import Augmentation
 from trajdata.data_structures.agent import AgentMetadata
 from trajdata.data_structures.scene_metadata import Scene
 from trajdata.maps import RasterizedMap, RasterizedMapMetadata
+from trajdata.maps.map_kdtree import MapElementKDTree
 from trajdata.proto.vectorized_map_pb2 import VectorizedMap
 
 
@@ -133,7 +134,11 @@ class SceneCache:
 
     @staticmethod
     def cache_map(
-        cache_path: Path, vec_map: VectorizedMap, map_obj: RasterizedMap, env_name: str
+        cache_path: Path,
+        vec_map: VectorizedMap,
+        kdtrees: Dict[str, MapElementKDTree],
+        map_obj: RasterizedMap,
+        env_name: str,
     ) -> None:
         raise NotImplementedError()
 
