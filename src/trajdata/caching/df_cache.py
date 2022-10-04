@@ -13,8 +13,9 @@ import zarr
 from trajdata.augmentation.augmentation import Augmentation, DatasetAugmentation
 from trajdata.caching.scene_cache import SceneCache
 from trajdata.data_structures.agent import AgentMetadata, FixedExtent
-from trajdata.data_structures.map import Map, MapMetadata
 from trajdata.data_structures.scene_metadata import Scene
+from trajdata.maps import RasterizedMap, RasterizedMapMetadata
+from trajdata.proto.vectorized_map_pb2 import VectorizedMap
 from trajdata.utils import arr_utils
 
 STATE_COLS: Final[List[str]] = ["x", "y", "vx", "vy", "ax", "ay"]
@@ -274,15 +275,62 @@ class DataFrameCache(SceneCache):
 
         return state[0] if len(data.shape) == 1 else state
 
+    def _upsample_data(
+        self, new_index: pd.MultiIndex, upsample_dt_ratio: float, method: str
+    ) -> pd.DataFrame:
+        upsample_dt_factor: int = int(upsample_dt_ratio)
+
+        interpolated_df: pd.DataFrame = pd.DataFrame(
+            index=new_index, columns=self.scene_data_df.columns
+        )
+        interpolated_df = interpolated_df.astype(self.scene_data_df.dtypes.to_dict())
+
+        scene_data: np.ndarray = self.scene_data_df.to_numpy()
+        unwrapped_heading: np.ndarray = np.unwrap(self.scene_data_df["heading"])
+
+        # Getting the data initially in the new df, making sure to unwrap angles above
+        # in preparation for interpolation.
+        scene_data_idxs: np.ndarray = np.nonzero(
+            new_index.get_level_values("scene_ts") % upsample_dt_factor == 0
+        )[0]
+        interpolated_df.iloc[scene_data_idxs] = scene_data
+        interpolated_df.iloc[
+            scene_data_idxs, self.column_dict["heading"]
+        ] = unwrapped_heading
+
+        # Interpolation.
+        interpolated_df.interpolate(method=method, limit_area="inside", inplace=True)
+
+        # Wrapping angles back to [-pi, pi).
+        interpolated_df.iloc[:, self.column_dict["heading"]] = arr_utils.angle_wrap(
+            interpolated_df.iloc[:, self.column_dict["heading"]]
+        )
+
+        return interpolated_df
+
+    def _downsample_data(
+        self, new_index: pd.MultiIndex, downsample_dt_ratio: float
+    ) -> pd.DataFrame:
+        downsample_dt_factor: int = int(downsample_dt_ratio)
+
+        subsample_index: pd.MultiIndex = new_index.set_levels(
+            new_index.levels[1] * downsample_dt_factor, level=1
+        )
+
+        subsampled_df: pd.DataFrame = self.scene_data_df.reindex(
+            index=subsample_index
+        ).set_index(new_index)
+
+        return subsampled_df
+
     def interpolate_data(self, desired_dt: float, method: str = "linear") -> None:
-        dt_ratio: float = self.scene.env_metadata.dt / desired_dt
-        if not dt_ratio.is_integer():
+        upsample_dt_ratio: float = self.scene.env_metadata.dt / desired_dt
+        downsample_dt_ratio: float = desired_dt / self.scene.env_metadata.dt
+        if not upsample_dt_ratio.is_integer() and not downsample_dt_ratio.is_integer():
             raise ValueError(
                 f"{str(self.scene)}'s dt of {self.scene.dt}s "
-                f"is not divisible by the desired dt {desired_dt}s."
+                f"is not integer divisible by the desired dt {desired_dt}s."
             )
-
-        dt_factor: int = int(dt_ratio)
 
         agent_info_dict: Dict[str, AgentMetadata] = {
             agent.name: agent for agent in self.scene.agents
@@ -300,31 +348,10 @@ class DataFrameCache(SceneCache):
             names=["agent_id", "scene_ts"],
         )
 
-        interpolated_df: pd.DataFrame = pd.DataFrame(
-            index=new_index, columns=self.scene_data_df.columns
-        )
-        interpolated_df = interpolated_df.astype(self.scene_data_df.dtypes.to_dict())
-
-        scene_data: np.ndarray = self.scene_data_df.to_numpy()
-        unwrapped_heading: np.ndarray = np.unwrap(self.scene_data_df["heading"])
-
-        # Getting the data initially in the new df, making sure to unwrap angles above
-        # in preparation for interpolation.
-        scene_data_idxs: np.ndarray = np.nonzero(
-            new_index.get_level_values("scene_ts") % dt_factor == 0
-        )[0]
-        interpolated_df.iloc[scene_data_idxs] = scene_data
-        interpolated_df.iloc[
-            scene_data_idxs, self.column_dict["heading"]
-        ] = unwrapped_heading
-
-        # Interpolation.
-        interpolated_df.interpolate(method=method, limit_area="inside", inplace=True)
-
-        # Wrapping angles back to [-pi, pi).
-        interpolated_df.iloc[:, self.column_dict["heading"]] = arr_utils.angle_wrap(
-            interpolated_df.iloc[:, self.column_dict["heading"]]
-        )
+        if upsample_dt_ratio >= 1:
+            interpolated_df = self._upsample_data(new_index, upsample_dt_ratio, method)
+        elif downsample_dt_ratio >= 1:
+            interpolated_df = self._downsample_data(new_index, downsample_dt_ratio)
 
         self.dt = desired_dt
         self.scene_data_df = interpolated_df
@@ -554,58 +581,83 @@ class DataFrameCache(SceneCache):
     @staticmethod
     def get_map_paths(
         cache_path: Path, env_name: str, map_name: str, resolution: float
-    ) -> Tuple[Path, Path, Path]:
+    ) -> Tuple[Path, Path, Path, Path]:
         maps_path: Path = DataFrameCache.get_maps_path(cache_path, env_name)
 
-        map_path: Path = maps_path / f"{map_name}_{resolution:.2f}px_m.zarr"
-        metadata_path: Path = maps_path / f"{map_name}_{resolution:.2f}px_m.dill"
+        vector_map_path: Path = maps_path / f"{map_name}.pb"
+        raster_map_path: Path = maps_path / f"{map_name}_{resolution:.2f}px_m.zarr"
+        raster_metadata_path: Path = maps_path / f"{map_name}_{resolution:.2f}px_m.dill"
 
-        return maps_path, map_path, metadata_path
+        return maps_path, vector_map_path, raster_map_path, raster_metadata_path
 
     @staticmethod
     def is_map_cached(
         cache_path: Path, env_name: str, map_name: str, resolution: float
     ) -> bool:
-        maps_path, map_file, metadata_file = DataFrameCache.get_map_paths(
-            cache_path, env_name, map_name, resolution
+        (
+            maps_path,
+            vector_map_path,
+            raster_map_path,
+            raster_metadata_path,
+        ) = DataFrameCache.get_map_paths(cache_path, env_name, map_name, resolution)
+        return (
+            maps_path.exists()
+            and vector_map_path.exists()
+            and raster_metadata_path.exists()
+            and raster_map_path.exists()
         )
-        return maps_path.exists() and metadata_file.exists() and map_file.exists()
 
     @staticmethod
-    def cache_map(cache_path: Path, map_obj: Map, env_name: str) -> None:
-        maps_path, map_file, metadata_file = DataFrameCache.get_map_paths(
+    def cache_map(
+        cache_path: Path, vec_map: VectorizedMap, map_obj: RasterizedMap, env_name: str
+    ) -> None:
+        (
+            maps_path,
+            vector_map_path,
+            raster_map_path,
+            raster_metadata_path,
+        ) = DataFrameCache.get_map_paths(
             cache_path, env_name, map_obj.metadata.name, map_obj.metadata.resolution
         )
 
         # Ensuring the maps directory exists.
         maps_path.mkdir(parents=True, exist_ok=True)
 
-        # Saving the map data.
-        zarr.save(map_file, map_obj.data)
+        # Saving the vectorized map data.
+        with open(vector_map_path, "wb") as f:
+            f.write(vec_map.SerializeToString())
 
-        # Saving the map metadata.
-        with open(metadata_file, "wb") as f:
+        # Saving the rasterized map data.
+        zarr.save(raster_map_path, map_obj.data)
+
+        # Saving the rasterized map metadata.
+        with open(raster_metadata_path, "wb") as f:
             dill.dump(map_obj.metadata, f)
 
     @staticmethod
     def cache_map_layers(
         cache_path: Path,
-        map_info: MapMetadata,
+        map_info: RasterizedMapMetadata,
         layer_fn: Callable[[str], np.ndarray],
         env_name: str,
     ) -> None:
-        maps_path, map_file, metadata_file = DataFrameCache.get_map_paths(
+        (
+            maps_path,
+            _,
+            raster_map_path,
+            raster_metadata_path,
+        ) = DataFrameCache.get_map_paths(
             cache_path, env_name, map_info.name, map_info.resolution
         )
 
         # Ensuring the maps directory exists.
         maps_path.mkdir(parents=True, exist_ok=True)
 
-        disk_data = zarr.open_array(map_file, mode="w", shape=map_info.shape)
+        disk_data = zarr.open_array(raster_map_path, mode="w", shape=map_info.shape)
         for idx, layer_name in enumerate(map_info.layers):
             disk_data[idx] = layer_fn(layer_name)
 
-        with open(metadata_file, "wb") as f:
+        with open(raster_metadata_path, "wb") as f:
             dill.dump(map_info, f)
 
     def pad_map_patch(
@@ -651,7 +703,12 @@ class DataFrameCache(SceneCache):
         rot_pad_factor: float = 1.0,
         no_map_val: float = 0.0,
     ) -> Tuple[np.ndarray, np.ndarray, bool]:
-        maps_path, map_file, metadata_file = DataFrameCache.get_map_paths(
+        (
+            maps_path,
+            _,
+            raster_map_path,
+            raster_metadata_path,
+        ) = DataFrameCache.get_map_paths(
             self.path, self.scene.env_name, self.scene.location, resolution
         )
         if not maps_path.exists():
@@ -668,8 +725,8 @@ class DataFrameCache(SceneCache):
                 False,
             )
 
-        with open(metadata_file, "rb") as f:
-            map_info: MapMetadata = dill.load(f)
+        with open(raster_metadata_path, "rb") as f:
+            map_info: RasterizedMapMetadata = dill.load(f)
 
         raster_from_world_tf: np.ndarray = map_info.map_from_world
         map_coords: np.ndarray = map_info.map_from_world @ np.array(
@@ -731,7 +788,7 @@ class DataFrameCache(SceneCache):
         # divisible by two so that the // 2 below does not chop any information off.
         data_with_rot_pad_size: int = ceil((rot_pad_factor * data_patch_size) / 2) * 2
 
-        disk_data = zarr.open_array(map_file, mode="r")
+        disk_data = zarr.open_array(raster_map_path, mode="r")
 
         map_x = round(map_x)
         map_y = round(map_y)

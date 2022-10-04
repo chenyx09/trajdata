@@ -26,10 +26,18 @@ class NoiseHistories(BatchAugmentation):
             agent_hist_noise[..., -1, :] = 0
             neigh_hist_noise[..., -1, :] = 0
         else:
-            len_mask = ~mask_up_to(agent_batch.agent_hist_len, delta=-1).unsqueeze(-1)
+            len_mask = ~mask_up_to(
+                agent_batch.agent_hist_len,
+                delta=-1,
+                max_len=agent_batch.agent_hist.shape[1],
+            ).unsqueeze(-1)
             agent_hist_noise[len_mask.expand(-1, -1, agent_hist_noise.shape[-1])] = 0
 
-            len_mask = ~mask_up_to(agent_batch.neigh_hist_len, delta=-1).unsqueeze(-1)
+            len_mask = ~mask_up_to(
+                agent_batch.neigh_hist_len,
+                delta=-1,
+                max_len=agent_batch.neigh_hist.shape[2],
+            ).unsqueeze(-1)
             neigh_hist_noise[
                 len_mask.expand(-1, -1, -1, neigh_hist_noise.shape[-1])
             ] = 0

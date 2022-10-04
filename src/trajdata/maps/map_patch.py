@@ -1,7 +1,7 @@
 import numpy as np
 
 
-class MapPatch:
+class RasterizedMapPatch:
     def __init__(
         self,
         data: np.ndarray,

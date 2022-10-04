@@ -7,12 +7,15 @@ from trajdata.data_structures.agent import AgentMetadata, AgentType
 def agent_types(
     agents: List[AgentMetadata], no_types: Set[AgentType], only_types: Set[AgentType]
 ) -> List[AgentMetadata]:
+    agents_list: List[AgentMetadata] = agents
+    
     if no_types is not None:
-        return [agent for agent in agents if agent.type not in no_types]
-    elif only_types is not None:
-        return [agent for agent in agents if agent.type in only_types]
-    else:
-        return agents
+        agents_list = [agent for agent in agents_list if agent.type not in no_types]
+    
+    if only_types is not None:
+        agents_list = [agent for agent in agents_list if agent.type in only_types]
+    
+    return agents_list
 
 
 def all_agents_excluded_types(

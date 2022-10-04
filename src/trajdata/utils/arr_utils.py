@@ -51,7 +51,7 @@ def pad_sequences(
     )
 
 
-def mask_up_to(lens: Tensor, delta: int = 0) -> Tensor:
+def mask_up_to(lens: Tensor, delta: int = 0, max_len: Optional[int] = None) -> Tensor:
     """Exclusive.
 
     Args:
@@ -61,10 +61,13 @@ def mask_up_to(lens: Tensor, delta: int = 0) -> Tensor:
     Returns:
         Tensor: _description_
     """
-    max_len = lens.max()
+    if max_len is None:
+        max_len = lens.max()
+
     arange_t: Tensor = torch.arange(
         max_len, dtype=lens.dtype, device=lens.device
     ).expand(*lens.shape, -1)
+
     return arange_t < (lens.unsqueeze(-1) + delta)
 
 
