@@ -14,6 +14,7 @@ def plot_agent_batch(
     batch: AgentBatch,
     batch_idx: int,
     ax: Optional[Axes] = None,
+    legend: bool = True,
     show: bool = True,
     close: bool = True,
 ) -> None:
@@ -73,13 +74,14 @@ def plot_agent_batch(
         ls="--",
         label="Agent History",
     )
-    ax.quiver(
-        history_xy[..., 0],
-        history_xy[..., 1],
-        history_xy[..., -1],
-        history_xy[..., -2],
-        color="k",
-    )
+    # ax.quiver(
+    #     history_xy[..., 0],
+    #     history_xy[..., 1],
+    #     history_xy[..., -1],
+    #     history_xy[..., -2],
+    #     color="k",
+    # )
+
     ax.plot(future_xy[..., 0], future_xy[..., 1], c="violet", label="Agent Future")
     ax.scatter(center_xy[0], center_xy[1], s=20, c="orangered", label="Agent Current")
 
@@ -123,14 +125,18 @@ def plot_agent_batch(
     ax.set_ylabel("y (m)")
 
     ax.grid(False)
-    ax.legend(loc="best", frameon=True)
     ax.axis("equal")
+
+    if legend:
+        ax.legend(loc="best", frameon=True)
 
     if show:
         plt.show()
 
     if close:
         plt.close()
+
+    return ax
 
 
 def plot_scene_batch(

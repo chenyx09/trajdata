@@ -28,6 +28,7 @@ from trajdata.dataset_specific.nusc import nusc_utils
 from trajdata.dataset_specific.raw_dataset import RawDataset
 from trajdata.dataset_specific.scene_records import NuscSceneRecord
 from trajdata.maps import RasterizedMap, RasterizedMapMetadata, map_utils
+from trajdata.maps.map_kdtree import LaneCenterKDTree
 from trajdata.proto.vectorized_map_pb2 import (
     MapElement,
     PedCrosswalk,
@@ -82,6 +83,8 @@ class NuscDataset(RawDataset):
                 ("mini_train", "mini_val"),
                 ("boston", "singapore"),
             ]
+        else:
+            raise ValueError(f"Unknown NuScenes environment name: {env_name}")
 
         # Inverting the dict from above, associating every scene with its data split.
         nusc_scene_split_map: Dict[str, str] = {
@@ -512,6 +515,9 @@ class NuscDataset(RawDataset):
             vectorized_map, resolution, **pbar_kwargs
         )
 
+        lanecenter_kdtree = LaneCenterKDTree(vectorized_map)
+        kdtrees = {"lanecenter": lanecenter_kdtree}
+
         rasterized_map_info: RasterizedMapMetadata = RasterizedMapMetadata(
             name=map_name,
             shape=map_data.shape,
@@ -522,7 +528,7 @@ class NuscDataset(RawDataset):
         )
         rasterized_map_obj: RasterizedMap = RasterizedMap(rasterized_map_info, map_data)
         map_cache_class.cache_map(
-            cache_path, vectorized_map, rasterized_map_obj, self.name
+            cache_path, vectorized_map, kdtrees, rasterized_map_obj, self.name
         )
 
     def cache_maps(

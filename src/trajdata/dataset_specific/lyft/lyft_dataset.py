@@ -1,6 +1,5 @@
 from collections import defaultdict
 from functools import partial
-from math import ceil
 from pathlib import Path
 from random import Random
 from typing import Any, Dict, List, Optional, Tuple, Type
@@ -11,7 +10,6 @@ import pandas as pd
 from l5kit.configs.config import load_metadata
 from l5kit.data import ChunkedDataset, LocalDataManager
 from l5kit.data.map_api import InterpolationMethod, MapAPI
-from l5kit.rasterization import RenderContext
 from tqdm import tqdm
 
 from trajdata.caching import EnvCache, SceneCache
@@ -24,10 +22,10 @@ from trajdata.data_structures import (
 )
 from trajdata.data_structures.agent import Agent, AgentType, VariableExtent
 from trajdata.dataset_specific.lyft import lyft_utils
-from trajdata.dataset_specific.lyft.rasterizer import MapSemanticRasterizer
 from trajdata.dataset_specific.raw_dataset import RawDataset
 from trajdata.dataset_specific.scene_records import LyftSceneRecord
 from trajdata.maps import RasterizedMap, RasterizedMapMetadata, map_utils
+from trajdata.maps.map_kdtree import LaneCenterKDTree
 from trajdata.proto.vectorized_map_pb2 import (
     MapElement,
     PedCrosswalk,
@@ -81,6 +79,8 @@ class LyftDataset(RawDataset):
             ]
 
             scene_split_map = defaultdict(partial(const_lambda, const_val="val"))
+        else:
+            raise ValueError(f"Unknown Lyft environment name: {env_name}")
 
         return EnvMetadata(
             name=env_name,
@@ -427,7 +427,11 @@ class LyftDataset(RawDataset):
             resolution=resolution,
             map_from_world=map_from_world,
         )
+
+        lanecenter_kdtree = LaneCenterKDTree(vectorized_map)
+        kdtrees = {"lanecenter": lanecenter_kdtree}
+
         rasterized_map_obj: RasterizedMap = RasterizedMap(rasterized_map_info, map_data)
         map_cache_class.cache_map(
-            cache_path, vectorized_map, rasterized_map_obj, self.name
+            cache_path, vectorized_map, kdtrees, rasterized_map_obj, self.name
         )
