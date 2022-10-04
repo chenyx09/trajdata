@@ -29,6 +29,7 @@ class AgentBatchElement:
         map_params: Optional[Dict[str, int]] = None,
         standardize_data: bool = False,
         standardize_derivatives: bool = False,
+        max_neighbor_num: Optional[int] = None,
     ) -> None:
         self.cache: SceneCache = cache
         self.data_index: int = data_index
@@ -40,6 +41,7 @@ class AgentBatchElement:
         agent_info: AgentMetadata = scene_time_agent.agent
         self.agent_name: str = agent_info.name
         self.agent_type: AgentType = agent_info.type
+        self.max_neighbor_num = max_neighbor_num
 
         self.curr_agent_state_np: np.ndarray = cache.get_state(
             agent_info.name, self.scene_ts
@@ -172,11 +174,14 @@ class AgentBatchElement:
             neighbor_types, agent_info.type
         )
         nearby_mask[agent_idx] = False
+        nb_idx = agent_distances.argsort()
+        nearby_agents: List[AgentMetadata] = [scene_time.agents[idx] for idx in nb_idx if nearby_mask[idx]]
 
-        nearby_agents: List[AgentMetadata] = [
-            agent for (idx, agent) in enumerate(scene_time.agents) if nearby_mask[idx]
-        ]
-        neighbor_types_np: np.ndarray = neighbor_types[nearby_mask]
+        if self.max_neighbor_num is not None:
+            nearby_agents = nearby_agents[:self.max_neighbor_num]
+
+        neighbor_types = [a.type.value for a in nearby_agents]
+        neighbor_types_np: np.ndarray = np.array(neighbor_types)
 
         num_neighbors: int = len(nearby_agents)
         (
@@ -213,11 +218,13 @@ class AgentBatchElement:
             neighbor_types, agent_info.type
         )
         nearby_mask[agent_idx] = False
-
-        nearby_agents: List[AgentMetadata] = [
-            agent for (idx, agent) in enumerate(scene_time.agents) if nearby_mask[idx]
-        ]
-        neighbor_types_np: np.ndarray = neighbor_types[nearby_mask]
+        
+        nb_idx = agent_distances.argsort()
+        nearby_agents: List[AgentMetadata] = [scene_time.agents[idx] for idx in nb_idx if nearby_mask[idx]]
+        if self.max_neighbor_num is not None:
+            nearby_agents = nearby_agents[:self.max_neighbor_num]
+        neighbor_types = [a.type.value for a in nearby_agents]
+        neighbor_types_np: np.ndarray = np.array(neighbor_types)
 
         num_neighbors: int = len(nearby_agents)
         (

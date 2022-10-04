@@ -69,6 +69,8 @@ class UnifiedDataset(Dataset):
         standardize_derivatives: bool = False,
         augmentations: Optional[List[Augmentation]] = None,
         max_agent_num: Optional[int] = None,
+        max_neighbor_num: Optional[int] = None,
+        ego_only: Optional[bool] = False,
         data_dirs: Dict[str, str] = {
             # "nusc_trainval": "~/datasets/nuScenes",
             # "nusc_test": "~/datasets/nuScenes",
@@ -112,6 +114,8 @@ class UnifiedDataset(Dataset):
             standardize_derivatives (bool, optional): Make agent velocities and accelerations relative to the agent being predicted. Defaults to False.
             augmentations (Optional[List[Augmentation]], optional): Perform the specified augmentations to the batch or dataset. Defaults to None.
             max_agent_num (int, optional): The maximum number of agents to include in a batch for scene-centric batching.
+            max_neighbor_num (int, optional): The maximum number of neibhors to include in a batch for agent-centric batching.
+            ego_only (bool,optional): returning only ego data
             data_dirs (Optional[Dict[str, str]], optional): Dictionary mapping dataset names to their directories on disk. Defaults to { "eupeds_eth": "~/datasets/eth_ucy_peds", "eupeds_hotel": "~/datasets/eth_ucy_peds", "eupeds_univ": "~/datasets/eth_ucy_peds", "eupeds_zara1": "~/datasets/eth_ucy_peds", "eupeds_zara2": "~/datasets/eth_ucy_peds", "nusc_mini": "~/datasets/nuScenes", "lyft_sample": "~/datasets/lyft/scenes/sample.zarr", }.
             cache_type (str, optional): What type of cache to use to store preprocessed, cached data on disk. Defaults to "dataframe".
             cache_location (str, optional): Where to store and load preprocessed, cached data. Defaults to "~/.unified_data_cache".
@@ -157,6 +161,8 @@ class UnifiedDataset(Dataset):
         self.extras = extras
         self.verbose = verbose
         self.max_agent_num = max_agent_num
+        self.max_neighbor_num = max_neighbor_num
+        self.ego_only = ego_only
 
         # Ensuring scene description queries are all lowercase
         if scene_description_contains is not None:
@@ -178,6 +184,7 @@ class UnifiedDataset(Dataset):
             if any(env.name in dataset_tuple for dataset_tuple in matching_datasets):
                 all_data_cached: bool = False
                 all_maps_cached: bool = not env.has_maps or not self.incl_map
+                
                 if self.env_cache.env_is_cached(env.name) and not self.rebuild_cache:
                     scenes_list: List[Scene] = self.get_desired_scenes_from_env(
                         matching_datasets, scene_description_contains, env
@@ -243,7 +250,7 @@ class UnifiedDataset(Dataset):
         # Done with this list. Cutting memory usage because
         # of multiprocessing later on.
         del all_scenes_list
-
+        
         data_index: Union[
             List[Tuple[str, int, np.ndarray]],
             List[Tuple[str, int, List[Tuple[str, np.ndarray]]]],
@@ -294,6 +301,7 @@ class UnifiedDataset(Dataset):
                 history_sec=self.history_sec,
                 future_sec=self.future_sec,
                 desired_dt=self.desired_dt,
+                ego_only = self.ego_only,
             )
 
         # data_index is either:
@@ -381,6 +389,7 @@ class UnifiedDataset(Dataset):
         future_sec: Tuple[Optional[float], Optional[float]],
         desired_dt: Optional[float],
         ret_scene_info: bool = False,
+        ego_only: bool = False,
     ) -> Tuple[Optional[Scene], Path, int, List[Tuple[str, np.ndarray]]]:
         index_elems_len: int = 0
         index_elems: List[Tuple[str, np.ndarray]] = list()
@@ -397,6 +406,9 @@ class UnifiedDataset(Dataset):
         for agent_info in filtered_agents:
             # Don't want to predict the ego if we're going to be giving the model its future!
             if incl_robot_future and agent_info.name == "ego":
+                continue
+            if ego_only and agent_info.name!="ego":
+            # only returning ego
                 continue
 
             valid_ts: Tuple[int, int] = filtering.get_valid_ts(
@@ -435,6 +447,7 @@ class UnifiedDataset(Dataset):
                 return_dict=return_dict,
                 pad_format=pad_format,
                 batch_augments=batch_augments,
+
             )
         elif self.centric == "scene":
             collate_fn = partial(
@@ -451,7 +464,7 @@ class UnifiedDataset(Dataset):
         #     return list(chain.from_iterable(env.components for env in self.envs))
 
         query_tuples = [set(data.split("-")) for data in queries]
-
+        
         matching_scene_tags: List[SceneTag] = list()
         for query_tuple in query_tuples:
             for env in self.envs:
@@ -690,6 +703,7 @@ class UnifiedDataset(Dataset):
                 self.map_params,
                 self.standardize_data,
                 self.standardize_derivatives,
+                self.max_neighbor_num
             )
 
         for key, extra_fn in self.extras.items():
