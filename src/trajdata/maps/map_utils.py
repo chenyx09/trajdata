@@ -1,5 +1,5 @@
 from math import ceil
-from typing import Final, Tuple
+from typing import Final, Tuple, Optional
 
 import cv2
 import numpy as np
@@ -120,7 +120,7 @@ def transform_points(points: np.ndarray, transf_mat: np.ndarray):
     return points @ transf_mat[:n_dim, :n_dim] + transf_mat[:n_dim, -1]
 
 
-def interpolate(pts: np.ndarray, num_pts: int) -> np.ndarray:
+def interpolate(pts: np.ndarray, num_pts: Optional[int] = None, max_distance: Optional[float] = None) -> np.ndarray:
     """
     Interpolate points based on cumulative distances from the first one. In particular,
     interpolate using a variable step such that we always get step values.
@@ -128,12 +128,19 @@ def interpolate(pts: np.ndarray, num_pts: int) -> np.ndarray:
     Args:
         xyz (np.ndarray): XYZ coords.
         num_pts (int): How many points to interpolate to.
+        distance (float): Target distance between interpolated points. Only one
+            of num_pts or distance can be specified.
 
     Returns:
         np.ndarray: The new interpolated coordinates.
     """
     cum_dist = np.cumsum(np.linalg.norm(np.diff(pts, axis=0), axis=-1))
     cum_dist = np.insert(cum_dist, 0, 0)
+
+    if num_pts is None:
+        assert max_distance is not None, "Either num_pts or max_distance must be specified"
+        num_pts = int((cum_dist[-1] - 1e-6) // max_distance) + 1
+        num_pts = max(num_pts, 2)
 
     assert num_pts > 1, f"num_pts must be at least 2, but got {num_pts}"
     steps = np.linspace(cum_dist[0], cum_dist[-1], num_pts)
