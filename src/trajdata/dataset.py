@@ -5,7 +5,7 @@ from functools import partial
 from itertools import chain
 from os.path import isfile
 from pathlib import Path
-from typing import Callable, Dict, Final, Iterable, List, Optional, Set, Tuple, Union
+from typing import Any, Callable, Dict, Final, Iterable, List, Optional, Set, Tuple, Union
 
 import dill
 import numpy as np
@@ -65,7 +65,7 @@ class UnifiedDataset(Dataset):
         ] = defaultdict(lambda: np.inf),
         incl_robot_future: bool = False,
         incl_map: bool = False,
-        map_params: Optional[Dict[str, int]] = None,
+        map_params: Optional[Dict[str, Any]] = None,
         require_map_cache: bool = True,
         only_types: Optional[List[AgentType]] = None,
         only_predict: Optional[List[AgentType]] = None,
@@ -74,6 +74,8 @@ class UnifiedDataset(Dataset):
         standardize_derivatives: bool = False,
         augmentations: Optional[List[Augmentation]] = None,
         max_agent_num: Optional[int] = None,
+        max_neighbor_num: Optional[int] = None,
+        ego_only: Optional[bool] = False,
         data_dirs: Dict[str, str] = {
             # "nusc_trainval": "~/datasets/nuScenes",
             # "nusc_test": "~/datasets/nuScenes",
@@ -113,7 +115,7 @@ class UnifiedDataset(Dataset):
             agent_interaction_distances: (Dict[Tuple[AgentType, AgentType], float]): A dictionary mapping agent-agent interaction distances in meters (determines which agents are included as neighbors to the predicted agent). Defaults to infinity for all types.
             incl_robot_future (bool, optional): Include the ego agent's future trajectory in batches (accordingly, never predict the ego's future). Defaults to False.
             incl_map (bool, optional): Include a local cropping of the rasterized map (if the dataset provides a map) per agent. Defaults to False.
-            map_params (Optional[Dict[str, int]], optional): Local map cropping parameters, must be specified if incl_map is True. Must contain keys {"px_per_m", "map_size_px"} and can optionally contain {"offset_frac_xy"}. Defaults to None.
+            map_params (Optional[Dict[str, Any]], optional): Local map cropping parameters, must be specified if incl_map is True. Must contain keys {"px_per_m", "map_size_px"} and can optionally contain {"offset_frac_xy"}. Defaults to None.
             require_map_cache (bool, optional): Cache map objects (if the dataset provides a map) regardless of the value of incl_map. Defaults to True.
             only_types (Optional[List[AgentType]], optional): Filter out all agents EXCEPT for those of the specified types. Defaults to None.
             only_predict (Optional[List[AgentType]], optional): Only predict the specified types of agents. Importantly, this keeps other agent types in the scene, e.g., as neighbors of the agent to be predicted. Defaults to None.
@@ -122,6 +124,8 @@ class UnifiedDataset(Dataset):
             standardize_derivatives (bool, optional): Make agent velocities and accelerations relative to the agent being predicted. Defaults to False.
             augmentations (Optional[List[Augmentation]], optional): Perform the specified augmentations to the batch or dataset. Defaults to None.
             max_agent_num (int, optional): The maximum number of agents to include in a batch for scene-centric batching.
+            max_neighbor_num (int, optional): The maximum number of neighbors to include in a batch for agent-centric batching.
+            ego_only (bool, optional): If True, only return batches where the ego-agent is the one being predicted.
             data_dirs (Optional[Dict[str, str]], optional): Dictionary mapping dataset names to their directories on disk. Defaults to { "eupeds_eth": "~/datasets/eth_ucy_peds", "eupeds_hotel": "~/datasets/eth_ucy_peds", "eupeds_univ": "~/datasets/eth_ucy_peds", "eupeds_zara1": "~/datasets/eth_ucy_peds", "eupeds_zara2": "~/datasets/eth_ucy_peds", "nusc_mini": "~/datasets/nuScenes", "lyft_sample": "~/datasets/lyft/scenes/sample.zarr", }.
             cache_type (str, optional): What type of cache to use to store preprocessed, cached data on disk. Defaults to "dataframe".
             cache_location (str, optional): Where to store and load preprocessed, cached data. Defaults to "~/.unified_data_cache".
@@ -172,6 +176,8 @@ class UnifiedDataset(Dataset):
         self.transforms = transforms
         self.verbose = verbose
         self.max_agent_num = max_agent_num
+        self.max_neighbor_num = max_neighbor_num
+        self.ego_only = ego_only
 
         # Ensuring scene description queries are all lowercase
         if scene_description_contains is not None:
@@ -241,7 +247,7 @@ class UnifiedDataset(Dataset):
                             env.cache_maps(
                                 self.cache_path,
                                 self.cache_class,
-                                resolution=self.map_params["px_per_m"],
+                                self.map_params,
                             )
                         # Wait for rank 0 process to be done with caching.
                         if torch.cuda.is_available():
@@ -433,7 +439,10 @@ class UnifiedDataset(Dataset):
                 history_sec=self.history_sec,
                 future_sec=self.future_sec,
                 desired_dt=self.desired_dt,
+                ego_only=self.ego_only,
             )
+        else:
+            raise ValueError(f"{self.centric}-centric data batches are not supported.")
 
         # data_index is either:
         # [(scene_path, total_index_len, valid_scene_ts)] for scene-centric data, or
@@ -520,6 +529,7 @@ class UnifiedDataset(Dataset):
         future_sec: Tuple[Optional[float], Optional[float]],
         desired_dt: Optional[float],
         ret_scene_info: bool = False,
+        ego_only: bool = False,
     ) -> Tuple[Optional[Scene], Path, int, List[Tuple[str, np.ndarray]]]:
         index_elems_len: int = 0
         index_elems: List[Tuple[str, np.ndarray]] = list()
@@ -534,8 +544,13 @@ class UnifiedDataset(Dataset):
         )
 
         for agent_info in filtered_agents:
-            # Don't want to predict the ego if we're going to be giving the model its future!
+            # Don't want to predict the ego if we're going to be
+            # giving the model its future!
             if incl_robot_future and agent_info.name == "ego":
+                continue
+
+            if ego_only and agent_info.name != "ego":
+                # We only want to return the ego.
                 continue
 
             valid_ts: Tuple[int, int] = filtering.get_valid_ts(
@@ -582,6 +597,8 @@ class UnifiedDataset(Dataset):
                 pad_format=pad_format,
                 batch_augments=batch_augments,
             )
+        else:
+            raise ValueError(f"{self.centric}-centric data batches are not supported.")
 
         return collate_fn
 
@@ -844,6 +861,7 @@ class UnifiedDataset(Dataset):
                 self.map_params,
                 self.standardize_data,
                 self.standardize_derivatives,
+                self.max_neighbor_num,
             )
 
         for key, extra_fn in self.extras.items():
