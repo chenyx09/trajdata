@@ -1,6 +1,6 @@
 from collections import defaultdict
 from math import sqrt
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -26,7 +26,7 @@ class AgentBatchElement:
         ] = defaultdict(lambda: np.inf),
         incl_robot_future: bool = False,
         incl_map: bool = False,
-        map_params: Optional[Dict[str, int]] = None,
+        map_params: Optional[Dict[str, Any]] = None,
         standardize_data: bool = False,
         standardize_derivatives: bool = False,
         max_neighbor_num: Optional[int] = None,
@@ -316,7 +316,7 @@ class SceneBatchElement:
         ] = defaultdict(lambda: np.inf),
         incl_robot_future: bool = False,
         incl_map: bool = False,
-        map_params: Optional[Dict[str, int]] = None,
+        map_params: Optional[Dict[str, Any]] = None,
         standardize_data: bool = False,
         standardize_derivatives: bool = False,
         max_agent_num: Optional[int] = None,

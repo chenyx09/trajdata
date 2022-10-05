@@ -3,7 +3,7 @@ from collections import defaultdict
 from functools import partial
 from itertools import chain
 from pathlib import Path
-from typing import Callable, Dict, Final, List, Optional, Set, Tuple, Union
+from typing import Any, Callable, Dict, Final, List, Optional, Set, Tuple, Union
 
 import numpy as np
 from torch.utils.data import DataLoader, Dataset
@@ -61,7 +61,7 @@ class UnifiedDataset(Dataset):
         ] = defaultdict(lambda: np.inf),
         incl_robot_future: bool = False,
         incl_map: bool = False,
-        map_params: Optional[Dict[str, int]] = None,
+        map_params: Optional[Dict[str, Any]] = None,
         only_types: Optional[List[AgentType]] = None,
         only_predict: Optional[List[AgentType]] = None,
         no_types: Optional[List[AgentType]] = None,
@@ -106,7 +106,7 @@ class UnifiedDataset(Dataset):
             agent_interaction_distances: (Dict[Tuple[AgentType, AgentType], float]): A dictionary mapping agent-agent interaction distances in meters (determines which agents are included as neighbors to the predicted agent). Defaults to infinity for all types.
             incl_robot_future (bool, optional): Include the ego agent's future trajectory in batches (accordingly, never predict the ego's future). Defaults to False.
             incl_map (bool, optional): Include a local cropping of the rasterized map (if the dataset provides a map) per agent. Defaults to False.
-            map_params (Optional[Dict[str, int]], optional): Local map cropping parameters, must be specified if incl_map is True. Must contain keys {"px_per_m", "map_size_px"} and can optionally contain {"offset_frac_xy"}. Defaults to None.
+            map_params (Optional[Dict[str, Any]], optional): Local map cropping parameters, must be specified if incl_map is True. Must contain keys {"px_per_m", "map_size_px"} and can optionally contain {"offset_frac_xy"}. Defaults to None.
             only_types (Optional[List[AgentType]], optional): Filter out all agents EXCEPT for those of the specified types. Defaults to None.
             only_predict (Optional[List[AgentType]], optional): Only predict the specified types of agents. Importantly, this keeps other agent types in the scene, e.g., as neighbors of the agent to be predicted. Defaults to None.
             no_types (Optional[List[AgentType]], optional): Filter out all agents with the specified types. Defaults to None.
@@ -231,7 +231,7 @@ class UnifiedDataset(Dataset):
                         env.cache_maps(
                             self.cache_path,
                             self.cache_class,
-                            resolution=self.map_params["px_per_m"],
+                            self.map_params,
                         )
 
                     scenes_list: List[SceneMetadata] = self.get_desired_scenes_from_env(
