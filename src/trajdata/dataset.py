@@ -5,7 +5,18 @@ from functools import partial
 from itertools import chain
 from os.path import isfile
 from pathlib import Path
-from typing import Any, Callable, Dict, Final, Iterable, List, Optional, Set, Tuple, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Final,
+    Iterable,
+    List,
+    Optional,
+    Set,
+    Tuple,
+    Union,
+)
 
 import dill
 import numpy as np

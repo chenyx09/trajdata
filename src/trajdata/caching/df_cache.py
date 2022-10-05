@@ -679,7 +679,7 @@ class DataFrameCache(SceneCache):
         # Saving the vectorized map data.
         with open(vector_map_path, "wb") as f:
             f.write(vec_map.SerializeToString())
-            
+
         # Saving precomputed map element kdtrees.
         with open(kdtrees_path, "wb") as f:
             dill.dump(dict(), f)
