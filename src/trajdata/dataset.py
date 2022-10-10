@@ -361,6 +361,9 @@ class UnifiedDataset(Dataset):
         keep_mask = []
         keep_count = 0
 
+        if filter_fn is None:
+            return
+
         # Only do filtering with rank=0
         if self.rank == 0:
             if num_workers <= 0:
@@ -383,7 +386,7 @@ class UnifiedDataset(Dataset):
 
             # Iterate over data    
             for element in tqdm(cache_data_iterator, desc=f'Filtering dataset ({num_workers} CPUs): ', disable=False):
-                if filter_fn is None or filter_fn(element):
+                if filter_fn(element):
                     keep_mask.append(True)
                     keep_count += 1
                 else:
