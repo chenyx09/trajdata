@@ -162,6 +162,7 @@ class SceneBatch:
     def to(self, device) -> None:
         excl_vals = {
             "history_pad_dir",
+            "scene_ids",
             "extras",
         }
 

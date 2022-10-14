@@ -917,8 +917,8 @@ def scene_collate_fn(
 
     extras: Dict[str, Tensor] = {}
     for key in batch_elems[0].extras.keys():
-        extras[key] = torch.as_tensor(
-            np.stack([batch_elem.extras[key] for batch_elem in batch_elems])
+        extras[key] = _collate_data(
+            [batch_elem.extras[key] for batch_elem in batch_elems]
         )
 
     batch = SceneBatch(
