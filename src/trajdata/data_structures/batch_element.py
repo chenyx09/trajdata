@@ -10,7 +10,34 @@ from trajdata.data_structures.scene import SceneTime, SceneTimeAgent
 from trajdata.maps import RasterizedMapPatch
 
 
-class AgentBatchElement:
+class BaseBatchElement:
+    def __init__(
+        self,
+        cache: SceneCache,
+        data_index: int,
+    ):
+        self.cache: SceneCache = cache
+        self.data_index: int = data_index
+
+    def is_agent_parked(self, agent_info: AgentMetadata) -> bool:
+        # Agent is considered parked if it moves less than 1m between the first and last valid timestep.
+        first_state: np.ndarray = self.cache.get_state(agent_info.name, agent_info.first_timestep)
+        last_state: np.ndarray = self.cache.get_state(agent_info.name, agent_info.last_timestep)
+        is_parked = np.square(last_state[:2] - first_state[:2]).sum(0) < 1. 
+        return is_parked
+
+    def get_agent_meta_dict(
+        self,
+        agent_info: AgentMetadata,
+    ) -> Dict[str, np.ndarray]:
+        is_parked = self.is_agent_parked(agent_info)
+        meta_info_dict = {
+            "is_parked": is_parked
+        } 
+        return meta_info_dict
+
+
+class AgentBatchElement(BaseBatchElement):
     """A single element of an agent-centric batch."""
 
     # @profile
@@ -30,8 +57,7 @@ class AgentBatchElement:
         standardize_data: bool = False,
         standardize_derivatives: bool = False,
     ) -> None:
-        self.cache: SceneCache = cache
-        self.data_index: int = data_index
+        super().__init__(cache, data_index)
         self.dt: float = scene_time_agent.scene.dt
         self.scene_ts: int = scene_time_agent.ts
         self.history_sec = history_sec
@@ -157,23 +183,6 @@ class AgentBatchElement:
             agent_info, self.scene_ts, future_sec
         )
         return agent_future_np, agent_extent_future_np
-
-    def is_agent_parked(self, agent_info: AgentMetadata) -> bool:
-        # Agent is considered parked if it moves less than 1m between the first and last valid timestep.
-        first_state: np.ndarray = self.cache.get_state(agent_info.name, agent_info.first_timestep)
-        last_state: np.ndarray = self.cache.get_state(agent_info.name, agent_info.last_timestep)
-        is_parked = np.square(last_state[:2] - first_state[:2]).sum(0) < 1. 
-        return is_parked
-
-    def get_agent_meta_dict(
-        self,
-        agent_info: AgentMetadata,
-    ) -> Dict[str, np.ndarray]:
-        is_parked = self.is_agent_parked(agent_info)
-        meta_info_dict = {
-            "is_parked": is_parked
-        } 
-        return meta_info_dict
 
     def get_neighbor_meta_dicts(
         self,
@@ -341,7 +350,7 @@ class AgentBatchElement:
         )
 
 
-class SceneBatchElement:
+class SceneBatchElement(BaseBatchElement):
     """A single batch element."""
 
     def __init__(
@@ -361,8 +370,8 @@ class SceneBatchElement:
         standardize_derivatives: bool = False,
         max_agent_num: Optional[int] = None,
     ) -> None:
-        self.cache: SceneCache = cache
-        self.data_index = data_index
+        super().__init__(cache, data_index)
+
         self.dt: float = scene_time.scene.dt
         self.scene_ts: int = scene_time.ts
 
@@ -435,6 +444,10 @@ class SceneBatchElement:
             self.agent_future_extents,
             self.agent_future_lens_np,
         ) = self.get_agents_future(future_sec, nearby_agents)
+
+        self.agent_meta_dicts = [self.get_agent_meta_dict(agent) for agent in nearby_agents]
+        
+        self.max_future_len: int = int(np.floor(future_sec[1] / self.dt))
 
         ### MAP ###
         self.map_patches: Optional[RasterizedMapPatch] = None
