@@ -225,3 +225,61 @@ class SceneBatch:
                 key: _filter_tensor_or_list(val, filter_mask) 
                 for key, val in self.extras.items()},
         )
+
+    def to_agent_batch(self, agent_inds: torch.Tensor) -> AgentBatch:
+        """
+        Converts SeceneBatch to AgentBatch for agents defined by `agent_inds`.  
+
+        self.extras will be simply copied over, any custom conversion must be 
+        implemented externally.
+
+        TODO(pkarkus) agent names are not yet supported because SceneBatch 
+            does not store them
+        """
+
+        batch_size = self.agent_hist.shape[0]
+        num_agents = self.agent_hist.shape[1]
+
+        if (agent_inds.ndim != 1 or agent_inds.shape[0] != batch_size):
+            raise ValueError("Wrong shape for agent_inds, expected [batch_size].")
+
+        if (agent_inds < 0).any() or (agent_inds >= num_agents).any():
+            raise ValueError("Invalid agent index")
+
+        batch_inds = torch.arange(batch_size)
+        others_mask = torch.ones((batch_size, num_agents), dtype=torch.bool)
+        others_mask[batch_inds, agent_inds] = False
+        index_agent = lambda x: x[batch_inds, agent_inds]
+        index_neighbors = lambda x: x[others_mask].reshape([batch_size, num_agents-1, ] + list(x.shape[2:]))
+
+        return AgentBatch(
+            data_idx=self.data_idx,
+            dt=self.dt,
+            agent_name=["unknown"] * batch_size,
+            agent_type=index_agent(self.agent_type),
+            curr_agent_state=self.centered_agent_state,  # TODO this is not actually the agent but the `global` coordinate frame
+            agent_hist=index_agent(self.agent_hist),
+            agent_hist_extent=index_agent(self.agent_hist_extent),
+            agent_hist_len=index_agent(self.agent_hist_len),
+            agent_fut=index_agent(self.agent_fut),
+            agent_fut_extent=index_agent(self.agent_fut_extent),
+            agent_fut_len=index_agent(self.agent_fut_len),
+            num_neigh=self.num_agents-1,
+            neigh_types=index_neighbors(self.agent_type),
+            neigh_hist=index_neighbors(self.agent_hist),
+            neigh_hist_extents=index_neighbors(self.agent_hist_extent),
+            neigh_hist_len=index_neighbors(self.agent_hist_len),
+            neigh_fut=index_neighbors(self.agent_fut),
+            neigh_fut_extents=index_neighbors(self.agent_fut_extent),
+            neigh_fut_len=index_neighbors(self.agent_fut_len),
+            robot_fut=self.robot_fut,
+            robot_fut_len=self.robot_fut_len,
+            maps=self.maps,
+            maps_resolution=self.maps_resolution,
+            rasters_from_world_tf=self.rasters_from_world_tf,
+            agents_from_world_tf=self.centered_agent_from_world_tf,
+            scene_ids=self.scene_ids,
+            history_pad_dir=self.history_pad_dir,
+            extras=self.extras,
+        )          
+
