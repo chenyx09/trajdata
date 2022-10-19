@@ -436,6 +436,8 @@ class SceneBatchElement:
             self.agent_future_lens_np,
         ) = self.get_agents_future(future_sec, nearby_agents)
 
+        self.agent_meta_dicts = [self.get_agent_meta_dict(agent) for agent in nearby_agents]
+
         ### MAP ###
         self.map_patches: Optional[RasterizedMapPatch] = None
         if incl_map:
@@ -460,7 +462,21 @@ class SceneBatchElement:
 
         # Will be optionally populated by the user's provided functions.
         self.extras: Dict[str, np.ndarray] = dict()
-
+    def is_agent_parked(self, agent_info: AgentMetadata) -> bool:
+        # Agent is considered parked if it moves less than 1m between the first and last valid timestep.
+        first_state: np.ndarray = self.cache.get_state(agent_info.name, agent_info.first_timestep)
+        last_state: np.ndarray = self.cache.get_state(agent_info.name, agent_info.last_timestep)
+        is_parked = np.square(last_state[:2] - first_state[:2]).sum(0) < 1. 
+        return is_parked
+    def get_agent_meta_dict(
+        self,
+        agent_info: AgentMetadata,
+    ) -> Dict[str, np.ndarray]:
+        is_parked = self.is_agent_parked(agent_info)
+        meta_info_dict = {
+            "is_parked": is_parked
+        } 
+        return meta_info_dict
     def get_nearby_agents(
         self,
         scene_time: SceneTime,

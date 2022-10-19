@@ -163,6 +163,12 @@ class SceneBatch:
         excl_vals = {
             "history_pad_dir",
             "extras",
+            "data_idx",
+            "agent_name",
+            "agent_type",
+            "scene_ids",
+            "history_pad_dir",
+            "extras",
         }
 
         for val in vars(self).keys():
