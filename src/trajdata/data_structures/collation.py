@@ -918,7 +918,10 @@ def scene_collate_fn(
     extras: Dict[str, Tensor] = {}
 
     for key in batch_elems[0].extras.keys():
-        value_len = [len(batch_elem.extras[key]) for batch_elem in batch_elems]
+        if isinstance(batch_elems[0].extras[key],int) or isinstance(batch_elems[0].extras[key],float):
+            value_len = [1]*len(batch_elems)
+        else:
+            value_len = [len(batch_elem.extras[key]) for batch_elem in batch_elems]
 
         if len(set(value_len))==1:
             extras[key] = torch.as_tensor(
