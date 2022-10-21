@@ -40,7 +40,6 @@ from trajdata.parallel import (
 )
 from trajdata.utils import agent_utils, env_utils, scene_utils, string_utils
 
-from trajectron.trajectron.utils.comm import all_gather  # TODO(pkarkus) remove, hacky
 
 # TODO(bivanovic): Move this to a better place in the codebase.
 DEFAULT_PX_PER_M: Final[float] = 2.0
@@ -356,7 +355,8 @@ class UnifiedDataset(Dataset):
         self, 
         filter_fn: Callable[[Union[AgentBatchElement, SceneBatchElement]], bool], 
         num_workers: int = 0, 
-        max_count: Optional[int] = None
+        max_count: Optional[int] = None,
+        all_gather: Optional[Callable] = None,
     ) -> None:
         keep_mask = []
         keep_count = 0
