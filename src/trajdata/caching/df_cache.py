@@ -192,10 +192,17 @@ class DataFrameCache(SceneCache):
             )
             return transformed_pair[0, 0].item()
 
+    def get_raw_state(self, agent_id: str, scene_ts: int) -> np.ndarray:
+        return (
+            self.scene_data_df.iloc[
+                self.index_dict[(agent_id, scene_ts)], : self._state_dim
+            ]
+            .to_numpy()
+            .copy()
+        )
+
     def get_state(self, agent_id: str, scene_ts: int) -> np.ndarray:
-        state = self.scene_data_df.iloc[
-            self.index_dict[(agent_id, scene_ts)], : self._state_dim
-        ].to_numpy()
+        state = self.get_raw_state(agent_id, scene_ts)
 
         return self._transform_state(state)
 
@@ -226,7 +233,7 @@ class DataFrameCache(SceneCache):
 
         if "sincos_heading" in kwargs:
             self._sincos_heading = True
-            self.obs_dim += 1
+            self.obs_dim = self._state_dim + 1
 
     def reset_transforms(self) -> None:
         self._transf_mean: Optional[np.ndarray] = None
@@ -454,7 +461,7 @@ class DataFrameCache(SceneCache):
         history_sec: Tuple[Optional[float], Optional[float]],
     ) -> Tuple[List[np.ndarray], List[np.ndarray], np.ndarray]:
         first_timesteps = np.array(
-            [agent.first_timestep for agent in agents], dtype=np.long
+            [agent.first_timestep for agent in agents], dtype=int
         )
         if history_sec[1] is not None:
             max_history: int = floor(history_sec[1] / self.dt)
@@ -465,10 +472,10 @@ class DataFrameCache(SceneCache):
                 self.index_dict[(agent.name, first_timesteps[idx])]
                 for idx, agent in enumerate(agents)
             ],
-            dtype=np.long,
+            dtype=int,
         )
         last_index_incl: np.ndarray = np.array(
-            [self.index_dict[(agent.name, scene_ts)] for agent in agents], dtype=np.long
+            [self.index_dict[(agent.name, scene_ts)] for agent in agents], dtype=int
         )
 
         concat_idxs = arr_utils.vrange(first_index_incl, last_index_incl + 1)
@@ -512,9 +519,7 @@ class DataFrameCache(SceneCache):
         agents: List[AgentMetadata],
         future_sec: Tuple[Optional[float], Optional[float]],
     ) -> Tuple[List[np.ndarray], List[np.ndarray], np.ndarray]:
-        last_timesteps = np.array(
-            [agent.last_timestep for agent in agents], dtype=np.long
-        )
+        last_timesteps = np.array([agent.last_timestep for agent in agents], dtype=int)
 
         first_timesteps = np.minimum(scene_ts + 1, last_timesteps)
 
@@ -527,14 +532,14 @@ class DataFrameCache(SceneCache):
                 self.index_dict[(agent.name, first_timesteps[idx])]
                 for idx, agent in enumerate(agents)
             ],
-            dtype=np.long,
+            dtype=int,
         )
         last_index_incl: np.ndarray = np.array(
             [
                 self.index_dict[(agent.name, last_timesteps[idx])]
                 for idx, agent in enumerate(agents)
             ],
-            dtype=np.long,
+            dtype=int,
         )
 
         concat_idxs = arr_utils.vrange(first_index_incl, last_index_incl + 1)

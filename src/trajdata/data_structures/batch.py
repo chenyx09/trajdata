@@ -129,6 +129,7 @@ class SceneBatch:
     num_agents: Tensor
     agent_type: Tensor
     centered_agent_state: Tensor
+    agent_names: List[str]
     agent_hist: Tensor
     agent_hist_extent: Tensor
     agent_hist_len: Tensor
@@ -148,6 +149,7 @@ class SceneBatch:
 
     def to(self, device) -> None:
         excl_vals = {
+            "agent_name",
             "history_pad_dir",
             "extras",
         }
@@ -172,6 +174,11 @@ class SceneBatch:
             num_agents=self.num_agents[match_type],
             agent_type=self.agent_type[match_type],
             centered_agent_state=self.centered_agent_state[match_type],
+            agent_names=[
+                agent_name
+                for idx, agent_name in enumerate(self.agent_names)
+                if match_type[idx]
+            ],
             agent_hist=self.agent_hist[match_type],
             agent_hist_extent=self.agent_hist_extent[match_type],
             agent_hist_len=self.agent_hist_len[match_type],

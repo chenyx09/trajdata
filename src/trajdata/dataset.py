@@ -526,7 +526,7 @@ class UnifiedDataset(Dataset):
             (scene if ret_scene_info else None),
             scene_info_path,
             len(index_elems),
-            np.array(index_elems, dtype=np.int),
+            np.array(index_elems, dtype=int),
         )
 
     @staticmethod
@@ -571,7 +571,7 @@ class UnifiedDataset(Dataset):
             num_agent_ts: int = valid_ts[1] - valid_ts[0] + 1
             if num_agent_ts > 0:
                 index_elems_len += num_agent_ts
-                index_elems.append((agent_info.name, np.array(valid_ts, dtype=np.int)))
+                index_elems.append((agent_info.name, np.array(valid_ts, dtype=int)))
 
         return (
             (scene if ret_scene_info else None),
