@@ -47,6 +47,10 @@ def get_agent_data(
     agent_list, agent_presence = raw_dataset.get_agent_info(
         scene, env_cache.path, cache_class
     )
+    if agent_list is None and agent_presence is None:
+        # Some datasets have scenes that we would like to skip,
+        # e.g., nuPlan has scenes with only one frame of data.
+        return None
 
     scene.update_agent_info(agent_list, agent_presence)
     env_cache.save_scene(scene)
