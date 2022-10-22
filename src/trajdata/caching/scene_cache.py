@@ -54,6 +54,12 @@ class SceneCache:
         """
         raise NotImplementedError()
 
+    def get_raw_state(self, agent_id: str, scene_ts: int) -> np.ndarray:
+        """
+        Get an agent's raw state (without transformations applied)
+        """
+        raise NotImplementedError()
+
     def get_state(self, agent_id: str, scene_ts: int) -> np.ndarray:
         """
         Get an agent's state at a specific timestep.

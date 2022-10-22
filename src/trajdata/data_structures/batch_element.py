@@ -43,7 +43,7 @@ class AgentBatchElement:
         self.agent_type: AgentType = agent_info.type
         self.max_neighbor_num = max_neighbor_num
 
-        self.curr_agent_state_np: np.ndarray = cache.get_state(
+        self.curr_agent_state_np: np.ndarray = cache.get_raw_state(
             agent_info.name, self.scene_ts
         )
 
@@ -62,7 +62,7 @@ class AgentBatchElement:
             )
             self.agent_from_world_tf: np.ndarray = np.linalg.inv(world_from_agent_tf)
 
-            offset = self.curr_agent_state_np
+            offset = self.curr_agent_state_np.copy()
             if not standardize_derivatives:
                 offset[2:6] = 0.0
 
@@ -385,6 +385,7 @@ class SceneBatchElement:
         )
 
         self.num_agents = len(nearby_agents)
+        self.agent_names = [agent.name for agent in nearby_agents]
         (
             self.agent_histories,
             self.agent_history_extents,

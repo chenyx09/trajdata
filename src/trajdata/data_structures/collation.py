@@ -41,13 +41,13 @@ def map_collate_fn_agent(
     # prior to collation.
     has_data: np.ndarray = np.array(
         [batch_elem.map_patch.has_data for batch_elem in batch_elems],
-        dtype=np.bool,
+        dtype=bool,
     )
     no_data: np.ndarray = ~has_data
 
     patch_channels: np.ndarray = np.array(
         [batch_elem.map_patch.data.shape[0] for batch_elem in batch_elems],
-        dtype=np.int,
+        dtype=int,
     )
 
     desired_num_channels: int
@@ -909,6 +909,8 @@ def scene_collate_fn(
         else None
     )
 
+    agent_names = [batch_elem.agent_names for batch_elem in batch_elems]
+
     scene_ids = [batch_elem.scene_id for batch_elem in batch_elems]
 
     extras: Dict[str, Tensor] = {}
@@ -923,6 +925,7 @@ def scene_collate_fn(
         num_agents=num_agents_t,
         agent_type=agents_types_t,
         centered_agent_state=centered_agent_state_t,
+        agent_names=agent_names,
         agent_hist=agents_histories_t,
         agent_hist_extent=agents_history_extents_t,
         agent_hist_len=agents_history_len,
