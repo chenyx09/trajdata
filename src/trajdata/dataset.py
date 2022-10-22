@@ -43,13 +43,13 @@ from trajdata.data_structures import (
     agent_collate_fn,
     scene_collate_fn,
 )
-from trajdata.dataset_specific import RawDataset
+from trajdata.dataset_specific import RawDataset, env_utils
 from trajdata.parallel import (
     ParallelDatasetPreprocessor,
     parallel_iapply,
     scene_paths_collate_fn,
 )
-from trajdata.utils import agent_utils, env_utils, scene_utils, string_utils
+from trajdata.utils import agent_utils, scene_utils, string_utils
 
 # TODO(bivanovic): Move this to a better place in the codebase.
 DEFAULT_PX_PER_M: Final[float] = 2.0
@@ -97,6 +97,7 @@ class UnifiedDataset(Dataset):
             "eupeds_zara2": "~/datasets/eth_ucy_peds",
             "nusc_mini": "~/datasets/nuScenes",
             "lyft_sample": "~/datasets/lyft/scenes/sample.zarr",
+            # "nuplan_mini": "~/datasets/nuplan/dataset/nuplan-v1.0",
             # "lyft_train": "~/datasets/lyft/scenes/train.zarr",
             # "lyft_train_full": "~/datasets/lyft/scenes/train_full.zarr",
             # "lyft_val": "~/datasets/lyft/scenes/validate.zarr",
@@ -721,6 +722,14 @@ class UnifiedDataset(Dataset):
                     self.cache_class,
                     self.desired_dt,
                 )
+                if scene is None:
+                    # This provides an escape hatch in case there's a reason we
+                    # don't want to add a scene to the list of scenes. As an example,
+                    # nuPlan has a scene with only a single frame of data which we
+                    # can't do much with in terms of prediction/planning/etc. As a
+                    # result, we skip it.
+                    print(f"Skipping scene {scene_info.name} (insufficient data)")
+                    continue
 
                 scene_path: Path = EnvCache.scene_metadata_path(
                     self.cache_path, scene.env_name, scene.name, scene.dt
@@ -788,7 +797,11 @@ class UnifiedDataset(Dataset):
                 desc=f"Calculating Agent Data ({num_workers} CPUs)",
                 disable=not self.verbose,
             ):
-                scene_paths += [Path(path_str) for path_str in processed_scene_paths]
+                scene_paths += [
+                    Path(path_str)
+                    for path_str in processed_scene_paths
+                    if path_str is not None
+                ]
 
         return scene_paths
 

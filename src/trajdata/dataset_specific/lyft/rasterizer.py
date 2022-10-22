@@ -29,7 +29,7 @@ def indices_in_bounds(
     Returns:
         np.ndarray: indices of elements inside radius from center
     """
-    return np.arange(bounds.shape[0], dtype=np.long)
+    return np.arange(bounds.shape[0], dtype=int)
 
 
 class MapSemanticRasterizer(SemanticRasterizer):

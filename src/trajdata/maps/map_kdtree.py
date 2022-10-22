@@ -17,6 +17,11 @@ class MapElementKDTree:
     """
 
     def __init__(self, vec_map: VectorizedMap) -> None:
+        # Keep track of any map offsets in case the map was shifted in previous functions.
+        self.bottom_left_pt = np.array(
+            [vec_map.bottom_left_coords.x, vec_map.bottom_left_coords.y]
+        )
+
         # Build kd-tree
         kdtree, polylines, polyline_inds, map_elem_inds = self._build_kdtree(vec_map)
         self.kdtree = kdtree
@@ -36,13 +41,16 @@ class MapElementKDTree:
 
         map_elem: MapElement
         for map_elem_ind, map_elem in enumerate(
-            tqdm(vec_map.elements, desc=f"Scanning map elements")
+            tqdm(vec_map.elements, desc=f"Building K-D Trees", leave=False)
         ):
             points = self._extract_points(map_elem)
             if points is not None:
                 polyline_inds.extend([len(polylines)] * points.shape[0])
                 map_elem_inds.append(map_elem_ind)
-                polylines.append(points)
+
+                # Apply any map offsets to ensure we're in the same coordinate area as the
+                # original world map.
+                polylines.append(points + self.bottom_left_pt)
 
         points = np.concatenate(polylines, axis=0)
         polyline_inds = np.array(polyline_inds)

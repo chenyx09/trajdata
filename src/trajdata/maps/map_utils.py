@@ -1,5 +1,5 @@
 from math import ceil
-from typing import Final, Tuple
+from typing import Final, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -32,7 +32,7 @@ def cv2_subpixel(coords: np.ndarray) -> np.ndarray:
     Returns:
         np.ndarray: XY coords as int for cv2 shift draw
     """
-    return (coords * CV2_SHIFT_VALUE).astype(np.int)
+    return (coords * CV2_SHIFT_VALUE).astype(int)
 
 
 def decompress_values(data: np.ndarray) -> np.ndarray:
@@ -79,6 +79,9 @@ def populate_lane_polylines(
         new_lane.center.dz_mm.extend(compressed_mid_pts[:, 2].tolist())
         new_lane.left_boundary.dz_mm.extend(compressed_left_pts[:, 2].tolist())
         new_lane.right_boundary.dz_mm.extend(compressed_right_pts[:, 2].tolist())
+
+    midlane_headings: np.ndarray = get_polyline_headings(midlane_pts)[..., 0]
+    new_lane.center.h_rad.extend(midlane_headings.tolist())
 
 
 def populate_polygon(
@@ -257,7 +260,7 @@ def rasterize_map(
         ]
     )
 
-    # Compute pose from its position and rotation
+    # Compute pose from its position and rotation.
     pose_from_world: np.ndarray = np.array(
         [
             [1, 0, -world_center_m[0]],
@@ -266,7 +269,19 @@ def rasterize_map(
         ]
     )
 
-    raster_from_world: np.ndarray = raster_from_local @ pose_from_world
+    # Computing any correction necessary as a result of shifting the map.
+    world_from_shifted_world: np.ndarray = np.array(
+        [
+            [1, 0, vec_map.bottom_left_coords.x],
+            [0, 1, vec_map.bottom_left_coords.y],
+            [0, 0, 1],
+        ]
+    )
+
+    raster_from_world_unshifted: np.ndarray = raster_from_local @ pose_from_world
+    raster_from_world: np.ndarray = (
+        raster_from_world_unshifted @ world_from_shifted_world
+    )
 
     lane_area_img: np.ndarray = np.zeros(
         shape=(raster_size_y, raster_size_x, 3), dtype=np.uint8
@@ -311,6 +326,18 @@ def rasterize_map(
                 color=(0, 255, 0),
                 **CV2_SUB_VALUES,
             )
+
+            # This code helps visualize centerlines to check if the inferred headings are correct.
+            # center_pts = cv2_subpixel(
+            #     transform_points(
+            #         proto_to_np(map_elem.road_lane.center),
+            #         raster_from_world,
+            #     )
+            # )[..., :2]
+            # headings = np.asarray(map_elem.road_lane.center.h_rad)
+            # delta = cv2_subpixel(30*np.array([np.cos(headings[0]), np.sin(headings[0])]))
+            # cv2.arrowedLine(img=lane_line_img, pt1=tuple(center_pts[0]), pt2=tuple(center_pts[0] + 10*(center_pts[1] - center_pts[0])), color=(255, 0, 0), shift=9, line_type=cv2.LINE_AA)
+            # cv2.arrowedLine(img=lane_line_img, pt1=tuple(center_pts[0]), pt2=tuple(center_pts[0] + delta), color=(0, 255, 0), shift=9, line_type=cv2.LINE_AA)
 
         elif map_elem.HasField("road_area"):
             xyz_pts: np.ndarray = proto_to_np(map_elem.road_area.exterior_polygon)
@@ -371,4 +398,8 @@ def rasterize_map(
     map_img: np.ndarray = (lane_area_img + lane_line_img + ped_area_img).astype(
         np.float32
     ) / 255
-    return map_img.transpose(2, 0, 1), raster_from_world
+
+    # Returning the transformation to the map without any corrections added as a result
+    # of shifting the map's origin to the world origin (it is not needed anymore outside
+    # of this function).
+    return map_img.transpose(2, 0, 1), raster_from_world_unshifted
