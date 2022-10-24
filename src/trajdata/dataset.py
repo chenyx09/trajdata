@@ -356,7 +356,8 @@ class UnifiedDataset(Dataset):
         self, 
         filter_fn: Callable[[Union[AgentBatchElement, SceneBatchElement]], bool], 
         num_workers: int = 0, 
-        max_count: Optional[int] = None
+        max_count: Optional[int] = None,
+        all_gather: Optional[Callable] = None,
     ) -> None:
         keep_mask = []
         keep_count = 0
