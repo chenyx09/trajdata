@@ -20,7 +20,7 @@ from typing import (
 
 import dill
 import numpy as np
-import torch
+from torch import distributed
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
@@ -88,19 +88,19 @@ class UnifiedDataset(Dataset):
         max_neighbor_num: Optional[int] = None,
         ego_only: Optional[bool] = False,
         data_dirs: Dict[str, str] = {
-            # "nusc_trainval": "~/datasets/nuScenes",
-            # "nusc_test": "~/datasets/nuScenes",
             "eupeds_eth": "~/datasets/eth_ucy_peds",
             "eupeds_hotel": "~/datasets/eth_ucy_peds",
             "eupeds_univ": "~/datasets/eth_ucy_peds",
             "eupeds_zara1": "~/datasets/eth_ucy_peds",
             "eupeds_zara2": "~/datasets/eth_ucy_peds",
             "nusc_mini": "~/datasets/nuScenes",
+            # "nusc_trainval": "~/datasets/nuScenes",
+            # "nusc_test": "~/datasets/nuScenes",
             "lyft_sample": "~/datasets/lyft/scenes/sample.zarr",
-            # "nuplan_mini": "~/datasets/nuplan/dataset/nuplan-v1.0",
             # "lyft_train": "~/datasets/lyft/scenes/train.zarr",
             # "lyft_train_full": "~/datasets/lyft/scenes/train_full.zarr",
             # "lyft_val": "~/datasets/lyft/scenes/validate.zarr",
+            # "nuplan_mini": "~/datasets/nuplan/dataset/nuplan-v1.1",
         },
         cache_type: str = "dataframe",
         cache_location: str = "~/.unified_data_cache",
@@ -261,9 +261,13 @@ class UnifiedDataset(Dataset):
                                 self.cache_class,
                                 self.map_params,
                             )
+
                         # Wait for rank 0 process to be done with caching.
-                        if torch.cuda.is_available():
-                            torch.distributed.barrier()
+                        if (
+                            distributed.is_initialized()
+                            and distributed.get_world_size() > 1
+                        ):
+                            distributed.barrier()
 
                     scenes_list: List[SceneMetadata] = self.get_desired_scenes_from_env(
                         matching_datasets, scene_description_contains, env
