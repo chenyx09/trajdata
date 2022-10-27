@@ -109,19 +109,11 @@ class AgentBatch:
             neigh_fut=self.neigh_fut[filter_mask],
             neigh_fut_extents=self.neigh_fut_extents[filter_mask],
             neigh_fut_len=self.neigh_fut_len[filter_mask],
-            robot_fut=self.robot_fut[filter_mask]
-            if self.robot_fut is not None
-            else None,
-            robot_fut_len=self.robot_fut_len[filter_mask]
-            if self.robot_fut_len is not None
-            else None,
+            robot_fut=self.robot_fut[filter_mask] if self.robot_fut is not None else None,
+            robot_fut_len=self.robot_fut_len[filter_mask] if self.robot_fut_len is not None else None,
             maps=self.maps[filter_mask] if self.maps is not None else None,
-            maps_resolution=self.maps_resolution[filter_mask]
-            if self.maps_resolution is not None
-            else None,
-            rasters_from_world_tf=self.rasters_from_world_tf[filter_mask]
-            if self.rasters_from_world_tf is not None
-            else None,
+            maps_resolution=self.maps_resolution[filter_mask] if self.maps_resolution is not None else None,
+            rasters_from_world_tf=self.rasters_from_world_tf[filter_mask] if self.rasters_from_world_tf is not None else None,
             agents_from_world_tf=self.agents_from_world_tf[filter_mask],
             scene_ids=[
                 scene_id
@@ -280,19 +272,11 @@ class SceneBatch:
             agent_fut=self.agent_fut[filter_mask],
             agent_fut_extent=self.agent_fut_extent[filter_mask],
             agent_fut_len=self.agent_fut_len[filter_mask],
-            robot_fut=self.robot_fut[filter_mask]
-            if self.robot_fut is not None
-            else None,
-            robot_fut_len=self.robot_fut_len[filter_mask]
-            if self.robot_fut_len is not None
-            else None,
+            robot_fut=self.robot_fut[filter_mask] if self.robot_fut is not None else None,
+            robot_fut_len=self.robot_fut_len[filter_mask] if self.robot_fut_len is not None else None,
             maps=self.maps[filter_mask] if self.maps is not None else None,
-            maps_resolution=self.maps_resolution[filter_mask]
-            if self.maps_resolution is not None
-            else None,
-            rasters_from_world_tf=self.rasters_from_world_tf[filter_mask]
-            if self.rasters_from_world_tf is not None
-            else None,
+            maps_resolution=self.maps_resolution[filter_mask] if self.maps_resolution is not None else None,
+            rasters_from_world_tf=self.rasters_from_world_tf[filter_mask] if self.rasters_from_world_tf is not None else None,
             centered_agent_from_world_tf=self.centered_agent_from_world_tf[filter_mask],
             centered_world_from_agent_tf=self.centered_world_from_agent_tf[filter_mask],
             scene_ids=[
@@ -354,9 +338,9 @@ class SceneBatch:
             neigh_fut_len=index_neighbors(self.agent_fut_len),
             robot_fut=self.robot_fut,
             robot_fut_len=self.robot_fut_len,
-            maps=self.maps,
-            maps_resolution=self.maps_resolution,
-            rasters_from_world_tf=self.rasters_from_world_tf,
+            maps=index_agent(self.maps),
+            maps_resolution=index_agent(self.maps_resolution),
+            rasters_from_world_tf=index_agent(self.rasters_from_world_tf),
             agents_from_world_tf=self.centered_agent_from_world_tf,
             scene_ids=self.scene_ids,
             history_pad_dir=self.history_pad_dir,
