@@ -236,12 +236,6 @@ class SceneBatch:
             "history_pad_dir",
             "scene_ids",
             "extras",
-            "data_idx",
-            "agent_name",
-            "agent_type",
-            "scene_ids",
-            "history_pad_dir",
-            "extras",
         }
 
         for val in vars(self).keys():

@@ -40,7 +40,6 @@ from trajdata.parallel import (
 )
 from trajdata.utils import agent_utils, env_utils, scene_utils, string_utils
 
-from trajectron.utils.comm import all_gather  # TODO(pkarkus) remove, hacky
 
 # TODO(bivanovic): Move this to a better place in the codebase.
 DEFAULT_PX_PER_M: Final[float] = 2.0
@@ -247,8 +246,8 @@ class UnifiedDataset(Dataset):
                                 resolution=self.map_params["px_per_m"],
                             )
                         # Wait for rank 0 process to be done with caching.
-                        # if torch.cuda.is_available():
-                        #     torch.distributed.barrier()
+                        if torch.cuda.is_available():
+                            torch.distributed.barrier()
 
                     scenes_list: List[SceneMetadata] = self.get_desired_scenes_from_env(
                         matching_datasets, scene_description_contains, env
