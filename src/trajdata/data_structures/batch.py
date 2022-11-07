@@ -10,13 +10,6 @@ from trajdata.data_structures.agent import AgentType
 from trajdata.utils.arr_utils import PadDirection
 
 
-def _filter_tensor_or_list(tensor_or_list, filter_mask):
-    if isinstance(tensor_or_list, torch.Tensor):
-        return tensor_or_list[filter_mask]
-    else:
-        return type(tensor_or_list)([el for idx, el in enumerate(tensor_or_list) if filter_mask[idx]])
-
-
 @dataclass
 class AgentBatch:
     data_idx: Tensor
@@ -87,42 +80,52 @@ class AgentBatch:
 
     def filter_batch(self, filter_mask: torch.Tensor) -> AgentBatch:
         """Build a new batch with elements for which filter_mask[i] == True."""
+
+        # Some of the tensors might be on different devices, so we define some convenience functions
+        # to make sure the filter_mask is always on the same device as the tensor we are indexing.
+        filter_mask_dict = {}
+        filter_mask_dict['cpu'] = filter_mask.to('cpu')
+        filter_mask_dict[self.agent_hist.device] = filter_mask.to(self.agent_hist.device)
+
+        _filter = lambda tensor: tensor[filter_mask_dict[tensor.device]]
+        _filter_tensor_or_list = lambda tensor_or_list: (
+            _filter(tensor_or_list) 
+            if isinstance(tensor_or_list, torch.Tensor) 
+            else type(tensor_or_list)([el for idx, el in enumerate(tensor_or_list) if filter_mask_dict['cpu'][idx]])
+        )
+
         return AgentBatch(
-            data_idx=self.data_idx[filter_mask],
-            dt=self.dt[filter_mask],
+            data_idx=_filter(self.data_idx),
+            dt=_filter(self.dt),
             agent_name=[
                 name for idx, name in enumerate(self.agent_name) if filter_mask[idx]
             ],
-            agent_type=self.agent_type[filter_mask],
-            curr_agent_state=self.curr_agent_state[filter_mask],
-            agent_hist=self.agent_hist[filter_mask],
-            agent_hist_extent=self.agent_hist_extent[filter_mask],
-            agent_hist_len=self.agent_hist_len[filter_mask],
-            agent_fut=self.agent_fut[filter_mask],
-            agent_fut_extent=self.agent_fut_extent[filter_mask],
-            agent_fut_len=self.agent_fut_len[filter_mask],
-            num_neigh=self.num_neigh[filter_mask],
-            neigh_types=self.neigh_types[filter_mask],
-            neigh_hist=self.neigh_hist[filter_mask],
-            neigh_hist_extents=self.neigh_hist_extents[filter_mask],
-            neigh_hist_len=self.neigh_hist_len[filter_mask],
-            neigh_fut=self.neigh_fut[filter_mask],
-            neigh_fut_extents=self.neigh_fut_extents[filter_mask],
-            neigh_fut_len=self.neigh_fut_len[filter_mask],
-            robot_fut=self.robot_fut[filter_mask] if self.robot_fut is not None else None,
-            robot_fut_len=self.robot_fut_len[filter_mask] if self.robot_fut_len is not None else None,
-            maps=self.maps[filter_mask] if self.maps is not None else None,
-            maps_resolution=self.maps_resolution[filter_mask] if self.maps_resolution is not None else None,
-            rasters_from_world_tf=self.rasters_from_world_tf[filter_mask] if self.rasters_from_world_tf is not None else None,
-            agents_from_world_tf=self.agents_from_world_tf[filter_mask],
-            scene_ids=[
-                scene_id
-                for idx, scene_id in enumerate(self.scene_ids)
-                if filter_mask[idx]
-            ],
+            agent_type=_filter(self.agent_type),
+            curr_agent_state=_filter(self.curr_agent_state),
+            agent_hist=_filter(self.agent_hist),
+            agent_hist_extent=_filter(self.agent_hist_extent),
+            agent_hist_len=_filter(self.agent_hist_len),
+            agent_fut=_filter(self.agent_fut),
+            agent_fut_extent=_filter(self.agent_fut_extent),
+            agent_fut_len=_filter(self.agent_fut_len),
+            num_neigh=_filter(self.num_neigh),
+            neigh_types=_filter(self.neigh_types),
+            neigh_hist=_filter(self.neigh_hist),
+            neigh_hist_extents=_filter(self.neigh_hist_extents),
+            neigh_hist_len=_filter(self.neigh_hist_len),
+            neigh_fut=_filter(self.neigh_fut),
+            neigh_fut_extents=_filter(self.neigh_fut_extents),
+            neigh_fut_len=_filter(self.neigh_fut_len),
+            robot_fut=_filter(self.robot_fut) if self.robot_fut is not None else None,
+            robot_fut_len=_filter(self.robot_fut_len) if self.robot_fut_len is not None else None,
+            maps=_filter(self.maps) if self.maps is not None else None,
+            maps_resolution=_filter(self.maps_resolution) if self.maps_resolution is not None else None,
+            rasters_from_world_tf=_filter(self.rasters_from_world_tf) if self.rasters_from_world_tf is not None else None,
+            agents_from_world_tf=_filter(self.agents_from_world_tf),
+            scene_ids=_filter_tensor_or_list(self.scene_ids),
             history_pad_dir=self.history_pad_dir,
             extras={
-                key: _filter_tensor_or_list(val, filter_mask) 
+                key: _filter_tensor_or_list(val)
                 for key, val in self.extras.items()},
         )
 
@@ -259,31 +262,41 @@ class SceneBatch:
         return self.filter_batch(match_type)
 
     def filter_batch(self, filter_mask: torch.tensor) -> SceneBatch:
-        """Build a new batch with elements for which filter_mask[i] == True."""        
+        """Build a new batch with elements for which filter_mask[i] == True."""  
+        
+        # Some of the tensors might be on different devices, so we define some convenience functions
+        # to make sure the filter_mask is always on the same device as the tensor we are indexing.
+        filter_mask_dict = {}
+        filter_mask_dict['cpu'] = filter_mask.to('cpu')
+        filter_mask_dict[self.agent_hist.device] = filter_mask.to(self.agent_hist.device)
+
+        _filter = lambda tensor: tensor[filter_mask_dict[tensor.device]]
+        _filter_tensor_or_list = lambda tensor_or_list: (
+            _filter(tensor_or_list) 
+            if isinstance(tensor_or_list, torch.Tensor) 
+            else type(tensor_or_list)([el for idx, el in enumerate(tensor_or_list) if filter_mask_dict['cpu'][idx]])
+        )
+
         return SceneBatch(
-            data_idx=self.data_idx[filter_mask],
-            dt=self.dt[filter_mask],
-            num_agents=self.num_agents[filter_mask],
-            agent_type=self.agent_type[filter_mask],
-            centered_agent_state=self.centered_agent_state[filter_mask],
-            agent_hist=self.agent_hist[filter_mask],
-            agent_hist_extent=self.agent_hist_extent[filter_mask],
-            agent_hist_len=self.agent_hist_len[filter_mask],
-            agent_fut=self.agent_fut[filter_mask],
-            agent_fut_extent=self.agent_fut_extent[filter_mask],
-            agent_fut_len=self.agent_fut_len[filter_mask],
-            robot_fut=self.robot_fut[filter_mask] if self.robot_fut is not None else None,
-            robot_fut_len=self.robot_fut_len[filter_mask] if self.robot_fut_len is not None else None,
-            maps=self.maps[filter_mask] if self.maps is not None else None,
-            maps_resolution=self.maps_resolution[filter_mask] if self.maps_resolution is not None else None,
-            rasters_from_world_tf=self.rasters_from_world_tf[filter_mask] if self.rasters_from_world_tf is not None else None,
-            centered_agent_from_world_tf=self.centered_agent_from_world_tf[filter_mask],
-            centered_world_from_agent_tf=self.centered_world_from_agent_tf[filter_mask],
-            scene_ids=[
-                scene_id
-                for idx, scene_id in enumerate(self.scene_ids)
-                if filter_mask[idx]
-            ],
+            data_idx=_filter(self.data_idx),
+            dt=_filter(self.dt),
+            num_agents=_filter(self.num_agents),
+            agent_type=_filter(self.agent_type),
+            centered_agent_state=_filter(self.centered_agent_state),
+            agent_hist=_filter(self.agent_hist),
+            agent_hist_extent=_filter(self.agent_hist_extent),
+            agent_hist_len=_filter(self.agent_hist_len),
+            agent_fut=_filter(self.agent_fut),
+            agent_fut_extent=_filter(self.agent_fut_extent),
+            agent_fut_len=_filter(self.agent_fut_len),
+            robot_fut=_filter(self.robot_fut) if self.robot_fut is not None else None,
+            robot_fut_len=_filter(self.robot_fut_len) if self.robot_fut_len is not None else None,
+            maps=_filter(self.maps) if self.maps is not None else None,
+            maps_resolution=_filter(self.maps_resolution) if self.maps_resolution is not None else None,
+            rasters_from_world_tf=_filter(self.rasters_from_world_tf) if self.rasters_from_world_tf is not None else None,
+            centered_agent_from_world_tf=_filter(self.centered_agent_from_world_tf),
+            centered_world_from_agent_tf=_filter(self.centered_world_from_agent_tf),
+            scene_ids=_filter_tensor_or_list(self.scene_ids),
             history_pad_dir=self.history_pad_dir,
             extras={
                 key: _filter_tensor_or_list(val, filter_mask) 
