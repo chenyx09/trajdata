@@ -85,9 +85,9 @@ class AgentBatch:
         # to make sure the filter_mask is always on the same device as the tensor we are indexing.
         filter_mask_dict = {}
         filter_mask_dict['cpu'] = filter_mask.to('cpu')
-        filter_mask_dict[self.agent_hist.device] = filter_mask.to(self.agent_hist.device)
+        filter_mask_dict[str(self.agent_hist.device)] = filter_mask.to(self.agent_hist.device)
 
-        _filter = lambda tensor: tensor[filter_mask_dict[tensor.device]]
+        _filter = lambda tensor: tensor[filter_mask_dict[str(tensor.device)]]
         _filter_tensor_or_list = lambda tensor_or_list: (
             _filter(tensor_or_list) 
             if isinstance(tensor_or_list, torch.Tensor) 
@@ -268,9 +268,9 @@ class SceneBatch:
         # to make sure the filter_mask is always on the same device as the tensor we are indexing.
         filter_mask_dict = {}
         filter_mask_dict['cpu'] = filter_mask.to('cpu')
-        filter_mask_dict[self.agent_hist.device] = filter_mask.to(self.agent_hist.device)
+        filter_mask_dict[str(self.agent_hist.device)] = filter_mask.to(self.agent_hist.device)
 
-        _filter = lambda tensor: tensor[filter_mask_dict[tensor.device]]
+        _filter = lambda tensor: tensor[filter_mask_dict[str(tensor.device)]]
         _filter_tensor_or_list = lambda tensor_or_list: (
             _filter(tensor_or_list) 
             if isinstance(tensor_or_list, torch.Tensor) 
