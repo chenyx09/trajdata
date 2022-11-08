@@ -301,7 +301,7 @@ class UnifiedDataset(Dataset):
         else:
             # Build cache
             cached_batch_elements = []
-            keep_mask = []
+            keep_ids = []
 
             if num_workers <= 0:
                 cache_data_iterator = self
@@ -324,9 +324,7 @@ class UnifiedDataset(Dataset):
             ):
                 if filter_fn is None or filter_fn(element):
                     cached_batch_elements.append(element)
-                    keep_mask.append(True)
-                else:
-                    keep_mask.append(False)
+                    keep_ids.append(element.data_index)
 
             # Just deletes the variable cache_data_iterator,
             # not self (in case it is set to that)!
@@ -335,17 +333,13 @@ class UnifiedDataset(Dataset):
             print(f"Saving cache to {cache_path} ....", end="")
             t = time.time()
             with open(cache_path, "wb") as f:
-                dill.dump((cached_batch_elements, keep_mask), f)
+                dill.dump((cached_batch_elements, keep_ids), f)
             print(f" done in {time.time() - t:.1f}s.")
 
             self._cached_batch_elements = cached_batch_elements
 
-        # Verify
-        if len(keep_mask) != self._data_len:
-            raise ValueError("Current data and keep_mask lengths do not match!")
-
         # Remove unwanted elements
-        self.remove_elements(keep_mask=keep_mask)
+        self.remove_elements(keep_ids=keep_ids)
 
         # Verify
         if len(self._cached_batch_elements) != self._data_len:
@@ -358,7 +352,7 @@ class UnifiedDataset(Dataset):
         max_count: Optional[int] = None,
         all_gather: Optional[Callable] = None,
     ) -> None:
-        keep_mask = []
+        keep_ids = []
         keep_count = 0
 
         if filter_fn is None:
@@ -387,25 +381,17 @@ class UnifiedDataset(Dataset):
             # Iterate over data    
             for element in tqdm(cache_data_iterator, desc=f'Filtering dataset ({num_workers} CPUs): ', disable=False):
                 if filter_fn(element):
-                    keep_mask.append(True)
+                    keep_ids.append(element.data_index)
                     keep_count += 1
-                else:
-                    keep_mask.append(False)
-                if max_count is not None and keep_count >= max_count:
-                    # Add False for remaining samples and break loop
-                    print (f"Reached maximum number of {max_count} elements, terminating early.")
-                    while len(keep_mask) < self._data_len:
-                        keep_mask.append(False)
-                    break
+                    if max_count is not None and keep_count >= max_count:
+                        # Add False for remaining samples and break loop
+                        print (f"Reached maximum number of {max_count} elements, terminating early.")
+                        break
                 
             del cache_data_iterator        
 
-            # Verify
-            if len(keep_mask) != self._data_len:
-                raise ValueError("Current data and keep_mask lengths mismatch.")
-
             # Remove unwanted elements
-            self.remove_elements(keep_mask=keep_mask)
+            self.remove_elements(keep_ids=keep_ids)
             
         # Wait for rank 0 process to be done with caching.
         # Note that the default timeout is 30 minutes. If filtering is expected to exceed this, the timeout can be
@@ -417,17 +403,12 @@ class UnifiedDataset(Dataset):
             self._data_len = len(self._data_index)
             print (f"Rank {self.rank} has {self._data_len} elements.")
 
-    def remove_elements(self, keep_mask: List[bool]):
-        assert len(keep_mask) == self._data_len
+    def remove_elements(self, keep_ids: Union[np.ndarray, List[int]]):
         old_len = self._data_len
-        self._data_index = [
-            self._data_index[i] for i in range(len(keep_mask)) if keep_mask[i]
-        ]
+        self._data_index = [self._data_index[i] for i in keep_ids]
         self._data_len = len(self._data_index)
 
-        print(
-            f"Kept {self._data_len}/{old_len} elements, {self._data_len/old_len*100.0:.2f}%."
-        )
+        print(f"Kept {self._data_len}/{old_len} elements, {self._data_len/old_len*100.0:.2f}%.")
 
     def get_data_index(
         self, num_workers: int, scene_paths: List[Path]
