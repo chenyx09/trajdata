@@ -1,4 +1,4 @@
-from typing import Final, List
+from typing import Dict, Final, List
 
 import l5kit.data.proto.road_network_pb2 as l5_pb2
 import numpy as np
@@ -16,13 +16,9 @@ from trajdata.data_structures import (
     Scene,
     VariableExtent,
 )
-from trajdata.maps import map_utils
-from trajdata.proto.vectorized_map_pb2 import (
-    MapElement,
-    PedCrosswalk,
-    RoadLane,
-    VectorizedMap,
-)
+from trajdata.maps.vec_map import VectorMap
+from trajdata.maps.vec_map_elements import PedCrosswalk, Polyline, RoadLane
+from trajdata.utils import map_utils
 
 LYFT_DT: Final[float] = 0.1
 
@@ -105,8 +101,7 @@ def lyft_type_to_unified_type(lyft_type: int) -> AgentType:
         return AgentType.PEDESTRIAN
 
 
-def extract_vectorized(mapAPI: MapAPI) -> VectorizedMap:
-    vec_map = VectorizedMap()
+def populate_vector_map(vector_map: VectorMap, mapAPI: MapAPI) -> None:
     maximum_bound: np.ndarray = np.full((3,), np.nan)
     minimum_bound: np.ndarray = np.full((3,), np.nan)
     for l5_element in tqdm(mapAPI.elements, desc="Creating Vectorized Map"):
@@ -141,17 +136,30 @@ def extract_vectorized(mapAPI: MapAPI) -> VectorizedMap:
             minimum_bound = np.fmin(minimum_bound, midlane_pts.min(axis=0))
 
             # Adding the element to the map.
-            new_element: MapElement = vec_map.elements.add()
-            new_element.id = l5_element.id.id
-
-            new_lane: RoadLane = new_element.road_lane
-            map_utils.populate_lane_polylines(
-                new_lane, midlane_pts, left_pts, right_pts
+            new_lane = RoadLane(
+                id=l5_element_id,
+                center=Polyline(midlane_pts),
+                left_edge=Polyline(left_pts),
+                right_edge=Polyline(right_pts),
             )
 
-            new_lane.exit_lanes.extend([gid.id for gid in l5_lane.lanes_ahead])
-            new_lane.adjacent_lanes_left.append(l5_lane.adjacent_lane_change_left.id)
-            new_lane.adjacent_lanes_right.append(l5_lane.adjacent_lane_change_right.id)
+            new_lane.next_lanes.update(
+                [mapAPI.id_as_str(gid) for gid in l5_lane.lanes_ahead]
+            )
+
+            left_lane_change_id: str = mapAPI.id_as_str(
+                l5_lane.adjacent_lane_change_left
+            )
+            if left_lane_change_id:
+                new_lane.adj_lanes_left.add(left_lane_change_id)
+
+            right_lane_change_id: str = mapAPI.id_as_str(
+                l5_lane.adjacent_lane_change_right
+            )
+            if right_lane_change_id:
+                new_lane.adj_lanes_right.add(right_lane_change_id)
+
+            vector_map.add_map_element(new_lane)
 
         if mapAPI.is_crosswalk(l5_element):
             l5_element_id: str = mapAPI.id_as_str(l5_element.id)
@@ -163,14 +171,10 @@ def extract_vectorized(mapAPI: MapAPI) -> VectorizedMap:
             maximum_bound = np.fmax(maximum_bound, crosswalk_pts.max(axis=0))
             minimum_bound = np.fmin(minimum_bound, crosswalk_pts.min(axis=0))
 
-            new_element: MapElement = vec_map.elements.add()
-            new_element.id = l5_element.id.id
-
-            new_crosswalk: PedCrosswalk = new_element.ped_crosswalk
-            map_utils.populate_polygon(new_crosswalk.polygon, crosswalk_pts)
+            vector_map.add_map_element(
+                PedCrosswalk(id=l5_element_id, polygon=Polyline(crosswalk_pts))
+            )
 
     # Setting the map bounds.
-    vec_map.max_pt.x, vec_map.max_pt.y, vec_map.max_pt.z = maximum_bound
-    vec_map.min_pt.x, vec_map.min_pt.y, vec_map.min_pt.z = minimum_bound
-
-    return vec_map
+    # vector_map.extent is [min_x, min_y, min_z, max_x, max_y, max_z]
+    vector_map.extent = np.concatenate((minimum_bound, maximum_bound))

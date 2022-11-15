@@ -3,17 +3,20 @@ syntax = "proto3";
 package trajdata;
 
 message VectorizedMap {
+  // The name of this map in the format environment_name:map_name
+  string name = 1;
+
   // The full set of map elements.
-  repeated MapElement elements = 1;
+  repeated MapElement elements = 2;
 
   // The coordinates of the cuboid (in m)
   // containing all elements in this map.
-  Point max_pt = 2;
-  Point min_pt = 3;
+  Point max_pt = 3;
+  Point min_pt = 4;
   
   // The original world coordinates (in m) of the bottom-left of the map
-  // (in case the map is shifted, e.g., to make it the origin for storage efficiency).
-  Point bottom_left_coords = 4;
+  // (account for a change in the origin for storage efficiency).
+  Point shifted_origin = 5;
 }
 
 message MapElement {

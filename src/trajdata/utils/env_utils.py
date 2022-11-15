@@ -1,7 +1,7 @@
 from typing import Dict, List
 
-from trajdata.dataset_specific import RawDataset
 from trajdata.dataset_specific.eth_ucy_peds import EUPedsDataset
+from trajdata.dataset_specific.raw_dataset import RawDataset
 
 try:
     from trajdata.dataset_specific.lyft import LyftDataset

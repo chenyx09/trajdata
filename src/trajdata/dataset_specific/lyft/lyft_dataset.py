@@ -1,7 +1,5 @@
-import warnings
 from collections import defaultdict
 from functools import partial
-from math import ceil
 from pathlib import Path
 from random import Random
 from typing import Any, Dict, List, Optional, Tuple, Type
@@ -11,7 +9,6 @@ import pandas as pd
 from l5kit.configs.config import load_metadata
 from l5kit.data import ChunkedDataset, LocalDataManager
 from l5kit.data.map_api import MapAPI
-from l5kit.rasterization import RenderContext
 
 from trajdata.caching import EnvCache, SceneCache
 from trajdata.data_structures import (
@@ -23,12 +20,9 @@ from trajdata.data_structures import (
 )
 from trajdata.data_structures.agent import Agent, AgentType, VariableExtent
 from trajdata.dataset_specific.lyft import lyft_utils
-from trajdata.dataset_specific.lyft.rasterizer import MapSemanticRasterizer
 from trajdata.dataset_specific.raw_dataset import RawDataset
 from trajdata.dataset_specific.scene_records import LyftSceneRecord
-from trajdata.maps import RasterizedMap, RasterizedMapMetadata, map_utils
-from trajdata.maps.map_kdtree import LaneCenterKDTree
-from trajdata.proto.vectorized_map_pb2 import VectorizedMap
+from trajdata.maps import VectorMap
 from trajdata.utils import arr_utils
 
 
@@ -85,6 +79,9 @@ class LyftDataset(RawDataset):
             dt=lyft_utils.LYFT_DT,
             parts=dataset_parts,
             scene_split_map=scene_split_map,
+            # The location names should match the map names used in
+            # the unified data cache.
+            map_locations=("palo_alto",),
         )
 
     def load_dataset_obj(self, verbose: bool = False) -> None:
@@ -343,79 +340,7 @@ class LyftDataset(RawDataset):
         world_to_ecef = np.array(dataset_meta["world_to_ecef"], dtype=np.float64)
         mapAPI = MapAPI(semantic_map_filepath, world_to_ecef)
 
-        if map_params.get("original_format", False):
-            warnings.warn(
-                "Using a dataset's original map format is deprecated, and will be removed in the next version of trajdata!",
-                FutureWarning,
-            )
+        vector_map = VectorMap(map_id=f"{self.name}:{map_name}")
+        lyft_utils.populate_vector_map(vector_map, mapAPI)
 
-            mins = np.stack(
-                [
-                    map_elem["bounds"][:, 0].min(axis=0)
-                    for map_elem in mapAPI.bounds_info.values()
-                ]
-            ).min(axis=0)
-            maxs = np.stack(
-                [
-                    map_elem["bounds"][:, 1].max(axis=0)
-                    for map_elem in mapAPI.bounds_info.values()
-                ]
-            ).max(axis=0)
-
-            world_right, world_top = maxs
-            world_left, world_bottom = mins
-
-            world_center: np.ndarray = np.array(
-                [(world_left + world_right) / 2, (world_bottom + world_top) / 2]
-            )
-            raster_size_px: np.ndarray = np.array(
-                [
-                    ceil((world_right - world_left) * resolution),
-                    ceil((world_top - world_bottom) * resolution),
-                ]
-            )
-
-            render_context = RenderContext(
-                raster_size_px=raster_size_px,
-                pixel_size_m=np.array([1 / resolution, 1 / resolution]),
-                center_in_raster_ratio=np.array([0.5, 0.5]),
-                set_origin_to_bottom=False,
-            )
-
-            map_from_world: np.ndarray = render_context.raster_from_world(
-                world_center, 0.0
-            )
-
-            rasterizer = MapSemanticRasterizer(
-                render_context, semantic_map_filepath, world_to_ecef
-            )
-
-            print("Rendering palo_alto Map...", flush=True, end=" ")
-            map_data: np.ndarray = rasterizer.render_semantic_map(
-                world_center, map_from_world
-            )
-            print("done!", flush=True)
-
-            vectorized_map = VectorizedMap()
-        else:
-            vectorized_map: VectorizedMap = lyft_utils.extract_vectorized(mapAPI)
-            map_data, map_from_world = map_utils.rasterize_map(
-                vectorized_map, resolution
-            )
-
-        rasterized_map_info: RasterizedMapMetadata = RasterizedMapMetadata(
-            name=map_name,
-            shape=map_data.shape,
-            layers=["drivable_area", "lane_divider", "ped_area"],
-            layer_rgb_groups=([0], [1], [2]),
-            resolution=resolution,
-            map_from_world=map_from_world,
-        )
-
-        lanecenter_kdtree = LaneCenterKDTree(vectorized_map)
-        kdtrees = {"lanecenter": lanecenter_kdtree}
-
-        rasterized_map_obj: RasterizedMap = RasterizedMap(rasterized_map_info, map_data)
-        map_cache_class.cache_map(
-            cache_path, vectorized_map, kdtrees, rasterized_map_obj, self.name
-        )
+        map_cache_class.finalize_and_cache_map(cache_path, vector_map, map_params)

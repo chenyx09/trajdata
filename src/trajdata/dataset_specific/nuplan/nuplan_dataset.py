@@ -1,5 +1,3 @@
-import sqlite3
-from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Type
 
@@ -7,7 +5,6 @@ import numpy as np
 import pandas as pd
 from nuplan.common.maps.nuplan_map import map_factory
 from nuplan.common.maps.nuplan_map.nuplan_map import NuPlanMap
-from pyquaternion import Quaternion
 from tqdm import tqdm
 
 from trajdata.caching import EnvCache, SceneCache
@@ -24,9 +21,7 @@ from trajdata.data_structures.scene_tag import SceneTag
 from trajdata.dataset_specific.nuplan import nuplan_utils
 from trajdata.dataset_specific.raw_dataset import RawDataset
 from trajdata.dataset_specific.scene_records import NuPlanSceneRecord
-from trajdata.maps import RasterizedMap, RasterizedMapMetadata, map_utils
-from trajdata.maps.map_kdtree import LaneCenterKDTree
-from trajdata.proto.vectorized_map_pb2 import VectorizedMap
+from trajdata.maps.vec_map import VectorMap
 from trajdata.utils import arr_utils
 
 
@@ -69,6 +64,9 @@ class NuplanDataset(RawDataset):
             dt=nuplan_utils.NUPLAN_DT,
             parts=dataset_parts,
             scene_split_map=nup_log_split_map,
+            # The location names should match the map names used in
+            # the unified data cache.
+            map_locations=nuplan_utils.NUPLAN_LOCATIONS,
         )
 
     def load_dataset_obj(self, verbose: bool = False) -> None:
@@ -102,6 +100,14 @@ class NuplanDataset(RawDataset):
                 originating_log, default_split
             )
             scene_length: int = scene_record["num_timesteps"]
+
+            if scene_length == 1:
+                # nuPlan has scenes with only a single frame of data which we
+                # can't do much with in terms of prediction/planning/etc. As a
+                # result, we skip it.
+                # As an example, nuplan_mini scene e958b276c7a65197
+                # from log 2021.06.14.19.22.11_veh-38_01480_01860.
+                continue
 
             # Saving all scene records for later caching.
             all_scenes_list.append(
@@ -210,6 +216,7 @@ class NuplanDataset(RawDataset):
     def get_agent_info(
         self, scene: Scene, cache_path: Path, cache_class: Type[SceneCache]
     ) -> Tuple[List[AgentMetadata], List[List[AgentMetadata]]]:
+        # instantiate VectorMap from map_api if necessary
         self.dataset_obj.open_db(scene.name.split("=")[0] + ".db")
 
         ego_agent_info: AgentMetadata = AgentMetadata(
@@ -228,11 +235,6 @@ class NuplanDataset(RawDataset):
 
         all_frames: pd.DataFrame = self.dataset_obj.get_scene_frames(scene)
 
-        if len(all_frames) <= 1:
-            # No idea why, but nuPlan has scenes with only one frame of data.
-            # E.g., nuplan_mini scene e958b276c7a65197 from log 2021.06.14.19.22.11_veh-38_01480_01860.
-            return None, None
-
         ego_df = (
             all_frames[["ego_x", "ego_y", "ego_vx", "ego_vy", "ego_ax", "ego_ay"]]
             .rename(columns=lambda name: name[4:])
@@ -246,6 +248,7 @@ class NuplanDataset(RawDataset):
 
         lpc_tokens: List[bytearray] = all_frames.index.tolist()
         agents_df: pd.DataFrame = self.dataset_obj.get_detected_agents(lpc_tokens)
+        tls_df: pd.DataFrame = self.dataset_obj.get_traffic_light_status(lpc_tokens)
 
         self.dataset_obj.close_db()
 
@@ -338,6 +341,16 @@ class NuplanDataset(RawDataset):
         )
         cache_class.save_agent_data(overall_agents_df, cache_path, scene)
 
+        # similar process to clean up and traffic light data
+        tls_df["scene_ts"] = tls_df["lidar_pc_token"].map(
+            {lpc_token: scene_ts for scene_ts, lpc_token in enumerate(lpc_tokens)}
+        )
+        tls_df = tls_df.drop(columns=["lidar_pc_token"]).set_index(
+            ["lane_connector_id", "scene_ts"]
+        )
+
+        cache_class.save_traffic_light_data(tls_df, cache_path, scene)
+
         return agent_list, agent_presence
 
     def cache_map(
@@ -347,12 +360,10 @@ class NuplanDataset(RawDataset):
         map_cache_class: Type[SceneCache],
         map_params: Dict[str, Any],
     ) -> None:
-        resolution: float = map_params["px_per_m"]
-
         nuplan_map: NuPlanMap = map_factory.get_maps_api(
             map_root=str(self.metadata.data_dir.parent / "maps"),
             map_version=nuplan_utils.NUPLAN_MAP_VERSION,
-            map_name=nuplan_utils.NUPLAN_MAP_NAME_DICT[map_name],
+            map_name=nuplan_utils.NUPLAN_FULL_MAP_NAME_DICT[map_name],
         )
 
         # Loading all layer geometries.
@@ -360,43 +371,19 @@ class NuplanDataset(RawDataset):
 
         # This df has the normal lane_connectors with additional boundary information,
         # which we want to use, however the default index is not the lane_connector_fid,
-        # although it is a 1:1 mapping so we instead replace the default index with the
-        # lane_connector_fid.
-        nuplan_map._vector_map["gen_lane_connectors_scaled_width_polygons"].set_index(
-            "lane_connector_fid", inplace=True
+        # although it is a 1:1 mapping so we instead create another index with the
+        # lane_connector_fids as the key and the resulting integer indices as the value.
+        lane_connector_fids: pd.Series = nuplan_map._vector_map[
+            "gen_lane_connectors_scaled_width_polygons"
+        ]["lane_connector_fid"]
+        lane_connector_idxs: pd.Series = pd.Series(
+            index=lane_connector_fids, data=range(len(lane_connector_fids))
         )
 
-        if map_params.get("original_format", False):
-            raise NotImplementedError(
-                "nuPlan original_format map rasterization is not implemented yet!"
-            )
-        else:
-            vectorized_map: VectorizedMap = nuplan_utils.extract_vectorized(nuplan_map)
+        vector_map = VectorMap(map_id=f"{self.name}:{map_name}")
+        nuplan_utils.populate_vector_map(vector_map, nuplan_map, lane_connector_idxs)
 
-            pbar_kwargs = {"position": 2, "leave": False}
-            map_data, map_from_world = map_utils.rasterize_map(
-                vectorized_map, resolution, **pbar_kwargs
-            )
-
-            rasterized_map_info: RasterizedMapMetadata = RasterizedMapMetadata(
-                name=map_name,
-                shape=map_data.shape,
-                layers=["drivable_area", "lane_divider", "ped_area"],
-                layer_rgb_groups=([0], [1], [2]),
-                resolution=resolution,
-                map_from_world=map_from_world,
-            )
-
-            rasterized_map_obj: RasterizedMap = RasterizedMap(
-                rasterized_map_info, map_data
-            )
-
-            lanecenter_kdtree = LaneCenterKDTree(vectorized_map)
-            kdtrees = {"lanecenter": lanecenter_kdtree}
-
-            map_cache_class.cache_map(
-                cache_path, vectorized_map, kdtrees, rasterized_map_obj, self.name
-            )
+        map_cache_class.finalize_and_cache_map(cache_path, vector_map, map_params)
 
     def cache_maps(
         self,

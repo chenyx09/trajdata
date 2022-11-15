@@ -1,7 +1,6 @@
 import unittest
 from collections import defaultdict
 
-import numpy as np
 import torch
 
 from trajdata import AgentType, UnifiedDataset
@@ -34,8 +33,8 @@ class TestSceneToAgentBatchConversion(unittest.TestCase):
             future_sec=(prediction_sec, prediction_sec),
             agent_interaction_distances=attention_radius,
             incl_robot_future=False,
-            incl_map=True,
-            map_params=map_params,
+            incl_raster_map=True,
+            raster_map_params=map_params,
             only_predict=[AgentType.VEHICLE, AgentType.PEDESTRIAN],
             no_types=[AgentType.UNKNOWN],
             num_workers=0,
@@ -52,8 +51,8 @@ class TestSceneToAgentBatchConversion(unittest.TestCase):
             future_sec=(prediction_sec, prediction_sec),
             agent_interaction_distances=attention_radius,
             incl_robot_future=False,
-            incl_map=True,
-            map_params=map_params,
+            incl_raster_map=True,
+            raster_map_params=map_params,
             only_predict=[AgentType.VEHICLE, AgentType.PEDESTRIAN],
             no_types=[AgentType.UNKNOWN],
             num_workers=0,
@@ -120,8 +119,8 @@ class TestSceneToAgentBatchConversion(unittest.TestCase):
                 self._scene_dataset.only_types,
                 self._scene_dataset.no_types,
                 self._scene_dataset.agent_interaction_distances,
-                self._scene_dataset.incl_map,
-                self._scene_dataset.map_params,
+                self._scene_dataset.incl_raster_map,
+                self._scene_dataset.raster_map_params,
                 self._scene_dataset.max_neighbor_num,
                 self._scene_dataset.standardize_data,
                 self._scene_dataset.standardize_derivatives,

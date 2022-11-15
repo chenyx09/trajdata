@@ -3,7 +3,6 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Type, Union
 
-import numpy as np
 import pandas as pd
 from nuscenes.eval.prediction.splits import NUM_IN_TRAIN_VAL
 from nuscenes.map_expansion.map_api import NuScenesMap, locations
@@ -25,9 +24,7 @@ from trajdata.data_structures.scene_tag import SceneTag
 from trajdata.dataset_specific.nusc import nusc_utils
 from trajdata.dataset_specific.raw_dataset import RawDataset
 from trajdata.dataset_specific.scene_records import NuscSceneRecord
-from trajdata.maps import RasterizedMap, RasterizedMapMetadata, map_utils
-from trajdata.maps.map_kdtree import LaneCenterKDTree
-from trajdata.proto.vectorized_map_pb2 import VectorizedMap
+from trajdata.maps import VectorMap
 
 
 class NuscDataset(RawDataset):
@@ -87,6 +84,9 @@ class NuscDataset(RawDataset):
             dt=nusc_utils.NUSC_DT,
             parts=dataset_parts,
             scene_split_map=nusc_scene_split_map,
+            # The location names should match the map names used in
+            # the unified data cache.
+            map_locations=tuple(locations),
         )
 
     def load_dataset_obj(self, verbose: bool = False) -> None:
@@ -274,84 +274,14 @@ class NuscDataset(RawDataset):
         map_cache_class: Type[SceneCache],
         map_params: Dict[str, Any],
     ) -> None:
-        resolution: float = map_params["px_per_m"]
-
         nusc_map: NuScenesMap = NuScenesMap(
             dataroot=self.metadata.data_dir, map_name=map_name
         )
 
-        if map_params.get("original_format", False):
-            warnings.warn(
-                "Using a dataset's original map format is deprecated, and will be removed in the next version of trajdata!",
-                FutureWarning,
-            )
+        vector_map = VectorMap(map_id=f"{self.name}:{map_name}")
+        nusc_utils.populate_vector_map(vector_map, nusc_map)
 
-            width_m, height_m = nusc_map.canvas_edge
-            height_px, width_px = round(height_m * resolution), round(
-                width_m * resolution
-            )
-
-            def layer_fn(layer_name: str) -> np.ndarray:
-                # Getting rid of the channels dim by accessing index [0]
-                return nusc_map.get_map_mask(
-                    patch_box=None,
-                    patch_angle=0,
-                    layer_names=[layer_name],
-                    canvas_size=(height_px, width_px),
-                )[0].astype(np.bool)
-
-            map_from_world: np.ndarray = np.array(
-                [[resolution, 0.0, 0.0], [0.0, resolution, 0.0], [0.0, 0.0, 1.0]]
-            )
-
-            layer_names: List[str] = [
-                "lane",
-                "road_segment",
-                "drivable_area",
-                "road_divider",
-                "lane_divider",
-                "ped_crossing",
-                "walkway",
-            ]
-            map_info: RasterizedMapMetadata = RasterizedMapMetadata(
-                name=map_name,
-                shape=(len(layer_names), height_px, width_px),
-                layers=layer_names,
-                layer_rgb_groups=([0, 1, 2], [3, 4], [5, 6]),
-                resolution=resolution,
-                map_from_world=map_from_world,
-            )
-
-            map_cache_class.cache_map_layers(
-                cache_path, VectorizedMap(), map_info, layer_fn, self.name
-            )
-        else:
-            vectorized_map: VectorizedMap = nusc_utils.extract_vectorized(nusc_map)
-
-            pbar_kwargs = {"position": 2, "leave": False}
-            map_data, map_from_world = map_utils.rasterize_map(
-                vectorized_map, resolution, **pbar_kwargs
-            )
-
-            rasterized_map_info: RasterizedMapMetadata = RasterizedMapMetadata(
-                name=map_name,
-                shape=map_data.shape,
-                layers=["drivable_area", "lane_divider", "ped_area"],
-                layer_rgb_groups=([0], [1], [2]),
-                resolution=resolution,
-                map_from_world=map_from_world,
-            )
-
-            rasterized_map_obj: RasterizedMap = RasterizedMap(
-                rasterized_map_info, map_data
-            )
-
-            lanecenter_kdtree = LaneCenterKDTree(vectorized_map)
-            kdtrees = {"lanecenter": lanecenter_kdtree}
-
-            map_cache_class.cache_map(
-                cache_path, vectorized_map, kdtrees, rasterized_map_obj, self.name
-            )
+        map_cache_class.finalize_and_cache_map(cache_path, vector_map, map_params)
 
     def cache_maps(
         self,
