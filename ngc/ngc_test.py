@@ -22,8 +22,12 @@ def main():
         only_types=[AgentType.VEHICLE, AgentType.PEDESTRIAN],
         agent_interaction_distances=defaultdict(lambda: 40.0),
         incl_robot_future=True,
-        incl_map=True,
-        map_params={"px_per_m": 2, "map_size_px": 224, "offset_frac_xy": (-0.5, 0.0)},
+        incl_raster_map=True,
+        raster_map_params={
+            "px_per_m": 2,
+            "map_size_px": 224,
+            "offset_frac_xy": (-0.5, 0.0),
+        },
         # augmentations=[noise_hists],
         data_dirs={
             "nusc": "/workspace/datasets/nuScenes",

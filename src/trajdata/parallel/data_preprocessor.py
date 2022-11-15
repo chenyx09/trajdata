@@ -6,8 +6,7 @@ from torch.utils.data import Dataset
 
 from trajdata.caching import EnvCache, SceneCache
 from trajdata.data_structures import Scene, SceneMetadata
-from trajdata.dataset_specific.env_utils import get_raw_dataset
-from trajdata.utils import agent_utils
+from trajdata.utils import agent_utils, env_utils
 
 
 def scene_paths_collate_fn(filled_scenes: List) -> List:
@@ -61,7 +60,7 @@ class ParallelDatasetPreprocessor(Dataset):
         scene_idx: int = self.scene_name_idxs[idx]
 
         env_name: str = str(self.env_names_arr[env_idx], encoding="utf-8")
-        raw_dataset = get_raw_dataset(
+        raw_dataset = env_utils.get_raw_dataset(
             env_name, str(self.data_dir_arr[env_idx], encoding="utf-8")
         )
 

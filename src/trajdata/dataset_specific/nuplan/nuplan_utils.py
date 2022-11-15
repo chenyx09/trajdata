@@ -13,26 +13,40 @@ from tqdm import tqdm
 
 from trajdata.data_structures.agent import AgentType
 from trajdata.data_structures.scene_metadata import Scene
-from trajdata.maps import map_utils
-from trajdata.proto.vectorized_map_pb2 import (
-    MapElement,
+from trajdata.maps import TrafficLightStatus, VectorMap
+from trajdata.maps.vec_map_elements import (
+    MapElementType,
     PedCrosswalk,
     PedWalkway,
     Polyline,
     RoadArea,
     RoadLane,
-    VectorizedMap,
 )
+from trajdata.utils import map_utils
 
 NUPLAN_DT: Final[float] = 0.05
-NUPLAN_MAP_NAME_DICT: Final[Dict[str, str]] = {
+NUPLAN_FULL_MAP_NAME_DICT: Final[Dict[str, str]] = {
     "boston": "us-ma-boston",
     "singapore": "sg-one-north",
     "las_vegas": "us-nv-las-vegas-strip",
     "pittsburgh": "us-pa-pittsburgh-hazelwood",
 }
-NUPLAN_LOCATIONS: Final[Tuple[str, str, str, str]] = tuple(NUPLAN_MAP_NAME_DICT.keys())
+_NUPLAN_SQL_MAP_FRIENDLY_NAMES_DICT: Final[Dict[str, str]] = {
+    "us-ma-boston": "boston",
+    "sg-one-north": "singapore",
+    "las_vegas": "las_vegas",
+    "us-pa-pittsburgh-hazelwood": "pittsburgh",
+}
+NUPLAN_LOCATIONS: Final[Tuple[str, str, str, str]] = tuple(
+    NUPLAN_FULL_MAP_NAME_DICT.keys()
+)
 NUPLAN_MAP_VERSION: Final[str] = "nuplan-maps-v1.0"
+
+NUPLAN_TRAFFIC_STATUS_DICT: Final[Dict[str, TrafficLightStatus]] = {
+    "green": TrafficLightStatus.GREEN,
+    "red": TrafficLightStatus.RED,
+    "unknown": TrafficLightStatus.UNKNOWN,
+}
 
 
 class NuPlanObject:
@@ -97,7 +111,9 @@ class NuPlanObject:
                 scenes.append(
                     {
                         "name": f"{row['logfile']}={row['scene_token'].hex()}",
-                        "location": row["location"],
+                        "location": _NUPLAN_SQL_MAP_FRIENDLY_NAMES_DICT[
+                            row["location"]
+                        ],
                         "num_timesteps": row["num_timesteps"],
                     }
                 )
@@ -151,6 +167,20 @@ class NuPlanObject:
         """
         return pd.read_sql_query(query, self.connection, params=binary_lpc_tokens)
 
+    def get_traffic_light_status(
+        self, binary_lpc_tokens: List[bytearray]
+    ) -> pd.DataFrame:
+        query = f"""
+        SELECT  tls.lidar_pc_token AS lidar_pc_token,
+                tls.lane_connector_id AS lane_connector_id,
+                tls.status AS raw_status
+        FROM traffic_light_status AS tls 
+        WHERE lidar_pc_token IN ({('?,'*len(binary_lpc_tokens))[:-1]});
+        """
+        df = pd.read_sql_query(query, self.connection, params=binary_lpc_tokens)
+        df["status"] = df["raw_status"].map(NUPLAN_TRAFFIC_STATUS_DICT)
+        return df.drop(columns=["raw_status"])
+
     def close_db(self) -> None:
         self.cursor.close()
         self.connection.close()
@@ -176,8 +206,8 @@ def create_splits_logs() -> Dict[str, List[str]]:
 
 
 def extract_lane_and_edges(
-    nuplan_map: NuPlanMap, lane_record
-) -> Tuple[str, np.ndarray, np.ndarray, np.ndarray]:
+    nuplan_map: NuPlanMap, lane_record, lane_connector_idxs: pd.Series
+) -> Tuple[str, np.ndarray, np.ndarray, np.ndarray, Tuple[str, str]]:
     lane_midline = np.stack(lane_record["geometry"].xy, axis=-1)
 
     # Getting the bounding polygon vertices.
@@ -189,39 +219,45 @@ def extract_lane_and_edges(
         fid = int(lane_record["lane_connector_fid"])
         lane_info = nuplan_map._vector_map[
             "gen_lane_connectors_scaled_width_polygons"
-        ].loc[fid]
+        ].iloc[lane_connector_idxs[fid]]
     else:
         raise ValueError("Both lane_fid and lane_connector_fid are NaN!")
 
-    left_pts = np.stack(
-        boundary_df.loc[str(lane_info["left_boundary_fid"])]["geometry"].xy, axis=-1
+    lane_fid = str(fid)
+    boundary_info = (
+        str(lane_info["left_boundary_fid"]),
+        str(lane_info["right_boundary_fid"]),
     )
-    right_pts = np.stack(
-        boundary_df.loc[str(lane_info["right_boundary_fid"])]["geometry"].xy, axis=-1
-    )
+
+    left_pts = np.stack(boundary_df.loc[boundary_info[0]]["geometry"].xy, axis=-1)
+    right_pts = np.stack(boundary_df.loc[boundary_info[1]]["geometry"].xy, axis=-1)
+
+    # Final ordering check, ensuring that left_pts and right_pts can be combined
+    # into a polygon without the endpoints intersecting.
+    # Reversing the one lane edge that does not match the ordering of the midline.
+    if map_utils.endpoints_intersect(left_pts, right_pts):
+        if not map_utils.order_matches(left_pts, lane_midline):
+            left_pts = left_pts[::-1]
+        else:
+            right_pts = right_pts[::-1]
 
     # Ensuring that left and right have the same number of points.
     # This is necessary, not for data storage but for later rasterization.
     if left_pts.shape[0] < right_pts.shape[0]:
-        left_pts = map_utils.interpolate(left_pts, right_pts.shape[0])
+        left_pts = map_utils.interpolate(left_pts, num_pts=right_pts.shape[0])
     elif right_pts.shape[0] < left_pts.shape[0]:
-        right_pts = map_utils.interpolate(right_pts, left_pts.shape[0])
+        right_pts = map_utils.interpolate(right_pts, num_pts=left_pts.shape[0])
 
-    return (
-        str(fid),
-        lane_midline,
-        left_pts,
-        right_pts,
-    )
+    return (lane_fid, lane_midline, left_pts, right_pts, boundary_info)
 
 
 def extract_area(nuplan_map: NuPlanMap, area_record) -> np.ndarray:
     return np.stack(area_record["geometry"].exterior.xy, axis=-1)
 
 
-def extract_vectorized(nuplan_map: NuPlanMap) -> VectorizedMap:
-    vec_map = VectorizedMap()
-
+def populate_vector_map(
+    vector_map: VectorMap, nuplan_map: NuPlanMap, lane_connector_idxs: pd.Series
+) -> None:
     # Setting the map bounds.
     # NOTE: min_pt is especially important here since the world coordinates of nuPlan
     # are quite large in magnitude. We make them relative to the bottom-left by
@@ -242,20 +278,17 @@ def extract_vectorized(nuplan_map: NuPlanMap) -> VectorizedMap:
         axis=0,
     )
 
-    vec_map.max_pt.x, vec_map.max_pt.y, vec_map.max_pt.z = (
-        max_pt[0],
-        max_pt[1],
-        0.0,
+    # vector_map.extent is [min_x, min_y, min_z, max_x, max_y, max_z]
+    vector_map.extent = np.array(
+        [
+            min_pt[0],
+            min_pt[1],
+            0.0,
+            max_pt[0],
+            max_pt[1],
+            0.0,
+        ]
     )
-    vec_map.min_pt.x, vec_map.min_pt.y, vec_map.min_pt.z = (
-        min_pt[0],
-        min_pt[1],
-        0.0,
-    )
-
-    # We will be subtracting this point from all subsequent coordinates
-    # (otherwise some values are too big in millimeters to fit within sint32...).
-    vec_map.bottom_left_coords.x, vec_map.bottom_left_coords.y = min_pt
 
     overall_pbar = tqdm(
         total=len(nuplan_map._vector_map["baseline_paths"])
@@ -267,70 +300,64 @@ def extract_vectorized(nuplan_map: NuPlanMap) -> VectorizedMap:
         leave=False,
     )
 
+    # This dict stores boundary IDs and which lanes are to the left and right of them.
+    boundary_connectivity_dict: Dict[str, Dict[str, List[str]]] = defaultdict(
+        lambda: defaultdict(list)
+    )
+
+    # This dict stores lanes' boundary IDs.
+    lane_boundary_dict: Dict[str, Tuple[str, str]] = dict()
     for _, lane_info in nuplan_map._vector_map["baseline_paths"].iterrows():
-        fid, center_pts, left_pts, right_pts = extract_lane_and_edges(
-            nuplan_map, lane_info
+        (
+            lane_id,
+            center_pts,
+            left_pts,
+            right_pts,
+            boundary_info,
+        ) = extract_lane_and_edges(nuplan_map, lane_info, lane_connector_idxs)
+
+        lane_boundary_dict[lane_id] = boundary_info
+        left_boundary_id, right_boundary_id = boundary_info
+
+        # The left boundary of Lane A has Lane A to its right.
+        boundary_connectivity_dict[left_boundary_id]["right"].append(lane_id)
+
+        # The right boundary of Lane A has Lane A to its left.
+        boundary_connectivity_dict[right_boundary_id]["left"].append(lane_id)
+
+        # "partial" because we aren't adding lane connectivity until later.
+        partial_new_lane = RoadLane(
+            id=lane_id,
+            center=Polyline(center_pts),
+            left_edge=Polyline(left_pts),
+            right_edge=Polyline(right_pts),
         )
-
-        lane_record_token: str = fid
-
-        # Adding the element to the map.
-        new_element: MapElement = vec_map.elements.add()
-        new_element.id = lane_record_token.encode()
-
-        new_lane: RoadLane = new_element.road_lane
-        map_utils.populate_lane_polylines(
-            new_lane, center_pts - min_pt, left_pts - min_pt, right_pts - min_pt
-        )
-
-        # new_lane.adjacent_lanes_left.append(
-        #     l5_lane.adjacent_lane_change_left.id
-        # )
-        # new_lane.adjacent_lanes_right.append(
-        #     l5_lane.adjacent_lane_change_right.id
-        # )
-
+        vector_map.add_map_element(partial_new_lane)
         overall_pbar.update()
 
     for fid, polygon_info in nuplan_map._vector_map["drivable_area"].iterrows():
         polygon_pts = extract_area(nuplan_map, polygon_info)
 
-        # Adding the element to the map.
-        new_element: MapElement = vec_map.elements.add()
-        new_element.id = fid.encode()
-
-        new_area: RoadArea = new_element.road_area
-        map_utils.populate_polygon(new_area.exterior_polygon, polygon_pts - min_pt)
-
+        new_road_area = RoadArea(id=fid, exterior_polygon=Polyline(polygon_pts))
         for hole in polygon_info["geometry"].interiors:
-            polygon_pts = extract_area(nuplan_map, hole)
-            new_hole: Polyline = new_area.interior_holes.add()
-            map_utils.populate_polygon(new_hole, polygon_pts - min_pt)
+            hole_pts = extract_area(nuplan_map, hole)
+            new_road_area.interior_holes.append(Polyline(hole_pts))
 
+        vector_map.add_map_element(new_road_area)
         overall_pbar.update()
 
     for fid, ped_area_record in nuplan_map._vector_map["crosswalks"].iterrows():
         polygon_pts = extract_area(nuplan_map, ped_area_record)
 
-        # Adding the element to the map.
-        new_element: MapElement = vec_map.elements.add()
-        new_element.id = fid.encode()
-
-        new_crosswalk: PedCrosswalk = new_element.ped_crosswalk
-        map_utils.populate_polygon(new_crosswalk.polygon, polygon_pts - min_pt)
-
+        new_ped_crosswalk = PedCrosswalk(id=fid, polygon=Polyline(polygon_pts))
+        vector_map.add_map_element(new_ped_crosswalk)
         overall_pbar.update()
 
     for fid, ped_area_record in nuplan_map._vector_map["walkways"].iterrows():
         polygon_pts = extract_area(nuplan_map, ped_area_record)
 
-        # Adding the element to the map.
-        new_element: MapElement = vec_map.elements.add()
-        new_element.id = fid.encode()
-
-        new_walkway: PedWalkway = new_element.ped_walkway
-        map_utils.populate_polygon(new_walkway.polygon, polygon_pts - min_pt)
-
+        new_ped_walkway = PedWalkway(id=fid, polygon=Polyline(polygon_pts))
+        vector_map.add_map_element(new_ped_walkway)
         overall_pbar.update()
 
     overall_pbar.close()
@@ -359,21 +386,22 @@ def extract_vectorized(nuplan_map: NuPlanMap) -> VectorizedMap:
             lane_connector_fid
         )
 
-    map_elem: MapElement
+    map_elem: RoadLane
     for map_elem in tqdm(
-        vec_map.elements,
+        vector_map.elements[MapElementType.ROAD_LANE].values(),
         desc="Storing Lane Connectivity",
         position=1,
         leave=False,
     ):
-        if map_elem.HasField("road_lane"):
-            map_elem.road_lane.entry_lanes.extend(
-                lane_id.encode()
-                for lane_id in lane_connectivity_entry_dict[map_elem.id.decode()]
-            )
-            map_elem.road_lane.exit_lanes.extend(
-                lane_id.encode()
-                for lane_id in lane_connectivity_exit_dict[map_elem.id.decode()]
-            )
+        map_elem.prev_lanes.update(lane_connectivity_entry_dict[map_elem.id])
+        map_elem.next_lanes.update(lane_connectivity_exit_dict[map_elem.id])
 
-    return vec_map
+        lane_id: str = map_elem.id
+        left_boundary_id, right_boundary_id = lane_boundary_dict[lane_id]
+
+        map_elem.adj_lanes_left.update(
+            boundary_connectivity_dict[left_boundary_id]["left"]
+        )
+        map_elem.adj_lanes_right.update(
+            boundary_connectivity_dict[right_boundary_id]["right"]
+        )

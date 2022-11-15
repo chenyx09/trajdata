@@ -10,17 +10,16 @@ from scipy.spatial.distance import cdist
 from tqdm import tqdm
 
 from trajdata.data_structures import Agent, AgentMetadata, AgentType, FixedExtent, Scene
-from trajdata.maps import map_utils
-from trajdata.proto.vectorized_map_pb2 import (
-    MapElement,
+from trajdata.maps import VectorMap
+from trajdata.maps.vec_map_elements import (
+    MapElementType,
     PedCrosswalk,
     PedWalkway,
     Polyline,
     RoadArea,
     RoadLane,
-    VectorizedMap,
 )
-from trajdata.utils import arr_utils
+from trajdata.utils import arr_utils, map_utils
 
 NUSC_DT: Final[float] = 0.5
 
@@ -249,19 +248,7 @@ def agg_ego_data(nusc_obj: NuScenes, scene: Scene) -> Agent:
     )
 
 
-def extract_lane_and_edges(
-    nusc_map: NuScenesMap, lane_record
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    # Getting the bounding polygon vertices.
-    lane_polygon_obj = nusc_map.get("polygon", lane_record["polygon_token"])
-    polygon_nodes = [
-        nusc_map.get("node", node_token)
-        for node_token in lane_polygon_obj["exterior_node_tokens"]
-    ]
-    polygon_pts: np.ndarray = np.array(
-        [(node["x"], node["y"]) for node in polygon_nodes]
-    )
-
+def extract_lane_center(nusc_map: NuScenesMap, lane_record) -> np.ndarray:
     # Getting the lane center's points.
     curr_lane = nusc_map.arcline_path_3.get(lane_record["token"], [])
     lane_midline: np.ndarray = np.array(
@@ -276,6 +263,25 @@ def extract_lane_and_edges(
     )[0]
     if duplicate_check.size > 0:
         lane_midline = np.delete(lane_midline, duplicate_check, axis=0)
+
+    return lane_midline
+
+
+def extract_lane_and_edges(
+    nusc_map: NuScenesMap, lane_record
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    # Getting the bounding polygon vertices.
+    lane_polygon_obj = nusc_map.get("polygon", lane_record["polygon_token"])
+    polygon_nodes = [
+        nusc_map.get("node", node_token)
+        for node_token in lane_polygon_obj["exterior_node_tokens"]
+    ]
+    polygon_pts: np.ndarray = np.array(
+        [(node["x"], node["y"]) for node in polygon_nodes]
+    )
+
+    # Getting the lane center's points.
+    lane_midline: np.ndarray = extract_lane_center(nusc_map, lane_record)
 
     # Computing the closest lane center point to each bounding polygon vertex.
     closest_midlane_pt: np.ndarray = np.argmin(cdist(polygon_pts, lane_midline), axis=1)
@@ -317,28 +323,21 @@ def extract_lane_and_edges(
     left_pts: np.ndarray = polygon_pts[~on_right]
     right_pts: np.ndarray = polygon_pts[on_right]
 
-    # Final ordering check, ensuring that the beginning of left_pts/right_pts
-    # matches the beginning of the lane.
-    left_order_correct: bool = np.linalg.norm(
-        left_pts[0] - lane_midline[0]
-    ) < np.linalg.norm(left_pts[0] - lane_midline[-1])
-    right_order_correct: bool = np.linalg.norm(
-        right_pts[0] - lane_midline[0]
-    ) < np.linalg.norm(right_pts[0] - lane_midline[-1])
-
-    # Reversing left_pts/right_pts in case their first index is
-    # at the end of the lane.
-    if not left_order_correct:
-        left_pts = left_pts[::-1]
-    if not right_order_correct:
-        right_pts = right_pts[::-1]
+    # Final ordering check, ensuring that left_pts and right_pts can be combined
+    # into a polygon without the endpoints intersecting.
+    # Reversing the one lane edge that does not match the ordering of the midline.
+    if map_utils.endpoints_intersect(left_pts, right_pts):
+        if not map_utils.order_matches(left_pts, lane_midline):
+            left_pts = left_pts[::-1]
+        else:
+            right_pts = right_pts[::-1]
 
     # Ensuring that left and right have the same number of points.
     # This is necessary, not for data storage but for later rasterization.
     if left_pts.shape[0] < right_pts.shape[0]:
-        left_pts = map_utils.interpolate(left_pts, right_pts.shape[0])
+        left_pts = map_utils.interpolate(left_pts, num_pts=right_pts.shape[0])
     elif right_pts.shape[0] < left_pts.shape[0]:
-        right_pts = map_utils.interpolate(right_pts, left_pts.shape[0])
+        right_pts = map_utils.interpolate(right_pts, num_pts=left_pts.shape[0])
 
     return (
         lane_midline,
@@ -361,23 +360,22 @@ def extract_area(nusc_map: NuScenesMap, area_record) -> np.ndarray:
     return np.array([(node["x"], node["y"]) for node in polygon_nodes])
 
 
-def extract_vectorized(nusc_map: NuScenesMap) -> VectorizedMap:
-    vec_map = VectorizedMap()
-
+def populate_vector_map(vector_map: VectorMap, nusc_map: NuScenesMap) -> None:
     # Setting the map bounds.
-    vec_map.max_pt.x, vec_map.max_pt.y, vec_map.max_pt.z = (
-        nusc_map.explorer.canvas_max_x,
-        nusc_map.explorer.canvas_max_y,
-        0.0,
-    )
-    vec_map.min_pt.x, vec_map.min_pt.y, vec_map.min_pt.z = (
-        nusc_map.explorer.canvas_min_x,
-        nusc_map.explorer.canvas_min_y,
-        0.0,
+    vector_map.extent = np.array(
+        [
+            nusc_map.explorer.canvas_min_x,
+            nusc_map.explorer.canvas_min_y,
+            0.0,
+            nusc_map.explorer.canvas_max_x,
+            nusc_map.explorer.canvas_max_y,
+            0.0,
+        ]
     )
 
     overall_pbar = tqdm(
         total=len(nusc_map.lane)
+        + len(nusc_map.lane_connector)
         + len(nusc_map.drivable_area)
         + len(nusc_map.ped_crossing)
         + len(nusc_map.walkway),
@@ -391,21 +389,24 @@ def extract_vectorized(nusc_map: NuScenesMap) -> VectorizedMap:
 
         lane_record_token: str = lane_record["token"]
 
-        # Adding the element to the map.
-        new_element: MapElement = vec_map.elements.add()
-        new_element.id = lane_record_token.encode()
-
-        new_lane: RoadLane = new_element.road_lane
-        map_utils.populate_lane_polylines(new_lane, center_pts, left_pts, right_pts)
-
-        new_lane.entry_lanes.extend(
-            lane_id.encode()
-            for lane_id in nusc_map.get_incoming_lane_ids(lane_record_token)
+        new_lane = RoadLane(
+            id=lane_record_token,
+            center=Polyline(center_pts),
+            left_edge=Polyline(left_pts),
+            right_edge=Polyline(right_pts),
         )
-        new_lane.exit_lanes.extend(
-            lane_id.encode()
-            for lane_id in nusc_map.get_outgoing_lane_ids(lane_record_token)
-        )
+
+        for lane_id in nusc_map.get_incoming_lane_ids(lane_record_token):
+            # Need to do this because some incoming/outgoing lane_connector IDs
+            # do not exist as lane_connectors...
+            if lane_id in nusc_map._token2ind["lane_connector"]:
+                new_lane.prev_lanes.add(lane_id)
+
+        for lane_id in nusc_map.get_outgoing_lane_ids(lane_record_token):
+            # Need to do this because some incoming/outgoing lane_connector IDs
+            # do not exist as lane_connectors...
+            if lane_id in nusc_map._token2ind["lane_connector"]:
+                new_lane.next_lanes.add(lane_id)
 
         # new_lane.adjacent_lanes_left.append(
         #     l5_lane.adjacent_lane_change_left.id
@@ -414,11 +415,44 @@ def extract_vectorized(nusc_map: NuScenesMap) -> VectorizedMap:
         #     l5_lane.adjacent_lane_change_right.id
         # )
 
+        # Adding the element to the map.
+        vector_map.add_map_element(new_lane)
+        overall_pbar.update()
+
+    for lane_record in nusc_map.lane_connector:
+        # Unfortunately lane connectors in nuScenes have very simple exterior
+        # polygons which make extracting their edges quite difficult, so we
+        # only extract the centerline.
+        center_pts = extract_lane_center(nusc_map, lane_record)
+
+        lane_record_token: str = lane_record["token"]
+
+        # Adding the element to the map.
+        new_lane = RoadLane(
+            id=lane_record_token,
+            center=Polyline(center_pts),
+        )
+
+        new_lane.prev_lanes.update(nusc_map.get_incoming_lane_ids(lane_record_token))
+        new_lane.next_lanes.update(nusc_map.get_outgoing_lane_ids(lane_record_token))
+
+        # new_lane.adjacent_lanes_left.append(
+        #     l5_lane.adjacent_lane_change_left.id
+        # )
+        # new_lane.adjacent_lanes_right.append(
+        #     l5_lane.adjacent_lane_change_right.id
+        # )
+
+        # Adding the element to the map.
+        vector_map.add_map_element(new_lane)
         overall_pbar.update()
 
     for drivable_area in nusc_map.drivable_area:
         for polygon_token in drivable_area["polygon_tokens"]:
-            if polygon_token is None and vec_map.elements[-1].id == str(None).encode():
+            if (
+                polygon_token is None
+                and str(None) in vector_map.elements[MapElementType.ROAD_AREA]
+            ):
                 # See below, but essentially nuScenes has two None polygon_tokens
                 # back-to-back, so we don't need the second one.
                 continue
@@ -426,47 +460,37 @@ def extract_vectorized(nusc_map: NuScenesMap) -> VectorizedMap:
             polygon_record = nusc_map.get("polygon", polygon_token)
             polygon_pts = extract_area(nusc_map, polygon_record)
 
-            # Adding the element to the map.
             # NOTE: nuScenes has some polygon_tokens that are None, although that
             # doesn't stop the above get(...) function call so it's fine,
             # just have to be mindful of this when creating the id.
-            new_element: MapElement = vec_map.elements.add()
-            new_element.id = str(polygon_token).encode()
-
-            new_area: RoadArea = new_element.road_area
-            map_utils.populate_polygon(new_area.exterior_polygon, polygon_pts)
+            new_road_area = RoadArea(
+                id=str(polygon_token), exterior_polygon=Polyline(polygon_pts)
+            )
 
             for hole in polygon_record["holes"]:
                 polygon_pts = extract_area(nusc_map, hole)
-                new_hole: Polyline = new_area.interior_holes.add()
-                map_utils.populate_polygon(new_hole, polygon_pts)
+                new_road_area.interior_holes.append(Polyline(polygon_pts))
 
-        overall_pbar.update()
+            # Adding the element to the map.
+            vector_map.add_map_element(new_road_area)
+            overall_pbar.update()
 
     for ped_area_record in nusc_map.ped_crossing:
         polygon_pts = extract_area(nusc_map, ped_area_record)
 
         # Adding the element to the map.
-        new_element: MapElement = vec_map.elements.add()
-        new_element.id = ped_area_record["token"].encode()
-
-        new_crosswalk: PedCrosswalk = new_element.ped_crosswalk
-        map_utils.populate_polygon(new_crosswalk.polygon, polygon_pts)
-
+        vector_map.add_map_element(
+            PedCrosswalk(id=ped_area_record["token"], polygon=Polyline(polygon_pts))
+        )
         overall_pbar.update()
 
     for ped_area_record in nusc_map.walkway:
         polygon_pts = extract_area(nusc_map, ped_area_record)
 
         # Adding the element to the map.
-        new_element: MapElement = vec_map.elements.add()
-        new_element.id = ped_area_record["token"].encode()
-
-        new_walkway: PedWalkway = new_element.ped_walkway
-        map_utils.populate_polygon(new_walkway.polygon, polygon_pts)
-
+        vector_map.add_map_element(
+            PedWalkway(id=ped_area_record["token"], polygon=Polyline(polygon_pts))
+        )
         overall_pbar.update()
 
     overall_pbar.close()
-
-    return vec_map

@@ -1,4 +1,4 @@
-from typing import Optional, Type, Union
+from typing import Optional, Type
 
 from trajdata.caching import EnvCache, SceneCache
 from trajdata.data_structures import Scene, SceneMetadata
@@ -48,9 +48,7 @@ def get_agent_data(
         scene, env_cache.path, cache_class
     )
     if agent_list is None and agent_presence is None:
-        # Some datasets have scenes that we would like to skip,
-        # e.g., nuPlan has scenes with only one frame of data.
-        return None
+        raise ValueError(f"Scene {scene_info.name} contains no agents!")
 
     scene.update_agent_info(agent_list, agent_presence)
     env_cache.save_scene(scene)

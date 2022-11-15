@@ -22,7 +22,7 @@ def main():
         only_predict=[AgentType.VEHICLE],
         agent_interaction_distances=defaultdict(lambda: 30.0),
         incl_robot_future=False,
-        incl_map=False,
+        incl_raster_map=False,
         # map_params={"px_per_m": 2, "map_size_px": 224, "offset_frac_xy": (-0.5, 0.0)},
         augmentations=[noise_hists],
         num_workers=0,

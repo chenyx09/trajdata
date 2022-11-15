@@ -51,7 +51,7 @@ def convert_to_agent_batch(
     cache = scene_batch_element.cache
     scene = cache.scene
     dt = scene_batch_element.dt
-    ts = cache.scene_ts
+    ts = scene_batch_element.scene_ts
 
     batch_elems: List[AgentBatchElement] = []
     for j, agent_name in enumerate(scene_batch_element.agent_names):
@@ -75,8 +75,8 @@ def convert_to_agent_batch(
                 history_sec=(history_sec, history_sec),
                 future_sec=(future_sec, future_sec),
                 agent_interaction_distances=agent_interaction_distances,
-                incl_map=incl_map,
-                map_params=map_params,
+                incl_raster_map=incl_map,
+                raster_map_params=map_params,
                 standardize_data=standardize_data,
                 standardize_derivatives=standardize_derivatives,
                 max_neighbor_num=max_neighbor_num,

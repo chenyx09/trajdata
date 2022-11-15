@@ -309,6 +309,9 @@ def plot_agent_batch(
     ax.grid(False)
     ax.axis("equal")
 
+    # Doing this because the imshow above makes the map origin at the top.
+    ax.invert_yaxis()
+
     if legend:
         ax.legend(loc="best", frameon=True)
 
@@ -428,6 +431,9 @@ def plot_scene_batch(
     ax.grid(False)
     ax.legend(loc="best", frameon=True)
     ax.axis("equal")
+
+    # Doing this because the imshow above makes the map origin at the top.
+    ax.invert_yaxis()
 
     if show:
         plt.show()
