@@ -40,7 +40,6 @@ from trajdata.parallel import (
 )
 from trajdata.utils import agent_utils, env_utils, scene_utils, string_utils
 
-
 # TODO(bivanovic): Move this to a better place in the codebase.
 DEFAULT_PX_PER_M: Final[float] = 2.0
 

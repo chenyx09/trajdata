@@ -911,7 +911,6 @@ def scene_collate_fn(
         if robot_future
         else None
     )
-    scene_ids = [batch_elem.scene_id for batch_elem in batch_elems]
 
     scene_ids = [batch_elem.scene_id for batch_elem in batch_elems]
 
