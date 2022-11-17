@@ -305,3 +305,11 @@ def batch_proj(x, line):
             delta_y,
             np.expand_dims(delta_psi, axis=-1),
         )
+
+
+def quaternion_to_yaw(q: np.ndarray):
+    # From https://github.com/KieranWynn/pyquaternion/blob/master/pyquaternion/quaternion.py#L1025
+    return np.arctan2(
+        2 * (q[..., 0] * q[..., 3] - q[..., 1] * q[..., 2]),
+        1 - 2 * (q[..., 2] ** 2 + q[..., 3] ** 2),
+    )

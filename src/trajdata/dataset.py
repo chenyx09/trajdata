@@ -5,17 +5,28 @@ from functools import partial
 from itertools import chain
 from os.path import isfile
 from pathlib import Path
-from typing import Callable, Dict, Final, Iterable, List, Optional, Set, Tuple, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Final,
+    Iterable,
+    List,
+    Optional,
+    Set,
+    Tuple,
+    Union,
+)
 
 import dill
 import numpy as np
-import torch
+from torch import distributed
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
 from trajdata import filtering
 from trajdata.augmentation.augmentation import Augmentation, BatchAugmentation
-from trajdata.caching import DataFrameCache, EnvCache, SceneCache
+from trajdata.caching import EnvCache, SceneCache, df_cache
 from trajdata.data_structures import (
     AgentBatchElement,
     AgentDataIndex,
@@ -33,12 +44,11 @@ from trajdata.data_structures import (
     scene_collate_fn,
 )
 from trajdata.dataset_specific import RawDataset
-from trajdata.parallel import (
-    ParallelDatasetPreprocessor,
-    parallel_iapply,
-    scene_paths_collate_fn,
-)
+from trajdata.maps import VectorMap
+from trajdata.maps.map_api import MapAPI
+from trajdata.parallel import ParallelDatasetPreprocessor, scene_paths_collate_fn
 from trajdata.utils import agent_utils, env_utils, scene_utils, string_utils
+from trajdata.utils.parallel_utils import parallel_iapply
 
 # TODO(bivanovic): Move this to a better place in the codebase.
 DEFAULT_PX_PER_M: Final[float] = 2.0
@@ -64,8 +74,10 @@ class UnifiedDataset(Dataset):
             Tuple[AgentType, AgentType], float
         ] = defaultdict(lambda: np.inf),
         incl_robot_future: bool = False,
-        incl_map: bool = False,
-        map_params: Optional[Dict[str, int]] = None,
+        incl_raster_map: bool = False,
+        raster_map_params: Optional[Dict[str, Any]] = None,
+        incl_vector_map: bool = False,
+        vector_map_params: Optional[Dict[str, Any]] = None,
         require_map_cache: bool = True,
         only_types: Optional[List[AgentType]] = None,
         only_predict: Optional[List[AgentType]] = None,
@@ -74,19 +86,22 @@ class UnifiedDataset(Dataset):
         standardize_derivatives: bool = False,
         augmentations: Optional[List[Augmentation]] = None,
         max_agent_num: Optional[int] = None,
+        max_neighbor_num: Optional[int] = None,
+        ego_only: Optional[bool] = False,
         data_dirs: Dict[str, str] = {
-            # "nusc_trainval": "~/datasets/nuScenes",
-            # "nusc_test": "~/datasets/nuScenes",
             "eupeds_eth": "~/datasets/eth_ucy_peds",
             "eupeds_hotel": "~/datasets/eth_ucy_peds",
             "eupeds_univ": "~/datasets/eth_ucy_peds",
             "eupeds_zara1": "~/datasets/eth_ucy_peds",
             "eupeds_zara2": "~/datasets/eth_ucy_peds",
             "nusc_mini": "~/datasets/nuScenes",
+            # "nusc_trainval": "~/datasets/nuScenes",
+            # "nusc_test": "~/datasets/nuScenes",
             "lyft_sample": "~/datasets/lyft/scenes/sample.zarr",
             # "lyft_train": "~/datasets/lyft/scenes/train.zarr",
             # "lyft_train_full": "~/datasets/lyft/scenes/train_full.zarr",
             # "lyft_val": "~/datasets/lyft/scenes/validate.zarr",
+            # "nuplan_mini": "~/datasets/nuplan/dataset/nuplan-v1.1",
         },
         cache_type: str = "dataframe",
         cache_location: str = "~/.unified_data_cache",
@@ -112,8 +127,10 @@ class UnifiedDataset(Dataset):
             future_sec (Tuple[Optional[float], Optional[float]], optional): A tuple containing (the minimum seconds of future data each batch element must contain, the maximum seconds of future data to return). Both inclusive. Defaults to ( None, None, ).
             agent_interaction_distances: (Dict[Tuple[AgentType, AgentType], float]): A dictionary mapping agent-agent interaction distances in meters (determines which agents are included as neighbors to the predicted agent). Defaults to infinity for all types.
             incl_robot_future (bool, optional): Include the ego agent's future trajectory in batches (accordingly, never predict the ego's future). Defaults to False.
-            incl_map (bool, optional): Include a local cropping of the rasterized map (if the dataset provides a map) per agent. Defaults to False.
-            map_params (Optional[Dict[str, int]], optional): Local map cropping parameters, must be specified if incl_map is True. Must contain keys {"px_per_m", "map_size_px"} and can optionally contain {"offset_frac_xy"}. Defaults to None.
+            incl_raster_map (bool, optional): Include a local cropping of the rasterized map (if the dataset provides a map) per agent. Defaults to False.
+            raster_map_params (Optional[Dict[str, Any]], optional): Local map cropping parameters, must be specified if incl_map is True. Must contain keys {"px_per_m", "map_size_px"} and can optionally contain {"offset_frac_xy"}. Defaults to None.
+            incl_vector_map (bool, optional): Include information about the scene's vector map (e.g., for use in nearest lane queries as an `extras` batch element function),
+            vector_map_params (Optional[Dict[str, Any]], optional): Vector map loading parameters. Defaults to None (by default only road lanes will be loaded as part of the map).
             require_map_cache (bool, optional): Cache map objects (if the dataset provides a map) regardless of the value of incl_map. Defaults to True.
             only_types (Optional[List[AgentType]], optional): Filter out all agents EXCEPT for those of the specified types. Defaults to None.
             only_predict (Optional[List[AgentType]], optional): Only predict the specified types of agents. Importantly, this keeps other agent types in the scene, e.g., as neighbors of the agent to be predicted. Defaults to None.
@@ -122,6 +139,8 @@ class UnifiedDataset(Dataset):
             standardize_derivatives (bool, optional): Make agent velocities and accelerations relative to the agent being predicted. Defaults to False.
             augmentations (Optional[List[Augmentation]], optional): Perform the specified augmentations to the batch or dataset. Defaults to None.
             max_agent_num (int, optional): The maximum number of agents to include in a batch for scene-centric batching.
+            max_neighbor_num (int, optional): The maximum number of neighbors to include in a batch for agent-centric batching.
+            ego_only (bool, optional): If True, only return batches where the ego-agent is the one being predicted.
             data_dirs (Optional[Dict[str, str]], optional): Dictionary mapping dataset names to their directories on disk. Defaults to { "eupeds_eth": "~/datasets/eth_ucy_peds", "eupeds_hotel": "~/datasets/eth_ucy_peds", "eupeds_univ": "~/datasets/eth_ucy_peds", "eupeds_zara1": "~/datasets/eth_ucy_peds", "eupeds_zara2": "~/datasets/eth_ucy_peds", "nusc_mini": "~/datasets/nuScenes", "lyft_sample": "~/datasets/lyft/scenes/sample.zarr", }.
             cache_type (str, optional): What type of cache to use to store preprocessed, cached data on disk. Defaults to "dataframe".
             cache_location (str, optional): Where to store and load preprocessed, cached data. Defaults to "~/.unified_data_cache".
@@ -137,30 +156,47 @@ class UnifiedDataset(Dataset):
         self.desired_dt: float = desired_dt
 
         if cache_type == "dataframe":
-            self.cache_class = DataFrameCache
+            self.cache_class = df_cache.DataFrameCache
 
         self.rebuild_cache: bool = rebuild_cache
         self.cache_path: Path = Path(cache_location).expanduser().resolve()
         self.cache_path.mkdir(parents=True, exist_ok=True)
         self.env_cache: EnvCache = EnvCache(self.cache_path)
 
-        if incl_map:
+        if incl_raster_map:
             assert (
-                map_params is not None
+                raster_map_params is not None
             ), r"Path size information, i.e., {'px_per_m': ..., 'map_size_px': ...}, must be provided if incl_map=True"
             assert (
-                map_params["map_size_px"] % 2 == 0
+                raster_map_params["map_size_px"] % 2 == 0
             ), "Patch parameter 'map_size_px' must be divisible by 2"
 
-        require_map_cache = require_map_cache or incl_map
+        require_map_cache = require_map_cache or incl_raster_map
 
         self.history_sec = history_sec
         self.future_sec = future_sec
         self.agent_interaction_distances = agent_interaction_distances
         self.incl_robot_future = incl_robot_future
-        self.incl_map = incl_map
-        self.map_params = (
-            map_params if map_params is not None else {"px_per_m": DEFAULT_PX_PER_M}
+        self.incl_raster_map = incl_raster_map
+        self.raster_map_params = (
+            raster_map_params
+            if raster_map_params is not None
+            else {"px_per_m": DEFAULT_PX_PER_M}
+        )
+        self.incl_vector_map = incl_vector_map
+        self.vector_map_params = (
+            vector_map_params
+            if vector_map_params is not None
+            else {
+                "incl_road_lanes": True,
+                "incl_road_areas": False,
+                "incl_ped_crosswalks": False,
+                "incl_ped_walkways": False,
+                # Collation can be quite slow if vector maps are included,
+                # so we do not unless the user requests it.
+                # TODO(pkarkus) use collate=False instead of no_collate=True
+                "no_collate": True,
+            }
         )
         self.only_types = None if only_types is None else set(only_types)
         self.only_predict = None if only_predict is None else set(only_predict)
@@ -173,6 +209,8 @@ class UnifiedDataset(Dataset):
         self.verbose = verbose
         self.max_agent_num = max_agent_num
         self.rank = rank
+        self.max_neighbor_num = max_neighbor_num
+        self.ego_only = ego_only
 
         # Ensuring scene description queries are all lowercase
         if scene_description_contains is not None:
@@ -188,6 +226,10 @@ class UnifiedDataset(Dataset):
                 string_utils.pretty_string_tags(matching_datasets),
                 flush=True,
             )
+
+        self._map_api: Optional[MapAPI] = None
+        if self.incl_vector_map:
+            self._map_api = MapAPI(self.cache_path)
 
         all_scenes_list: Union[List[SceneMetadata], List[Scene]] = list()
         for env in self.envs:
@@ -214,7 +256,7 @@ class UnifiedDataset(Dataset):
                                 self.cache_path,
                                 env.name,
                                 scene.location,
-                                self.map_params["px_per_m"],
+                                self.raster_map_params["px_per_m"],
                             )
                             for scene in scenes_list
                         )
@@ -242,15 +284,23 @@ class UnifiedDataset(Dataset):
                             env.cache_maps(
                                 self.cache_path,
                                 self.cache_class,
-                                resolution=self.map_params["px_per_m"],
+                                self.raster_map_params,
                             )
+
                         # Wait for rank 0 process to be done with caching.
-                        if torch.cuda.is_available():
-                            torch.distributed.barrier()
+                        if (
+                            distributed.is_initialized()
+                            and distributed.get_world_size() > 1
+                        ):
+                            distributed.barrier()
 
                     scenes_list: List[SceneMetadata] = self.get_desired_scenes_from_env(
                         matching_datasets, scene_description_contains, env
                     )
+
+                if self.incl_vector_map:
+                    for map_name in env.metadata.map_locations:
+                        self._map_api.get_map(f"{env.name}:{map_name}")
 
                 all_scenes_list += scenes_list
 
@@ -365,7 +415,7 @@ class UnifiedDataset(Dataset):
                 # Multiply num_workers by the number of torch processes, because 
                 # we will only be using rank 0 process, whereas 
                 # num_workers is typically defined per torch process. 
-                num_workers = num_workers * torch.distributed.get_world_size()
+                num_workers = num_workers * distributed.get_world_size()
 
                 # Use DataLoader as a generic multiprocessing framework. 
                 # We set batchsize=1 and a custom collate function.
@@ -395,7 +445,7 @@ class UnifiedDataset(Dataset):
         # Wait for rank 0 process to be done with caching.
         # Note that the default timeout is 30 minutes. If filtering is expected to exceed this, the timeout can be
         # increased when initializing the process group, i.e., torch.distributed.init_process_group(timeout=...)
-        if torch.distributed.get_world_size() > 1:
+        if distributed.get_world_size() > 1:
             gathered_values = all_gather(self._data_index)
             # All proceses use the indices from rank 0
             self._data_index = gathered_values[0]
@@ -439,7 +489,10 @@ class UnifiedDataset(Dataset):
                 history_sec=self.history_sec,
                 future_sec=self.future_sec,
                 desired_dt=self.desired_dt,
+                ego_only=self.ego_only,
             )
+        else:
+            raise ValueError(f"{self.centric}-centric data batches are not supported.")
 
         # data_index is either:
         # [(scene_path, total_index_len, valid_scene_ts)] for scene-centric data, or
@@ -512,7 +565,7 @@ class UnifiedDataset(Dataset):
             (scene if ret_scene_info else None),
             scene_info_path,
             len(index_elems),
-            np.array(index_elems, dtype=np.int),
+            np.array(index_elems, dtype=int),
         )
 
     @staticmethod
@@ -526,6 +579,7 @@ class UnifiedDataset(Dataset):
         future_sec: Tuple[Optional[float], Optional[float]],
         desired_dt: Optional[float],
         ret_scene_info: bool = False,
+        ego_only: bool = False,
     ) -> Tuple[Optional[Scene], Path, int, List[Tuple[str, np.ndarray]]]:
         index_elems_len: int = 0
         index_elems: List[Tuple[str, np.ndarray]] = list()
@@ -540,8 +594,13 @@ class UnifiedDataset(Dataset):
         )
 
         for agent_info in filtered_agents:
-            # Don't want to predict the ego if we're going to be giving the model its future!
+            # Don't want to predict the ego if we're going to be
+            # giving the model its future!
             if incl_robot_future and agent_info.name == "ego":
+                continue
+
+            if ego_only and agent_info.name != "ego":
+                # We only want to return the ego.
                 continue
 
             valid_ts: Tuple[int, int] = filtering.get_valid_ts(
@@ -551,7 +610,7 @@ class UnifiedDataset(Dataset):
             num_agent_ts: int = valid_ts[1] - valid_ts[0] + 1
             if num_agent_ts > 0:
                 index_elems_len += num_agent_ts
-                index_elems.append((agent_info.name, np.array(valid_ts, dtype=np.int)))
+                index_elems.append((agent_info.name, np.array(valid_ts, dtype=int)))
 
         return (
             (scene if ret_scene_info else None),
@@ -588,6 +647,8 @@ class UnifiedDataset(Dataset):
                 pad_format=pad_format,
                 batch_augments=batch_augments,
             )
+        else:
+            raise ValueError(f"{self.centric}-centric data batches are not supported.")
 
         return collate_fn
 
@@ -675,7 +736,7 @@ class UnifiedDataset(Dataset):
                 scene_dt: float = (
                     self.desired_dt if self.desired_dt is not None else scene_info.dt
                 )
-                if self.env_cache.scene_is_cached(
+                if not self.rebuild_cache and self.env_cache.scene_is_cached(
                     scene_info.env_name, scene_info.name, scene_dt
                 ):
                     # This is a fast path in case we don't need to
@@ -766,7 +827,11 @@ class UnifiedDataset(Dataset):
                 desc=f"Calculating Agent Data ({num_workers} CPUs)",
                 disable=not self.verbose,
             ):
-                scene_paths += [Path(path_str) for path_str in processed_scene_paths]
+                scene_paths += [
+                    Path(path_str)
+                    for path_str in processed_scene_paths
+                    if path_str is not None
+                ]
 
         return scene_paths
 
@@ -801,7 +866,7 @@ class UnifiedDataset(Dataset):
         scene: Scene = EnvCache.load(scene_path)
         scene_utils.enforce_desired_dt(scene, self.desired_dt)
         scene_cache: SceneCache = self.cache_class(
-            self.cache_path, scene, ts, self.augmentations
+            self.cache_path, scene, self.augmentations
         )
 
         if self.centric == "scene":
@@ -821,8 +886,10 @@ class UnifiedDataset(Dataset):
                 self.future_sec,
                 self.agent_interaction_distances,
                 self.incl_robot_future,
-                self.incl_map,
-                self.map_params,
+                self.incl_raster_map,
+                self.raster_map_params,
+                self._map_api,
+                self.vector_map_params,
                 self.standardize_data,
                 self.standardize_derivatives,
                 self.max_agent_num,
@@ -846,10 +913,13 @@ class UnifiedDataset(Dataset):
                 self.future_sec,
                 self.agent_interaction_distances,
                 self.incl_robot_future,
-                self.incl_map,
-                self.map_params,
+                self.incl_raster_map,
+                self.raster_map_params,
+                self._map_api,
+                self.vector_map_params,
                 self.standardize_data,
                 self.standardize_derivatives,
+                self.max_neighbor_num,
             )
 
         for key, extra_fn in self.extras.items():
@@ -857,5 +927,8 @@ class UnifiedDataset(Dataset):
 
         for transform_fn in self.transforms:
             batch_element = transform_fn(batch_element)
+
+        if self.vector_map_params.get("no_collate", True):
+            batch_element.vec_map = None
 
         return batch_element

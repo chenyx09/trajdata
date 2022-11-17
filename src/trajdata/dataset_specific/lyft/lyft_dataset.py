@@ -4,13 +4,11 @@ from pathlib import Path
 from random import Random
 from typing import Any, Dict, List, Optional, Tuple, Type
 
-import l5kit.data.proto.road_network_pb2 as l5_pb2
 import numpy as np
 import pandas as pd
 from l5kit.configs.config import load_metadata
 from l5kit.data import ChunkedDataset, LocalDataManager
-from l5kit.data.map_api import InterpolationMethod, MapAPI
-from tqdm import tqdm
+from l5kit.data.map_api import MapAPI
 
 from trajdata.caching import EnvCache, SceneCache
 from trajdata.data_structures import (
@@ -24,14 +22,7 @@ from trajdata.data_structures.agent import Agent, AgentType, VariableExtent
 from trajdata.dataset_specific.lyft import lyft_utils
 from trajdata.dataset_specific.raw_dataset import RawDataset
 from trajdata.dataset_specific.scene_records import LyftSceneRecord
-from trajdata.maps import RasterizedMap, RasterizedMapMetadata, map_utils
-from trajdata.maps.map_kdtree import LaneCenterKDTree
-from trajdata.proto.vectorized_map_pb2 import (
-    MapElement,
-    PedCrosswalk,
-    RoadLane,
-    VectorizedMap,
-)
+from trajdata.maps import VectorMap
 from trajdata.utils import arr_utils
 
 
@@ -88,6 +79,9 @@ class LyftDataset(RawDataset):
             dt=lyft_utils.LYFT_DT,
             parts=dataset_parts,
             scene_split_map=scene_split_map,
+            # The location names should match the map names used in
+            # the unified data cache.
+            map_locations=("palo_alto",),
         )
 
     def load_dataset_obj(self, verbose: bool = False) -> None:
@@ -328,83 +322,13 @@ class LyftDataset(RawDataset):
 
         return agent_list, agent_presence
 
-    def extract_vectorized(self, mapAPI: MapAPI) -> VectorizedMap:
-        vec_map = VectorizedMap()
-        maximum_bound: np.ndarray = np.full((3,), np.nan)
-        minimum_bound: np.ndarray = np.full((3,), np.nan)
-        for l5_element in tqdm(mapAPI.elements, desc="Creating Vectorized Map"):
-            if mapAPI.is_lane(l5_element):
-                l5_element_id: str = mapAPI.id_as_str(l5_element.id)
-                l5_lane: l5_pb2.Lane = l5_element.element.lane
-
-                lane_dict = mapAPI.get_lane_coords(l5_element_id)
-                left_pts = lane_dict["xyz_left"]
-                right_pts = lane_dict["xyz_right"]
-
-                # Ensuring the left and right bounds have the same numbers of points.
-                if len(left_pts) < len(right_pts):
-                    left_pts = mapAPI.interpolate(
-                        left_pts, len(right_pts), InterpolationMethod.INTER_ENSURE_LEN
-                    )
-                elif len(right_pts) < len(left_pts):
-                    right_pts = mapAPI.interpolate(
-                        right_pts, len(left_pts), InterpolationMethod.INTER_ENSURE_LEN
-                    )
-
-                midlane_pts: np.ndarray = (left_pts + right_pts) / 2
-
-                # Computing the maximum and minimum map coordinates.
-                maximum_bound = np.fmax(maximum_bound, left_pts.max(axis=0))
-                minimum_bound = np.fmin(minimum_bound, left_pts.min(axis=0))
-
-                maximum_bound = np.fmax(maximum_bound, right_pts.max(axis=0))
-                minimum_bound = np.fmin(minimum_bound, right_pts.min(axis=0))
-
-                maximum_bound = np.fmax(maximum_bound, midlane_pts.max(axis=0))
-                minimum_bound = np.fmin(minimum_bound, midlane_pts.min(axis=0))
-
-                # Adding the element to the map.
-                new_element: MapElement = vec_map.elements.add()
-                new_element.id = l5_element.id.id
-
-                new_lane: RoadLane = new_element.road_lane
-                map_utils.populate_lane_polylines(
-                    new_lane, midlane_pts, left_pts, right_pts
-                )
-
-                new_lane.exit_lanes.extend([gid.id for gid in l5_lane.lanes_ahead])
-                new_lane.adjacent_lanes_left.append(
-                    l5_lane.adjacent_lane_change_left.id
-                )
-                new_lane.adjacent_lanes_right.append(
-                    l5_lane.adjacent_lane_change_right.id
-                )
-
-            if mapAPI.is_crosswalk(l5_element):
-                l5_element_id: str = mapAPI.id_as_str(l5_element.id)
-                crosswalk_pts: np.ndarray = mapAPI.get_crosswalk_coords(l5_element_id)[
-                    "xyz"
-                ]
-
-                # Computing the maximum and minimum map coordinates.
-                maximum_bound = np.fmax(maximum_bound, crosswalk_pts.max(axis=0))
-                minimum_bound = np.fmin(minimum_bound, crosswalk_pts.min(axis=0))
-
-                new_element: MapElement = vec_map.elements.add()
-                new_element.id = l5_element.id.id
-
-                new_crosswalk: PedCrosswalk = new_element.ped_crosswalk
-                map_utils.populate_polygon(new_crosswalk.polygon, crosswalk_pts)
-
-        # Setting the map bounds.
-        vec_map.max_pt.x, vec_map.max_pt.y, vec_map.max_pt.z = maximum_bound
-        vec_map.min_pt.x, vec_map.min_pt.y, vec_map.min_pt.z = minimum_bound
-
-        return vec_map
-
     def cache_maps(
-        self, cache_path: Path, map_cache_class: Type[SceneCache], resolution: float
+        self,
+        cache_path: Path,
+        map_cache_class: Type[SceneCache],
+        map_params: Dict[str, Any],
     ) -> None:
+        resolution: float = map_params["px_per_m"]
         map_name: str = "palo_alto"
         print(f"Caching {map_name} Map at {resolution:.2f} px/m...", flush=True)
 
@@ -416,22 +340,7 @@ class LyftDataset(RawDataset):
         world_to_ecef = np.array(dataset_meta["world_to_ecef"], dtype=np.float64)
         mapAPI = MapAPI(semantic_map_filepath, world_to_ecef)
 
-        vectorized_map: VectorizedMap = self.extract_vectorized(mapAPI)
-        map_data, map_from_world = map_utils.rasterize_map(vectorized_map, resolution)
+        vector_map = VectorMap(map_id=f"{self.name}:{map_name}")
+        lyft_utils.populate_vector_map(vector_map, mapAPI)
 
-        rasterized_map_info: RasterizedMapMetadata = RasterizedMapMetadata(
-            name=map_name,
-            shape=map_data.shape,
-            layers=["drivable_area", "lane_divider", "ped_area"],
-            layer_rgb_groups=([0], [1], [2]),
-            resolution=resolution,
-            map_from_world=map_from_world,
-        )
-
-        lanecenter_kdtree = LaneCenterKDTree(vectorized_map)
-        kdtrees = {"lanecenter": lanecenter_kdtree}
-
-        rasterized_map_obj: RasterizedMap = RasterizedMap(rasterized_map_info, map_data)
-        map_cache_class.cache_map(
-            cache_path, vectorized_map, kdtrees, rasterized_map_obj, self.name
-        )
+        map_cache_class.finalize_and_cache_map(cache_path, vector_map, map_params)

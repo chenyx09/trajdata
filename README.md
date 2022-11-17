@@ -86,6 +86,7 @@ Currently, the dataloader supports interfacing with the following datasets:
 | nuScenes Train/TrainVal/Val | `nusc_trainval` | `train`, `train_val`, `val` | `boston`, `singapore` | nuScenes prediction challenge training/validation/test splits (500/200/150 scenes) | 0.5s (2Hz) | :white_check_mark: |
 | nuScenes Test | `nusc_test` | `test` | `boston`, `singapore` | nuScenes' test split, no annotations (150 scenes) | 0.5s (2Hz) | :white_check_mark: |
 | nuScenes Mini | `nusc_mini` | `mini_train`, `mini_val` | `boston`, `singapore` | nuScenes mini training/validation splits (8/2 scenes) | 0.5s (2Hz) | :white_check_mark: |
+| nuPlan Mini | `nuplan_mini` | `mini_train`, `mini_val`, `mini_test` | `boston`, `singapore`, `pittsburgh`, `las_vegas` | nuPlan mini training/validation/test splits (942/197/224 scenes) | 0.05s (20Hz) | :white_check_mark: |
 | Lyft Level 5 Train | `lyft_train` | `train` | `palo_alto` | Lyft Level 5 training data - part 1/2 (8.4 GB) | 0.1s (10Hz) | :white_check_mark: |
 | Lyft Level 5 Train Full | `lyft_train_full` | `train` | `palo_alto` | Lyft Level 5 training data - part 2/2 (70 GB) | 0.1s (10Hz) | :white_check_mark: |
 | Lyft Level 5 Validation | `lyft_val` | `val` | `palo_alto` | Lyft Level 5 validation data (8.2 GB) | 0.1s (10Hz) | :white_check_mark: |
@@ -96,7 +97,20 @@ Currently, the dataloader supports interfacing with the following datasets:
 | UCY - Zara1 | `eupeds_zara1` | `train`, `val`, `train_loo`, `val_loo`, `test_loo` | `cyprus` | The Zara1 scene from the UCY Pedestrians dataset | 0.4s (2.5Hz) | |
 | UCY - Zara2 | `eupeds_zara2` | `train`, `val`, `train_loo`, `val_loo`, `test_loo` | `cyprus` | The Zara2 scene from the UCY Pedestrians dataset | 0.4s (2.5Hz) | |
 
+### Adding New Datasets
+The code that interfaces the original datasets (dealing with their unique formats) can be found in `src/trajdata/dataset_specific`.
+
+To add a new dataset, one needs to:
+- Create a new folder under `src/trajdata/dataset_specific` which will contain all the code specific to a particular dataset (e.g., for extracting data into our canonical format). In particular, there must be:
+  - An `__init__.py` file.
+  - A file that defines a subclass of `RawDataset` and implements some of its functions. Reference implementations can be found in the `nusc/nusc_dataset.py`, `lyft/lyft_dataset.py`, and `eth_ucy_peds/eupeds_dataset.py` files.
+- Add a subclass of `NamedTuple` to `src/trajdata/dataset_specific/scene_records.py` which contains the minimal set of information sufficient to describe a scene. This "scene record" will be used in conjunction with the raw dataset class above and relates to how scenes are stored and efficiently accessed later.
+- Add a section to the `DATASETS.md` file which outlines how users should store the raw dataset locally.
+- Add a section to `src/trajdata/dataset_specific/env_utils.py` which allows users to get the raw dataset via its name, and specify if the dataset is a good candidate for parallel processing (e.g., does its native dataset object have a large memory footprint which might not allow it to be loaded in multiple processes, such as nuScenes?) and if it has maps.
+
 ## Examples
+
+Please see the `examples/` folder for more examples, below are just a few demonstrations of core capabilities.
 
 ### Multiple Datasets
 The following will load data from both the nuScenes mini dataset as well as the ETH - University scene from the ETH BIWI Walking Pedestrians dataset.
@@ -114,10 +128,18 @@ dataset = UnifiedDataset(
 
 **Note**: Be careful about loading multiple datasets without an associated `desired_dt` argument; many datasets do not share the same underlying data annotation frequency. To address this, we've implemented timestep interpolation to a common frequency which will ensure that all batched data shares the same dt. Interpolation can only be performed to integer multiples of the original data annotation frequency. For example, nuScenes' `dt=0.5` and the ETH BIWI dataset's `dt=0.4` can be interpolated to a common `desired_dt=0.1`.
 
-## Adding New Datasets
-The code that interfaces raw datasets can be found in `src/trajdata/dataset_specific`.
+## Map API
+`trajdata` also provides an API to access the raw vector map information from datasets that provide it.
 
-To add a new dataset, ...
+```py
+from pathlib import Path
+from trajdata import MapAPI, VectorMap
+
+cache_path = Path("~/.unified_data_cache").expanduser()
+map_api = MapAPI(cache_path)
+
+vector_map: VectorMap = map_api.get_map("nusc_mini:boston-seaport")
+```
 
 ## Simulation Interface
 One additional feature of trajdata is that it can be used to initialize simulations from real data and track resulting agent motion, metrics, etc. 
@@ -151,7 +173,7 @@ sim_scene = SimulationScene(
 )
 
 obs: AgentBatch = sim_scene.reset()
-for t in range(1, sim_scene.scene_info.length_timesteps):
+for t in range(1, sim_scene.scene.length_timesteps):
     new_xyh_dict: Dict[str, np.ndarray] = dict()
 
     # Everything inside the forloop just sets
@@ -173,10 +195,3 @@ for t in range(1, sim_scene.scene_info.length_timesteps):
 ## TODO
 - Create a method like finalize() which writes all the batch information to a TFRecord/WebDataset/some other format which is (very) fast to read from for higher epoch training.
 - Add more examples to the README.
-- Finish README section about how to add a new dataset.
-
-## Current Implementation
-This is still an in-progress work, however many basic features are implemented. Take a look at [these slides](https://nvidia-my.sharepoint.com/:p:/g/personal/bivanovic_nvidia_com1/ERemy_e0hE9GuUsl-ZJBFfIBHDP0_q8JNG4Er5iOVaeCTw?e=Nhz9Kw) for an overview of the project and its current status.
-
-In particular, the following has been implemented:
-![implementation](./img/implementation.png)

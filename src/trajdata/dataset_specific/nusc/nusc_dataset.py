@@ -1,17 +1,14 @@
 import warnings
 from copy import deepcopy
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Type, Union
+from typing import Any, Dict, List, Optional, Tuple, Type, Union
 
-import numpy as np
 import pandas as pd
 import itertools
 from nuscenes.eval.prediction.splits import NUM_IN_TRAIN_VAL
-from nuscenes.map_expansion import arcline_path_utils
 from nuscenes.map_expansion.map_api import NuScenesMap, locations
 from nuscenes.nuscenes import NuScenes
 from nuscenes.utils.splits import create_splits_scenes
-from scipy.spatial.distance import cdist
 from tqdm import tqdm
 
 from trajdata.caching import EnvCache, SceneCache
@@ -28,17 +25,7 @@ from trajdata.data_structures.scene_tag import SceneTag
 from trajdata.dataset_specific.nusc import nusc_utils
 from trajdata.dataset_specific.raw_dataset import RawDataset
 from trajdata.dataset_specific.scene_records import NuscSceneRecord
-from trajdata.maps import RasterizedMap, RasterizedMapMetadata, map_utils
-from trajdata.maps.map_kdtree import LaneCenterKDTree
-from trajdata.proto.vectorized_map_pb2 import (
-    MapElement,
-    PedCrosswalk,
-    PedWalkway,
-    Polyline,
-    RoadArea,
-    RoadLane,
-    VectorizedMap,
-)
+from trajdata.maps import VectorMap
 
 
 class NuscDataset(RawDataset):
@@ -85,7 +72,7 @@ class NuscDataset(RawDataset):
                 ("boston", "singapore"),
             ]
         else:
-            raise ValueError(f"Unknown NuScenes environment name: {env_name}")
+            raise ValueError(f"Unknown nuScenes environment name: {env_name}")
 
         # Inverting the dict from above, associating every scene with its data split.
         nusc_scene_split_map: Dict[str, str] = {
@@ -98,6 +85,9 @@ class NuscDataset(RawDataset):
             dt=nusc_utils.NUSC_DT,
             parts=dataset_parts,
             scene_split_map=nusc_scene_split_map,
+            # The location names should match the map names used in
+            # the unified data cache.
+            map_locations=tuple(locations),
         )
 
     def load_dataset_obj(self, verbose: bool = False) -> None:
@@ -278,282 +268,27 @@ class NuscDataset(RawDataset):
 
         return agent_list, agent_presence
 
-    def extract_lane_and_edges(
-        self, nusc_map: NuScenesMap, lane_record
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        # Getting the bounding polygon vertices.
-        lane_polygon_obj = nusc_map.get("polygon", lane_record["polygon_token"])
-        polygon_nodes = [
-            nusc_map.get("node", node_token)
-            for node_token in lane_polygon_obj["exterior_node_tokens"]
-        ]
-        polygon_pts: np.ndarray = np.array(
-            [(node["x"], node["y"]) for node in polygon_nodes]
-        )
-
-        # Getting the lane center's points.
-        curr_lane = nusc_map.arcline_path_3.get(lane_record["token"], [])
-        lane_midline: np.ndarray = np.array(
-            arcline_path_utils.discretize_lane(curr_lane, resolution_meters=0.5)
-        )[:, :2]
-
-        # For some reason, nuScenes duplicates a few entries
-        # (likely how they're building their arcline representation).
-        # We delete those duplicate entries here.
-        duplicate_check: np.ndarray = np.where(
-            np.linalg.norm(np.diff(lane_midline, axis=0, prepend=0), axis=1) < 1e-10
-        )[0]
-        if duplicate_check.size > 0:
-            lane_midline = np.delete(lane_midline, duplicate_check, axis=0)
-
-        # Computing the closest lane center point to each bounding polygon vertex.
-        closest_midlane_pt: np.ndarray = np.argmin(
-            cdist(polygon_pts, lane_midline), axis=1
-        )
-        # Computing the local direction of the lane at each lane center point.
-        direction_vectors: np.ndarray = np.diff(
-            lane_midline,
-            axis=0,
-            prepend=lane_midline[[0]] - (lane_midline[[1]] - lane_midline[[0]]),
-        )
-
-        # Selecting the direction vectors at the closest lane center point per polygon vertex.
-        local_dir_vecs: np.ndarray = direction_vectors[closest_midlane_pt]
-        # Calculating the vectors from the the closest lane center point per polygon vertex to the polygon vertex.
-        origin_to_polygon_vecs: np.ndarray = (
-            polygon_pts - lane_midline[closest_midlane_pt]
-        )
-
-        # Computing the perpendicular dot product.
-        # See https://www.xarg.org/book/linear-algebra/2d-perp-product/
-        # If perp_dot_product < 0, then the associated polygon vertex is
-        # on the right edge of the lane.
-        perp_dot_product: np.ndarray = (
-            local_dir_vecs[:, 0] * origin_to_polygon_vecs[:, 1]
-            - local_dir_vecs[:, 1] * origin_to_polygon_vecs[:, 0]
-        )
-
-        # Determining which indices are on the right of the lane center.
-        on_right: np.ndarray = perp_dot_product < 0
-
-        # Handle edge case where less than 2 polygon points appear to be on the left/right based 
-        # on the logic above. This can happen for short and curved lanes, typically lane_connectors.
-        # In this case we find the pair of neighbors closest to the other side.
-        on_right_count = np.count_nonzero(on_right)
-        if on_right_count < 2:
-            perp_dot_product_pair = perp_dot_product + np.roll(perp_dot_product, 1)
-            closest_i = np.argmin(perp_dot_product_pair)
-            on_right[closest_i] = True
-            on_right[closest_i - 1] = True  # For closest_i == 0 this will index to -1.
-        elif on_right_count > on_right.shape[0] - 2:
-            perp_dot_product_pair = perp_dot_product + np.roll(perp_dot_product, 1)
-            closest_i = np.argmax(perp_dot_product_pair)
-            on_right[closest_i] = False
-            on_right[closest_i - 1] = False  # For closest_i == 0 this will index to -1.
-
-        # Determining the boundary between the left/right polygon vertices
-        # (they will be together in blocks due to the ordering of the polygon vertices).
-        # TODO(pkarkus) It is possible that a heaviliy curved lane would result in  
-        # non-consecutive left-right classification. We should handle this case.
-        idx_changes: int = np.where(np.roll(on_right, 1) < on_right)[0].item()
-
-        if idx_changes > 0:
-            # If the block of left/right points spreads across the bounds of the array,
-            # roll it until the boundary between left/right points is at index 0.
-            # This is important so that the following index selection orders points
-            # without jumps.
-            polygon_pts = np.roll(polygon_pts, shift=-idx_changes, axis=0)
-            on_right = np.roll(on_right, shift=-idx_changes)
-
-        left_pts: np.ndarray = polygon_pts[~on_right]
-        right_pts: np.ndarray = polygon_pts[on_right]
-
-        # Final ordering check, ensuring that the beginning of left_pts/right_pts
-        # matches the beginning of the lane.
-        left_order_correct: bool = np.linalg.norm(
-            left_pts[0] - lane_midline[0]
-        ) < np.linalg.norm(left_pts[0] - lane_midline[-1])
-        right_order_correct: bool = np.linalg.norm(
-            right_pts[0] - lane_midline[0]
-        ) < np.linalg.norm(right_pts[0] - lane_midline[-1])
-
-        # Reversing left_pts/right_pts in case their first index is
-        # at the end of the lane.
-        if not left_order_correct:
-            left_pts = left_pts[::-1]
-        if not right_order_correct:
-            right_pts = right_pts[::-1]
-
-        # Ensuring that left and right have the same number of points.
-        # This is necessary, not for data storage but for later rasterization.
-        if left_pts.shape[0] < right_pts.shape[0]:
-            left_pts = map_utils.interpolate(left_pts, right_pts.shape[0])
-        elif right_pts.shape[0] < left_pts.shape[0]:
-            right_pts = map_utils.interpolate(right_pts, left_pts.shape[0])
-
-        return (
-            lane_midline,
-            left_pts,
-            right_pts,
-        )
-
-    def extract_area(self, nusc_map: NuScenesMap, area_record) -> np.ndarray:
-        token_key: str
-        if "exterior_node_tokens" in area_record:
-            token_key = "exterior_node_tokens"
-        elif "node_tokens" in area_record:
-            token_key = "node_tokens"
-
-        polygon_nodes = [
-            nusc_map.get("node", node_token) for node_token in area_record[token_key]
-        ]
-
-        return np.array([(node["x"], node["y"]) for node in polygon_nodes])
-
-    def extract_vectorized(self, nusc_map: NuScenesMap) -> VectorizedMap:
-        vec_map = VectorizedMap()
-
-        # Setting the map bounds.
-        vec_map.max_pt.x, vec_map.max_pt.y, vec_map.max_pt.z = (
-            nusc_map.explorer.canvas_max_x,
-            nusc_map.explorer.canvas_max_y,
-            0.0,
-        )
-        vec_map.min_pt.x, vec_map.min_pt.y, vec_map.min_pt.z = (
-            nusc_map.explorer.canvas_min_x,
-            nusc_map.explorer.canvas_min_y,
-            0.0,
-        )
-
-        overall_pbar = tqdm(
-            total=len(nusc_map.lane)
-            + len(nusc_map.lane_connector)
-            + len(nusc_map.drivable_area[0]["polygon_tokens"])
-            + len(nusc_map.ped_crossing)
-            + len(nusc_map.walkway),
-            desc=f"Getting {nusc_map.map_name} Elements",
-            position=1,
-            leave=False,
-        )
-
-        # for lane_record in nusc_map.lane:
-        for lane_record in itertools.chain(nusc_map.lane, nusc_map.lane_connector):
-            center_pts, left_pts, right_pts = self.extract_lane_and_edges(
-                nusc_map, lane_record
-            )
-
-            lane_record_token: str = lane_record["token"]
-
-            # Adding the element to the map.
-            new_element: MapElement = vec_map.elements.add()
-            new_element.id = lane_record_token.encode()
-
-            new_lane: RoadLane = new_element.road_lane
-            map_utils.populate_lane_polylines(new_lane, center_pts, left_pts, right_pts)
-
-            new_lane.entry_lanes.extend(
-                lane_id.encode()
-                for lane_id in nusc_map.get_incoming_lane_ids(lane_record_token)
-            )
-            new_lane.exit_lanes.extend(
-                lane_id.encode()
-                for lane_id in nusc_map.get_outgoing_lane_ids(lane_record_token)
-            )
-
-            # new_lane.adjacent_lanes_left.append(
-            #     l5_lane.adjacent_lane_change_left.id
-            # )
-            # new_lane.adjacent_lanes_right.append(
-            #     l5_lane.adjacent_lane_change_right.id
-            # )
-
-            overall_pbar.update()
-
-        for polygon_token in nusc_map.drivable_area[0]["polygon_tokens"]:
-            polygon_record = nusc_map.get("polygon", polygon_token)
-            polygon_pts = self.extract_area(nusc_map, polygon_record)
-
-            # Adding the element to the map.
-            new_element: MapElement = vec_map.elements.add()
-            new_element.id = lane_record["token"].encode()
-
-            new_area: RoadArea = new_element.road_area
-            map_utils.populate_polygon(new_area.exterior_polygon, polygon_pts)
-
-            for hole in polygon_record["holes"]:
-                polygon_pts = self.extract_area(nusc_map, hole)
-                new_hole: Polyline = new_area.interior_holes.add()
-                map_utils.populate_polygon(new_hole, polygon_pts)
-
-            overall_pbar.update()
-
-        for ped_area_record in nusc_map.ped_crossing:
-            polygon_pts = self.extract_area(nusc_map, ped_area_record)
-
-            # Adding the element to the map.
-            new_element: MapElement = vec_map.elements.add()
-            new_element.id = ped_area_record["token"].encode()
-
-            new_crosswalk: PedCrosswalk = new_element.ped_crosswalk
-            map_utils.populate_polygon(new_crosswalk.polygon, polygon_pts)
-
-            overall_pbar.update()
-
-        for ped_area_record in nusc_map.walkway:
-            polygon_pts = self.extract_area(nusc_map, ped_area_record)
-
-            # Adding the element to the map.
-            new_element: MapElement = vec_map.elements.add()
-            new_element.id = ped_area_record["token"].encode()
-
-            new_walkway: PedWalkway = new_element.ped_walkway
-            map_utils.populate_polygon(new_walkway.polygon, polygon_pts)
-
-            overall_pbar.update()
-
-        overall_pbar.close()
-
-        return vec_map
-
     def cache_map(
         self,
         map_name: str,
         cache_path: Path,
         map_cache_class: Type[SceneCache],
-        resolution: float,
+        map_params: Dict[str, Any],
     ) -> None:
-        """
-        resolution is in pixels per meter.
-        """
         nusc_map: NuScenesMap = NuScenesMap(
             dataroot=self.metadata.data_dir, map_name=map_name
         )
 
-        vectorized_map: VectorizedMap = self.extract_vectorized(nusc_map)
+        vector_map = VectorMap(map_id=f"{self.name}:{map_name}")
+        nusc_utils.populate_vector_map(vector_map, nusc_map)
 
-        pbar_kwargs = {"position": 2, "leave": False}
-        map_data, map_from_world = map_utils.rasterize_map(
-            vectorized_map, resolution, **pbar_kwargs
-        )
-
-        lanecenter_kdtree = LaneCenterKDTree(vectorized_map)
-        kdtrees = {"lanecenter": lanecenter_kdtree}
-
-        rasterized_map_info: RasterizedMapMetadata = RasterizedMapMetadata(
-            name=map_name,
-            shape=map_data.shape,
-            layers=["drivable_area", "lane_divider", "ped_area"],
-            layer_rgb_groups=([0], [1], [2]),
-            resolution=resolution,
-            map_from_world=map_from_world,
-        )
-        rasterized_map_obj: RasterizedMap = RasterizedMap(rasterized_map_info, map_data)
-        map_cache_class.cache_map(
-            cache_path, vectorized_map, kdtrees, rasterized_map_obj, self.name
-        )
+        map_cache_class.finalize_and_cache_map(cache_path, vector_map, map_params)
 
     def cache_maps(
-        self, cache_path: Path, map_cache_class: Type[SceneCache], resolution: float
+        self,
+        cache_path: Path,
+        map_cache_class: Type[SceneCache],
+        map_params: Dict[str, Any],
     ) -> None:
         """
         Stores rasterized maps to disk for later retrieval.
@@ -578,7 +313,7 @@ class NuscDataset(RawDataset):
         """
         for map_name in tqdm(
             locations,
-            desc=f"Caching {self.name} Maps at {resolution:.2f} px/m",
+            desc=f"Caching {self.name} Maps at {map_params['px_per_m']:.2f} px/m",
             position=0,
         ):
-            self.cache_map(map_name, cache_path, map_cache_class, resolution)
+            self.cache_map(map_name, cache_path, map_cache_class, map_params)

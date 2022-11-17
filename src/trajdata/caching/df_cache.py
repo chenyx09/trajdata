@@ -1,7 +1,19 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from trajdata.maps import (
+        RasterizedMap,
+        RasterizedMapMetadata,
+        VectorMap,
+    )
+    from trajdata.maps.map_kdtree import MapElementKDTree
+
 import pickle
 from math import ceil, floor
 from pathlib import Path
-from typing import Callable, Dict, Final, List, Optional, Tuple
+from typing import Any, Dict, Final, List, Optional, Tuple
 
 import dill
 import kornia
@@ -14,10 +26,8 @@ from trajdata.augmentation.augmentation import Augmentation, DatasetAugmentation
 from trajdata.caching.scene_cache import SceneCache
 from trajdata.data_structures.agent import AgentMetadata, FixedExtent
 from trajdata.data_structures.scene_metadata import Scene
-from trajdata.maps import RasterizedMap, RasterizedMapMetadata
-from trajdata.maps.map_kdtree import MapElementKDTree
-from trajdata.proto.vectorized_map_pb2 import VectorizedMap
-from trajdata.utils import arr_utils
+from trajdata.maps.traffic_light_status import TrafficLightStatus
+from trajdata.utils import arr_utils, df_utils, raster_utils
 
 STATE_COLS: Final[List[str]] = ["x", "y", "vx", "vy", "ax", "ay"]
 EXTENT_COLS: Final[List[str]] = ["length", "width", "height"]
@@ -28,7 +38,6 @@ class DataFrameCache(SceneCache):
         self,
         cache_path: Path,
         scene: Scene,
-        scene_ts: Optional[int] = 0,
         augmentations: Optional[List[Augmentation]] = None,
     ) -> None:
         """
@@ -37,7 +46,7 @@ class DataFrameCache(SceneCache):
         and pickle for miscellaneous supporting objects.
         Maps are pre-rasterized and stored as Zarr arrays.
         """
-        super().__init__(cache_path, scene, scene_ts, augmentations)
+        super().__init__(cache_path, scene, augmentations)
 
         agent_data_path: Path = self.scene_dir / DataFrameCache._agent_data_file(
             scene.dt
@@ -146,7 +155,9 @@ class DataFrameCache(SceneCache):
         cache_path: Path,
         scene: Scene,
     ) -> None:
-        scene_cache_dir: Path = cache_path / scene.env_name / scene.name
+        scene_cache_dir: Path = DataFrameCache.scene_cache_dir(
+            cache_path, scene.env_name, scene.name
+        )
         scene_cache_dir.mkdir(parents=True, exist_ok=True)
 
         index_dict: Dict[Tuple[str, int], int] = {
@@ -192,10 +203,17 @@ class DataFrameCache(SceneCache):
             )
             return transformed_pair[0, 0].item()
 
+    def get_raw_state(self, agent_id: str, scene_ts: int) -> np.ndarray:
+        return (
+            self.scene_data_df.iloc[
+                self.index_dict[(agent_id, scene_ts)], : self._state_dim
+            ]
+            .to_numpy()
+            .copy()
+        )
+
     def get_state(self, agent_id: str, scene_ts: int) -> np.ndarray:
-        state = self.scene_data_df.iloc[
-            self.index_dict[(agent_id, scene_ts)], : self._state_dim
-        ].to_numpy()
+        state = self.get_raw_state(agent_id, scene_ts)
 
         return self._transform_state(state)
 
@@ -226,7 +244,7 @@ class DataFrameCache(SceneCache):
 
         if "sincos_heading" in kwargs:
             self._sincos_heading = True
-            self.obs_dim += 1
+            self.obs_dim = self._state_dim + 1
 
     def reset_transforms(self) -> None:
         self._transf_mean: Optional[np.ndarray] = None
@@ -392,7 +410,7 @@ class DataFrameCache(SceneCache):
         agent_extent_np: np.ndarray
         if isinstance(agent_info.extent, FixedExtent):
             agent_extent_np = agent_info.extent.get_extents(
-                self.scene_ts - agent_history_df.shape[0] + 1, self.scene_ts
+                scene_ts - agent_history_df.shape[0] + 1, scene_ts
             )
         else:
             agent_extent_np = agent_history_df.iloc[:, self.extent_cols].to_numpy()
@@ -435,7 +453,7 @@ class DataFrameCache(SceneCache):
         agent_extent_np: np.ndarray
         if isinstance(agent_info.extent, FixedExtent):
             agent_extent_np: np.ndarray = agent_info.extent.get_extents(
-                self.scene_ts + 1, self.scene_ts + agent_future_df.shape[0]
+                scene_ts + 1, scene_ts + agent_future_df.shape[0]
             )
         else:
             agent_extent_np = agent_future_df.iloc[:, self.extent_cols].to_numpy()
@@ -454,7 +472,7 @@ class DataFrameCache(SceneCache):
         history_sec: Tuple[Optional[float], Optional[float]],
     ) -> Tuple[List[np.ndarray], List[np.ndarray], np.ndarray]:
         first_timesteps = np.array(
-            [agent.first_timestep for agent in agents], dtype=np.long
+            [agent.first_timestep for agent in agents], dtype=int
         )
         if history_sec[1] is not None:
             max_history: int = floor(history_sec[1] / self.dt)
@@ -465,10 +483,10 @@ class DataFrameCache(SceneCache):
                 self.index_dict[(agent.name, first_timesteps[idx])]
                 for idx, agent in enumerate(agents)
             ],
-            dtype=np.long,
+            dtype=int,
         )
         last_index_incl: np.ndarray = np.array(
-            [self.index_dict[(agent.name, scene_ts)] for agent in agents], dtype=np.long
+            [self.index_dict[(agent.name, scene_ts)] for agent in agents], dtype=int
         )
 
         concat_idxs = arr_utils.vrange(first_index_incl, last_index_incl + 1)
@@ -494,8 +512,8 @@ class DataFrameCache(SceneCache):
         else:
             neighbor_extents = [
                 agent.extent.get_extents(
-                    self.scene_ts - neighbor_history_lens_np[idx].item() + 1,
-                    self.scene_ts,
+                    scene_ts - neighbor_history_lens_np[idx].item() + 1,
+                    scene_ts,
                 )
                 for idx, agent in enumerate(agents)
             ]
@@ -512,9 +530,7 @@ class DataFrameCache(SceneCache):
         agents: List[AgentMetadata],
         future_sec: Tuple[Optional[float], Optional[float]],
     ) -> Tuple[List[np.ndarray], List[np.ndarray], np.ndarray]:
-        last_timesteps = np.array(
-            [agent.last_timestep for agent in agents], dtype=np.long
-        )
+        last_timesteps = np.array([agent.last_timestep for agent in agents], dtype=int)
 
         first_timesteps = np.minimum(scene_ts + 1, last_timesteps)
 
@@ -527,14 +543,14 @@ class DataFrameCache(SceneCache):
                 self.index_dict[(agent.name, first_timesteps[idx])]
                 for idx, agent in enumerate(agents)
             ],
-            dtype=np.long,
+            dtype=int,
         )
         last_index_incl: np.ndarray = np.array(
             [
                 self.index_dict[(agent.name, last_timesteps[idx])]
                 for idx, agent in enumerate(agents)
             ],
-            dtype=np.long,
+            dtype=int,
         )
 
         concat_idxs = arr_utils.vrange(first_index_incl, last_index_incl + 1)
@@ -560,8 +576,8 @@ class DataFrameCache(SceneCache):
         else:
             neighbor_extents = [
                 agent.extent.get_extents(
-                    self.scene_ts - neighbor_future_lens_np[idx].item() + 1,
-                    self.scene_ts,
+                    scene_ts - neighbor_future_lens_np[idx].item() + 1,
+                    scene_ts,
                 )
                 for idx, agent in enumerate(agents)
             ]
@@ -571,6 +587,80 @@ class DataFrameCache(SceneCache):
             neighbor_extents,
             neighbor_future_lens_np,
         )
+
+    # TRAFFIC LIGHT INFO
+    @staticmethod
+    def _tls_data_file(scene_dt: float) -> str:
+        return f"tls_data_dt{scene_dt:.2f}.feather"
+
+    @staticmethod
+    def save_traffic_light_data(
+        traffic_light_status_data: pd.DataFrame,
+        cache_path: Path,
+        scene: Scene,
+        dt: Optional[float] = None,
+    ) -> None:
+        """
+        Assumes traffic_light_status_data is a MultiIndex dataframe with
+        lane_connector_id and scene_ts as the indices, and has a column "status" with integer
+        values for traffic status given by the TrafficLightStatus enum
+        """
+        scene_cache_dir: Path = DataFrameCache.scene_cache_dir(
+            cache_path, scene.env_name, scene.name
+        )
+        scene_cache_dir.mkdir(parents=True, exist_ok=True)
+
+        if dt is None:
+            dt = scene.dt
+
+        traffic_light_status_data.reset_index().to_feather(
+            scene_cache_dir / DataFrameCache._tls_data_file(dt)
+        )
+
+    def is_traffic_light_data_cached(self, desired_dt: Optional[float] = None) -> bool:
+        desired_dt = self.dt if desired_dt is None else desired_dt
+        tls_data_path: Path = self.scene_dir / DataFrameCache._tls_data_file(desired_dt)
+        return tls_data_path.exists()
+
+    def get_traffic_light_status_dict(
+        self, desired_dt: Optional[float] = None
+    ) -> Dict[Tuple[int, int], TrafficLightStatus]:
+        """
+        Returns dict mapping Lane Id, scene_ts to traffic light status for the
+        particular scene. If data doesn't exist for the current dt, interpolates and
+        saves the interpolated data to disk for loading later.
+        """
+        desired_dt = self.dt if desired_dt is None else desired_dt
+
+        tls_data_path: Path = self.scene_dir / DataFrameCache._tls_data_file(desired_dt)
+        if not tls_data_path.exists():
+            # Load the original dt traffic light data
+            tls_orig_dt_df: pd.DataFrame = pd.read_feather(
+                self.scene_dir
+                / DataFrameCache._tls_data_file(self.scene.env_metadata.dt),
+                use_threads=False,
+            ).set_index(["lane_connector_id", "scene_ts"])
+
+            # Interpolate it to the desired dt.
+            tls_data_df = df_utils.interpolate_multi_index_df(
+                tls_orig_dt_df, self.scene.env_metadata.dt, desired_dt, method="nearest"
+            )
+
+            # Save it for the future
+            DataFrameCache.save_traffic_light_data(
+                tls_data_df, self.path, self.scene, desired_dt
+            )
+        else:
+            # Load the data with the desired dt.
+            tls_data_df: pd.DataFrame = pd.read_feather(
+                tls_data_path,
+                use_threads=False,
+            ).set_index(["lane_connector_id", "scene_ts"])
+
+        # Return data as dict
+        return {
+            idx: TrafficLightStatus(v["status"]) for idx, v in tls_data_df.iterrows()
+        }
 
     # MAPS
     @staticmethod
@@ -620,13 +710,13 @@ class DataFrameCache(SceneCache):
         )
 
     @staticmethod
-    def cache_map(
+    def finalize_and_cache_map(
         cache_path: Path,
-        vec_map: VectorizedMap,
-        kdtrees: Dict[str, MapElementKDTree],
-        map_obj: RasterizedMap,
-        env_name: str,
+        vector_map: VectorMap,
+        map_params: Dict[str, Any],
     ) -> None:
+        raster_resolution: float = map_params["px_per_m"]
+
         (
             maps_path,
             vector_map_path,
@@ -634,53 +724,33 @@ class DataFrameCache(SceneCache):
             raster_map_path,
             raster_metadata_path,
         ) = DataFrameCache.get_map_paths(
-            cache_path, env_name, map_obj.metadata.name, map_obj.metadata.resolution
+            cache_path, vector_map.env_name, vector_map.map_name, raster_resolution
         )
+
+        pbar_kwargs = {"position": 2, "leave": False}
+        rasterized_map: RasterizedMap = raster_utils.rasterize_map(
+            vector_map, raster_resolution, **pbar_kwargs
+        )
+
+        vector_map.compute_search_indices()
 
         # Ensuring the maps directory exists.
         maps_path.mkdir(parents=True, exist_ok=True)
 
         # Saving the vectorized map data.
         with open(vector_map_path, "wb") as f:
-            f.write(vec_map.SerializeToString())
+            f.write(vector_map.to_proto().SerializeToString())
 
         # Saving precomputed map element kdtrees.
         with open(kdtrees_path, "wb") as f:
-            dill.dump(kdtrees, f)
+            dill.dump(vector_map.search_kdtrees, f)
 
         # Saving the rasterized map data.
-        zarr.save(raster_map_path, map_obj.data)
+        zarr.save(raster_map_path, rasterized_map.data)
 
         # Saving the rasterized map metadata.
         with open(raster_metadata_path, "wb") as f:
-            dill.dump(map_obj.metadata, f)
-
-    @staticmethod
-    def cache_map_layers(
-        cache_path: Path,
-        map_info: RasterizedMapMetadata,
-        layer_fn: Callable[[str], np.ndarray],
-        env_name: str,
-    ) -> None:
-        (
-            maps_path,
-            _,
-            _,
-            raster_map_path,
-            raster_metadata_path,
-        ) = DataFrameCache.get_map_paths(
-            cache_path, env_name, map_info.name, map_info.resolution
-        )
-
-        # Ensuring the maps directory exists.
-        maps_path.mkdir(parents=True, exist_ok=True)
-
-        disk_data = zarr.open_array(raster_map_path, mode="w", shape=map_info.shape)
-        for idx, layer_name in enumerate(map_info.layers):
-            disk_data[idx] = layer_fn(layer_name)
-
-        with open(raster_metadata_path, "wb") as f:
-            dill.dump(map_info, f)
+            dill.dump(rasterized_map.metadata, f)
 
     def pad_map_patch(
         self,

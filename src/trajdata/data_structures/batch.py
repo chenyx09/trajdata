@@ -7,12 +7,14 @@ import torch
 from torch import Tensor
 
 from trajdata.data_structures.agent import AgentType
+from trajdata.maps import VectorMap
 from trajdata.utils.arr_utils import PadDirection
 
 
 @dataclass
 class AgentBatch:
     data_idx: Tensor
+    scene_ts: Tensor
     dt: Tensor
     agent_name: List[str]
     agent_type: Tensor
@@ -33,8 +35,10 @@ class AgentBatch:
     neigh_fut_len: Tensor
     robot_fut: Optional[Tensor]
     robot_fut_len: Optional[Tensor]
+    map_names: Optional[List[str]]
     maps: Optional[Tensor]
     maps_resolution: Optional[Tensor]
+    vector_maps: Optional[List[VectorMap]]
     rasters_from_world_tf: Optional[Tensor]
     agents_from_world_tf: Tensor
     scene_ids: Optional[List]
@@ -53,6 +57,8 @@ class AgentBatch:
             "neigh_types",
             "num_neigh",
             "robot_fut_len",
+            "map_names",
+            "vector_maps",
             "scene_ids",
             "history_pad_dir",
             "extras",
@@ -97,9 +103,7 @@ class AgentBatch:
         return AgentBatch(
             data_idx=_filter(self.data_idx),
             dt=_filter(self.dt),
-            agent_name=[
-                name for idx, name in enumerate(self.agent_name) if filter_mask[idx]
-            ],
+            agent_name=_filter_tensor_or_list(self.agent_name),
             agent_type=_filter(self.agent_type),
             curr_agent_state=_filter(self.curr_agent_state),
             agent_hist=_filter(self.agent_hist),
@@ -118,8 +122,10 @@ class AgentBatch:
             neigh_fut_len=_filter(self.neigh_fut_len),
             robot_fut=_filter(self.robot_fut) if self.robot_fut is not None else None,
             robot_fut_len=_filter(self.robot_fut_len) if self.robot_fut_len is not None else None,
+            map_names=_filter_tensor_or_list(self.map_names) if self.map_names is not None else None,
             maps=_filter(self.maps) if self.maps is not None else None,
             maps_resolution=_filter(self.maps_resolution) if self.maps_resolution is not None else None,
+            vector_maps=_filter(self.vector_maps) if self.vector_maps is not None else None,
             rasters_from_world_tf=_filter(self.rasters_from_world_tf) if self.rasters_from_world_tf is not None else None,
             agents_from_world_tf=_filter(self.agents_from_world_tf),
             scene_ids=_filter_tensor_or_list(self.scene_ids),
@@ -133,10 +139,12 @@ class AgentBatch:
 @dataclass
 class SceneBatch:
     data_idx: Tensor
+    scene_ts: Tensor
     dt: Tensor
     num_agents: Tensor
     agent_type: Tensor
     centered_agent_state: Tensor
+    agent_names: List[str]
     agent_hist: Tensor
     agent_hist_extent: Tensor
     agent_hist_len: Tensor
@@ -145,8 +153,10 @@ class SceneBatch:
     agent_fut_len: Tensor
     robot_fut: Optional[Tensor]
     robot_fut_len: Optional[Tensor]
+    map_names: Optional[Tensor]
     maps: Optional[Tensor]
     maps_resolution: Optional[Tensor]
+    vector_maps: Optional[List[VectorMap]]
     rasters_from_world_tf: Optional[Tensor]
     centered_agent_from_world_tf: Tensor
     centered_world_from_agent_tf: Tensor
@@ -156,6 +166,9 @@ class SceneBatch:
 
     def to(self, device) -> None:
         excl_vals = {
+            "agent_names",
+            "map_names",
+            "vector_maps",
             "history_pad_dir",
             "scene_ids",
             "extras",
@@ -211,8 +224,10 @@ class SceneBatch:
             agent_fut_len=_filter(self.agent_fut_len),
             robot_fut=_filter(self.robot_fut) if self.robot_fut is not None else None,
             robot_fut_len=_filter(self.robot_fut_len) if self.robot_fut_len is not None else None,
+            map_names=_filter_tensor_or_list(self.map_names) if self.map_names is not None else None,
             maps=_filter(self.maps) if self.maps is not None else None,
             maps_resolution=_filter(self.maps_resolution) if self.maps_resolution is not None else None,
+            vector_maps=_filter(self.vector_maps) if self.vector_maps is not None else None,            
             rasters_from_world_tf=_filter(self.rasters_from_world_tf) if self.rasters_from_world_tf is not None else None,
             centered_agent_from_world_tf=_filter(self.centered_agent_from_world_tf),
             centered_world_from_agent_tf=_filter(self.centered_world_from_agent_tf),
