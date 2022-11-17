@@ -219,16 +219,18 @@ class VectorMap:
 
                 # We do not care for the heading of the left and right edges
                 # (only the center matters).
+                left_pl: Optional[Polyline] = None
                 if road_lane_obj.HasField("left_boundary"):
-                    left_pl: Polyline = Polyline(
+                    left_pl = Polyline(
                         map_utils.proto_to_np(
                             road_lane_obj.left_boundary, incl_heading=False
                         )
                         + shifted_origin[:3]
                     )
 
+                right_pl: Optional[Polyline] = None
                 if road_lane_obj.HasField("right_boundary"):
-                    right_pl: Polyline = Polyline(
+                    right_pl = Polyline(
                         map_utils.proto_to_np(
                             road_lane_obj.right_boundary, incl_heading=False
                         )

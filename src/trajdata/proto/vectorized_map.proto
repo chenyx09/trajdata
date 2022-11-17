@@ -55,11 +55,11 @@ message RoadLane {
   // segments defined between consecutive points.
   Polyline center = 1;
 
-  // The polyline data for the left boundary of this lane.
-  Polyline left_boundary = 2;
+  // The polyline data for the (optional) left boundary of this lane.
+  optional Polyline left_boundary = 2;
 
-  // The polyline data for the right boundary of this lane.
-  Polyline right_boundary = 3;
+  // The polyline data for the (optional) right boundary of this lane.
+  optional Polyline right_boundary = 3;
 
   // A list of IDs for lanes that this lane may be entered from.
   repeated bytes entry_lanes = 4;
