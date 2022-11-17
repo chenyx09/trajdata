@@ -337,6 +337,13 @@ class VectorMap:
         lane_kdtree: LaneCenterKDTree = self.search_kdtrees[MapElementType.ROAD_LANE]
         return self.lanes[lane_kdtree.closest_polyline_ind(xyz)]
 
+    def get_closest_unique_lanes(self, xyz_vec: np.ndarray) -> List[RoadLane]:
+        assert xyz_vec.ndim == 2  # xyz_vec is assumed to be (*, 3)
+        lane_kdtree: LaneCenterKDTree = self.search_kdtrees[MapElementType.ROAD_LANE]
+        closest_inds = [lane_kdtree.closest_polyline_ind(xyz) for xyz in xyz_vec]
+        unique_inds = np.unique(closest_inds)
+        return [self.lanes[ind] for ind in unique_inds]
+
     def get_lanes_within(self, xyz: np.ndarray, dist: float) -> List[RoadLane]:
         lane_kdtree: LaneCenterKDTree = self.search_kdtrees[MapElementType.ROAD_LANE]
         return [

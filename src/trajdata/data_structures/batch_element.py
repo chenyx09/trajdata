@@ -446,8 +446,6 @@ class SceneBatchElement:
 
         self.agent_meta_dicts = [get_agent_meta_dict(self.cache, agent) for agent in nearby_agents]
         
-        self.max_future_len: int = int(np.floor(future_sec[1] / self.dt))
-
         ### MAP ###
         self.map_name: Optional[str] = None
         self.map_patches: Optional[RasterizedMapPatch] = None

@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Type, Union
 
 import pandas as pd
-import itertools
 from nuscenes.eval.prediction.splits import NUM_IN_TRAIN_VAL
 from nuscenes.map_expansion.map_api import NuScenesMap, locations
 from nuscenes.nuscenes import NuScenes

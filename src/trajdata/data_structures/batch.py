@@ -102,6 +102,7 @@ class AgentBatch:
 
         return AgentBatch(
             data_idx=_filter(self.data_idx),
+            scene_ts=_filter(self.scene_ts),
             dt=_filter(self.dt),
             agent_name=_filter_tensor_or_list(self.agent_name),
             agent_type=_filter(self.agent_type),
@@ -212,6 +213,7 @@ class SceneBatch:
 
         return SceneBatch(
             data_idx=_filter(self.data_idx),
+            scene_ts=_filter(self.scene_ts),
             dt=_filter(self.dt),
             num_agents=_filter(self.num_agents),
             agent_type=_filter(self.agent_type),
@@ -244,9 +246,6 @@ class SceneBatch:
 
         self.extras will be simply copied over, any custom conversion must be 
         implemented externally.
-
-        TODO(pkarkus) agent names are not yet supported because SceneBatch 
-            does not store them
         """
 
         batch_size = self.agent_hist.shape[0]
@@ -261,13 +260,15 @@ class SceneBatch:
         batch_inds = torch.arange(batch_size)
         others_mask = torch.ones((batch_size, num_agents), dtype=torch.bool)
         others_mask[batch_inds, agent_inds] = False
-        index_agent = lambda x: x[batch_inds, agent_inds]
+        index_agent = lambda x: x[batch_inds, agent_inds] if x is not None else None
+        index_agent_list = lambda xlist: [x[ind] for x, ind in zip(xlist, agent_inds)] if xlist is not None else None
         index_neighbors = lambda x: x[others_mask].reshape([batch_size, num_agents-1, ] + list(x.shape[2:]))
 
         return AgentBatch(
             data_idx=self.data_idx,
+            scene_ts=self.scene_ts,
             dt=self.dt,
-            agent_name=["unknown"] * batch_size,
+            agent_name=index_agent_list(self.agent_names),
             agent_type=index_agent(self.agent_type),
             curr_agent_state=self.centered_agent_state,  # TODO this is not actually the agent but the `global` coordinate frame
             agent_hist=index_agent(self.agent_hist),
@@ -286,7 +287,9 @@ class SceneBatch:
             neigh_fut_len=index_neighbors(self.agent_fut_len),
             robot_fut=self.robot_fut,
             robot_fut_len=self.robot_fut_len,
+            map_names=index_agent_list(self.map_names),
             maps=index_agent(self.maps),
+            vector_maps=index_agent(self.vector_maps),
             maps_resolution=index_agent(self.maps_resolution),
             rasters_from_world_tf=index_agent(self.rasters_from_world_tf),
             agents_from_world_tf=self.centered_agent_from_world_tf,
