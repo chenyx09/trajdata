@@ -90,14 +90,22 @@ class AgentBatch:
         # Some of the tensors might be on different devices, so we define some convenience functions
         # to make sure the filter_mask is always on the same device as the tensor we are indexing.
         filter_mask_dict = {}
-        filter_mask_dict['cpu'] = filter_mask.to('cpu')
-        filter_mask_dict[str(self.agent_hist.device)] = filter_mask.to(self.agent_hist.device)
+        filter_mask_dict["cpu"] = filter_mask.to("cpu")
+        filter_mask_dict[str(self.agent_hist.device)] = filter_mask.to(
+            self.agent_hist.device
+        )
 
         _filter = lambda tensor: tensor[filter_mask_dict[str(tensor.device)]]
         _filter_tensor_or_list = lambda tensor_or_list: (
-            _filter(tensor_or_list) 
-            if isinstance(tensor_or_list, torch.Tensor) 
-            else type(tensor_or_list)([el for idx, el in enumerate(tensor_or_list) if filter_mask_dict['cpu'][idx]])
+            _filter(tensor_or_list)
+            if isinstance(tensor_or_list, torch.Tensor)
+            else type(tensor_or_list)(
+                [
+                    el
+                    for idx, el in enumerate(tensor_or_list)
+                    if filter_mask_dict["cpu"][idx]
+                ]
+            )
         )
 
         return AgentBatch(
@@ -122,18 +130,28 @@ class AgentBatch:
             neigh_fut_extents=_filter(self.neigh_fut_extents),
             neigh_fut_len=_filter(self.neigh_fut_len),
             robot_fut=_filter(self.robot_fut) if self.robot_fut is not None else None,
-            robot_fut_len=_filter(self.robot_fut_len) if self.robot_fut_len is not None else None,
-            map_names=_filter_tensor_or_list(self.map_names) if self.map_names is not None else None,
+            robot_fut_len=_filter(self.robot_fut_len)
+            if self.robot_fut_len is not None
+            else None,
+            map_names=_filter_tensor_or_list(self.map_names)
+            if self.map_names is not None
+            else None,
             maps=_filter(self.maps) if self.maps is not None else None,
-            maps_resolution=_filter(self.maps_resolution) if self.maps_resolution is not None else None,
-            vector_maps=_filter(self.vector_maps) if self.vector_maps is not None else None,
-            rasters_from_world_tf=_filter(self.rasters_from_world_tf) if self.rasters_from_world_tf is not None else None,
+            maps_resolution=_filter(self.maps_resolution)
+            if self.maps_resolution is not None
+            else None,
+            vector_maps=_filter(self.vector_maps)
+            if self.vector_maps is not None
+            else None,
+            rasters_from_world_tf=_filter(self.rasters_from_world_tf)
+            if self.rasters_from_world_tf is not None
+            else None,
             agents_from_world_tf=_filter(self.agents_from_world_tf),
             scene_ids=_filter_tensor_or_list(self.scene_ids),
             history_pad_dir=self.history_pad_dir,
             extras={
-                key: _filter_tensor_or_list(val)
-                for key, val in self.extras.items()},
+                key: _filter_tensor_or_list(val) for key, val in self.extras.items()
+            },
         )
 
 
@@ -189,26 +207,38 @@ class SceneBatch:
 
     def agent_types(self) -> List[AgentType]:
         unique_types: Tensor = torch.unique(self.agent_type)
-        return [AgentType(unique_type.item()) for unique_type in unique_types if unique_type >= 0]
+        return [
+            AgentType(unique_type.item())
+            for unique_type in unique_types
+            if unique_type >= 0
+        ]
 
     def for_agent_type(self, agent_type: AgentType) -> SceneBatch:
         match_type = self.agent_type == agent_type
         return self.filter_batch(match_type)
 
     def filter_batch(self, filter_mask: torch.tensor) -> SceneBatch:
-        """Build a new batch with elements for which filter_mask[i] == True."""  
-        
+        """Build a new batch with elements for which filter_mask[i] == True."""
+
         # Some of the tensors might be on different devices, so we define some convenience functions
         # to make sure the filter_mask is always on the same device as the tensor we are indexing.
         filter_mask_dict = {}
-        filter_mask_dict['cpu'] = filter_mask.to('cpu')
-        filter_mask_dict[str(self.agent_hist.device)] = filter_mask.to(self.agent_hist.device)
+        filter_mask_dict["cpu"] = filter_mask.to("cpu")
+        filter_mask_dict[str(self.agent_hist.device)] = filter_mask.to(
+            self.agent_hist.device
+        )
 
         _filter = lambda tensor: tensor[filter_mask_dict[str(tensor.device)]]
         _filter_tensor_or_list = lambda tensor_or_list: (
-            _filter(tensor_or_list) 
-            if isinstance(tensor_or_list, torch.Tensor) 
-            else type(tensor_or_list)([el for idx, el in enumerate(tensor_or_list) if filter_mask_dict['cpu'][idx]])
+            _filter(tensor_or_list)
+            if isinstance(tensor_or_list, torch.Tensor)
+            else type(tensor_or_list)(
+                [
+                    el
+                    for idx, el in enumerate(tensor_or_list)
+                    if filter_mask_dict["cpu"][idx]
+                ]
+            )
         )
 
         return SceneBatch(
@@ -225,33 +255,44 @@ class SceneBatch:
             agent_fut_extent=_filter(self.agent_fut_extent),
             agent_fut_len=_filter(self.agent_fut_len),
             robot_fut=_filter(self.robot_fut) if self.robot_fut is not None else None,
-            robot_fut_len=_filter(self.robot_fut_len) if self.robot_fut_len is not None else None,
-            map_names=_filter_tensor_or_list(self.map_names) if self.map_names is not None else None,
+            robot_fut_len=_filter(self.robot_fut_len)
+            if self.robot_fut_len is not None
+            else None,
+            map_names=_filter_tensor_or_list(self.map_names)
+            if self.map_names is not None
+            else None,
             maps=_filter(self.maps) if self.maps is not None else None,
-            maps_resolution=_filter(self.maps_resolution) if self.maps_resolution is not None else None,
-            vector_maps=_filter(self.vector_maps) if self.vector_maps is not None else None,            
-            rasters_from_world_tf=_filter(self.rasters_from_world_tf) if self.rasters_from_world_tf is not None else None,
+            maps_resolution=_filter(self.maps_resolution)
+            if self.maps_resolution is not None
+            else None,
+            vector_maps=_filter(self.vector_maps)
+            if self.vector_maps is not None
+            else None,
+            rasters_from_world_tf=_filter(self.rasters_from_world_tf)
+            if self.rasters_from_world_tf is not None
+            else None,
             centered_agent_from_world_tf=_filter(self.centered_agent_from_world_tf),
             centered_world_from_agent_tf=_filter(self.centered_world_from_agent_tf),
             scene_ids=_filter_tensor_or_list(self.scene_ids),
             history_pad_dir=self.history_pad_dir,
             extras={
-                key: _filter_tensor_or_list(val, filter_mask) 
-                for key, val in self.extras.items()},
+                key: _filter_tensor_or_list(val, filter_mask)
+                for key, val in self.extras.items()
+            },
         )
 
     def to_agent_batch(self, agent_inds: torch.Tensor) -> AgentBatch:
         """
-        Converts SeceneBatch to AgentBatch for agents defined by `agent_inds`.  
+        Converts SeceneBatch to AgentBatch for agents defined by `agent_inds`.
 
-        self.extras will be simply copied over, any custom conversion must be 
+        self.extras will be simply copied over, any custom conversion must be
         implemented externally.
         """
 
         batch_size = self.agent_hist.shape[0]
         num_agents = self.agent_hist.shape[1]
 
-        if (agent_inds.ndim != 1 or agent_inds.shape[0] != batch_size):
+        if agent_inds.ndim != 1 or agent_inds.shape[0] != batch_size:
             raise ValueError("Wrong shape for agent_inds, expected [batch_size].")
 
         if (agent_inds < 0).any() or (agent_inds >= num_agents).any():
@@ -261,8 +302,18 @@ class SceneBatch:
         others_mask = torch.ones((batch_size, num_agents), dtype=torch.bool)
         others_mask[batch_inds, agent_inds] = False
         index_agent = lambda x: x[batch_inds, agent_inds] if x is not None else None
-        index_agent_list = lambda xlist: [x[ind] for x, ind in zip(xlist, agent_inds)] if xlist is not None else None
-        index_neighbors = lambda x: x[others_mask].reshape([batch_size, num_agents-1, ] + list(x.shape[2:]))
+        index_agent_list = (
+            lambda xlist: [x[ind] for x, ind in zip(xlist, agent_inds)]
+            if xlist is not None
+            else None
+        )
+        index_neighbors = lambda x: x[others_mask].reshape(
+            [
+                batch_size,
+                num_agents - 1,
+            ]
+            + list(x.shape[2:])
+        )
 
         return AgentBatch(
             data_idx=self.data_idx,
@@ -277,7 +328,7 @@ class SceneBatch:
             agent_fut=index_agent(self.agent_fut),
             agent_fut_extent=index_agent(self.agent_fut_extent),
             agent_fut_len=index_agent(self.agent_fut_len),
-            num_neigh=self.num_agents-1,
+            num_neigh=self.num_agents - 1,
             neigh_types=index_neighbors(self.agent_type),
             neigh_hist=index_neighbors(self.agent_hist),
             neigh_hist_extents=index_neighbors(self.agent_hist_extent),
@@ -296,5 +347,4 @@ class SceneBatch:
             scene_ids=self.scene_ids,
             history_pad_dir=self.history_pad_dir,
             extras=self.extras,
-        )          
-
+        )

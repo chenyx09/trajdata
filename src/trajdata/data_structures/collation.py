@@ -22,7 +22,7 @@ class CustomCollateData:
 
     def __to__(self, device, non_blocking=False):
         # Example for moving all elements of a list to a device:
-        # return LanesList([[pts.to(device, non_blocking=non_blocking) 
+        # return LanesList([[pts.to(device, non_blocking=non_blocking)
         #           for pts in lanelist] for lanelist in self])
         raise NotImplementedError
 

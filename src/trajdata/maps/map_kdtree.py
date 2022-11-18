@@ -107,8 +107,6 @@ class LaneCenterKDTree(MapElementKDTree):
                 pts = pts.interpolate(max_dist=self.max_segment_len)
 
             # We only want to store xyz in the kdtree, not heading.
-            points_xyz = pts.points[:, :3]    
-
-            return points_xyz
+            return pts.xyz
         else:
             return None

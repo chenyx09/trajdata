@@ -194,8 +194,7 @@ class UnifiedDataset(Dataset):
                 "incl_ped_walkways": False,
                 # Collation can be quite slow if vector maps are included,
                 # so we do not unless the user requests it.
-                # TODO(pkarkus) use collate=False instead of no_collate=True
-                "no_collate": True,
+                "collate": False,
             }
         )
         self.only_types = None if only_types is None else set(only_types)
@@ -395,9 +394,9 @@ class UnifiedDataset(Dataset):
             raise ValueError("Current data and cached data lengths do not match!")
 
     def apply_filter(
-        self, 
-        filter_fn: Callable[[Union[AgentBatchElement, SceneBatchElement]], bool], 
-        num_workers: int = 0, 
+        self,
+        filter_fn: Callable[[Union[AgentBatchElement, SceneBatchElement]], bool],
+        num_workers: int = 0,
         max_count: Optional[int] = None,
         all_gather: Optional[Callable] = None,
     ) -> None:
@@ -412,36 +411,43 @@ class UnifiedDataset(Dataset):
             if num_workers <= 0:
                 cache_data_iterator = self
             else:
-                # Multiply num_workers by the number of torch processes, because 
-                # we will only be using rank 0 process, whereas 
-                # num_workers is typically defined per torch process. 
+                # Multiply num_workers by the number of torch processes, because
+                # we will only be using rank 0 process, whereas
+                # num_workers is typically defined per torch process.
                 num_workers = num_workers * distributed.get_world_size()
 
-                # Use DataLoader as a generic multiprocessing framework. 
+                # Use DataLoader as a generic multiprocessing framework.
                 # We set batchsize=1 and a custom collate function.
                 # In effect this will just call self.__getitem__ in parallel.
                 cache_data_iterator = DataLoader(
-                    self, 
-                    batch_size=1, 
-                    num_workers=num_workers, 
-                    shuffle=False, 
-                    collate_fn=lambda xlist: xlist[0])
+                    self,
+                    batch_size=1,
+                    num_workers=num_workers,
+                    shuffle=False,
+                    collate_fn=lambda xlist: xlist[0],
+                )
 
-            # Iterate over data    
-            for element in tqdm(cache_data_iterator, desc=f'Filtering dataset ({num_workers} CPUs): ', disable=False):
+            # Iterate over data
+            for element in tqdm(
+                cache_data_iterator,
+                desc=f"Filtering dataset ({num_workers} CPUs): ",
+                disable=False,
+            ):
                 if filter_fn(element):
                     keep_ids.append(element.data_index)
                     keep_count += 1
                     if max_count is not None and keep_count >= max_count:
                         # Add False for remaining samples and break loop
-                        print (f"Reached maximum number of {max_count} elements, terminating early.")
+                        print(
+                            f"Reached maximum number of {max_count} elements, terminating early."
+                        )
                         break
-                
-            del cache_data_iterator        
+
+            del cache_data_iterator
 
             # Remove unwanted elements
             self.remove_elements(keep_ids=keep_ids)
-            
+
         # Wait for rank 0 process to be done with caching.
         # Note that the default timeout is 30 minutes. If filtering is expected to exceed this, the timeout can be
         # increased when initializing the process group, i.e., torch.distributed.init_process_group(timeout=...)
@@ -450,14 +456,16 @@ class UnifiedDataset(Dataset):
             # All proceses use the indices from rank 0
             self._data_index = gathered_values[0]
             self._data_len = len(self._data_index)
-            print (f"Rank {self.rank} has {self._data_len} elements.")
+            print(f"Rank {self.rank} has {self._data_len} elements.")
 
     def remove_elements(self, keep_ids: Union[np.ndarray, List[int]]):
         old_len = self._data_len
         self._data_index = [self._data_index[i] for i in keep_ids]
         self._data_len = len(self._data_index)
 
-        print(f"Kept {self._data_len}/{old_len} elements, {self._data_len/old_len*100.0:.2f}%.")
+        print(
+            f"Kept {self._data_len}/{old_len} elements, {self._data_len/old_len*100.0:.2f}%."
+        )
 
     def get_data_index(
         self, num_workers: int, scene_paths: List[Path]
@@ -928,7 +936,7 @@ class UnifiedDataset(Dataset):
         for transform_fn in self.transforms:
             batch_element = transform_fn(batch_element)
 
-        if self.vector_map_params.get("no_collate", True):
+        if not self.vector_map_params.get("collate", False):
             batch_element.vec_map = None
 
         return batch_element

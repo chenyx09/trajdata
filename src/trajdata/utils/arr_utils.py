@@ -93,7 +93,9 @@ def vrange(starts: np.ndarray, stops: np.ndarray) -> np.ndarray:
     return np.repeat(stops - lens.cumsum(), lens) + np.arange(lens.sum())
 
 
-def angle_wrap(radians: Union[np.ndarray, torch.Tensor]) -> Union[np.ndarray, torch.Tensor]:
+def angle_wrap(
+    radians: Union[np.ndarray, torch.Tensor]
+) -> Union[np.ndarray, torch.Tensor]:
     """This function wraps angles to lie within [-pi, pi).
 
     Args:
@@ -171,7 +173,9 @@ def batch_nd_transform_points_np(points: np.ndarray, Mat: np.ndarray) -> np.ndar
         raise Exception("wrong shape")
 
 
-def batch_nd_transform_points_pt(points: torch.Tensor, Mat: torch.Tensor) -> torch.Tensor:
+def batch_nd_transform_points_pt(
+    points: torch.Tensor, Mat: torch.Tensor
+) -> torch.Tensor:
     ndim = Mat.shape[-1] - 1
     Mat = torch.transpose(Mat, -1, -2)
     if points.ndim == Mat.ndim - 1:
@@ -185,7 +189,10 @@ def batch_nd_transform_points_pt(points: torch.Tensor, Mat: torch.Tensor) -> tor
         ).squeeze(-2)
     elif points.ndim == Mat.ndim + 1:
         return (
-            (points[..., np.newaxis, :] @ Mat[..., np.newaxis, np.newaxis, :ndim, :ndim])
+            (
+                points[..., np.newaxis, :]
+                @ Mat[..., np.newaxis, np.newaxis, :ndim, :ndim]
+            )
             + Mat[..., np.newaxis, np.newaxis, -1:, :ndim]
         ).squeeze(-2)
     else:
@@ -200,7 +207,9 @@ def batch_nd_transform_angles_np(angles: np.ndarray, Mat: np.ndarray) -> np.ndar
     return angles
 
 
-def batch_nd_transform_angles_pt(angles: torch.Tensor, Mat: torch.Tensor) -> torch.Tensor:
+def batch_nd_transform_angles_pt(
+    angles: torch.Tensor, Mat: torch.Tensor
+) -> torch.Tensor:
     cos_vals, sin_vals = Mat[..., 0, 0], Mat[..., 1, 0]
     rot_angle = torch.arctan2(sin_vals, cos_vals)
     if rot_angle.ndim > angles.ndim:

@@ -117,7 +117,10 @@ class AgentBatchElement:
         ) = self.get_neighbor_future(
             scene_time_agent, agent_info, future_sec, distance_limit
         )
-        self.neighbor_meta_dicts: Dict = self.get_neighbor_meta_dicts(scene_time_agent, agent_info, distance_limit)
+
+        self.neighbor_meta_dicts: Dict = self.get_neighbor_meta_dicts(
+            scene_time_agent, agent_info, distance_limit
+        )
 
         ### ROBOT DATA ###
         self.robot_future_np: Optional[np.ndarray] = None
@@ -199,7 +202,9 @@ class AgentBatchElement:
             agent for (idx, agent) in enumerate(scene_time.agents) if nearby_mask[idx]
         ]
 
-        neighbor_meta_dicts = [get_agent_meta_dict(self.cache, agent) for agent in nearby_agents]
+        neighbor_meta_dicts = [
+            get_agent_meta_dict(self.cache, agent) for agent in nearby_agents
+        ]
 
         return neighbor_meta_dicts
 
@@ -444,8 +449,10 @@ class SceneBatchElement:
             self.agent_future_lens_np,
         ) = self.get_agents_future(future_sec, nearby_agents)
 
-        self.agent_meta_dicts = [get_agent_meta_dict(self.cache, agent) for agent in nearby_agents]
-        
+        self.agent_meta_dicts = [
+            get_agent_meta_dict(self.cache, agent) for agent in nearby_agents
+        ]
+
         ### MAP ###
         self.map_name: Optional[str] = None
         self.map_patches: Optional[RasterizedMapPatch] = None
@@ -656,15 +663,19 @@ class SceneBatchElement:
         return robot_curr_and_fut_np
 
 
-def is_agent_parked(cache: SceneCache, agent_info: AgentMetadata) -> bool:
+def is_agent_stationary(cache: SceneCache, agent_info: AgentMetadata) -> bool:
     # Agent is considered parked if it moves less than 1m between the first and last valid timestep.
-    first_state: np.ndarray = cache.get_state(agent_info.name, agent_info.first_timestep)
+    first_state: np.ndarray = cache.get_state(
+        agent_info.name, agent_info.first_timestep
+    )
     last_state: np.ndarray = cache.get_state(agent_info.name, agent_info.last_timestep)
-    is_parked = np.square(last_state[:2] - first_state[:2]).sum(0) < 1. 
-    return is_parked
+    is_stationary = np.square(last_state[:2] - first_state[:2]).sum(0) < 1.0
+    return is_stationary
 
 
-def get_agent_meta_dict(cache: SceneCache, agent_info: AgentMetadata) -> Dict[str, np.ndarray]:
+def get_agent_meta_dict(
+    cache: SceneCache, agent_info: AgentMetadata
+) -> Dict[str, np.ndarray]:
     return {
-        "is_parked": is_agent_parked(cache, agent_info),
-    }     
+        "is_stationary": is_agent_stationary(cache, agent_info),
+    }
