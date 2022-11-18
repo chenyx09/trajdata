@@ -106,7 +106,7 @@ To add a new dataset, one needs to:
   - A file that defines a subclass of `RawDataset` and implements some of its functions. Reference implementations can be found in the `nusc/nusc_dataset.py`, `lyft/lyft_dataset.py`, and `eth_ucy_peds/eupeds_dataset.py` files.
 - Add a subclass of `NamedTuple` to `src/trajdata/dataset_specific/scene_records.py` which contains the minimal set of information sufficient to describe a scene. This "scene record" will be used in conjunction with the raw dataset class above and relates to how scenes are stored and efficiently accessed later.
 - Add a section to the `DATASETS.md` file which outlines how users should store the raw dataset locally.
-- Add a section to `src/trajdata/dataset_specific/env_utils.py` which allows users to get the raw dataset via its name, and specify if the dataset is a good candidate for parallel processing (e.g., does its native dataset object have a large memory footprint which might not allow it to be loaded in multiple processes, such as nuScenes?) and if it has maps.
+- Add a section to `src/trajdata/utils/env_utils.py` which allows users to get the raw dataset via its name, and specify if the dataset is a good candidate for parallel processing (e.g., does its native dataset object have a large memory footprint which might not allow it to be loaded in multiple processes, such as nuScenes?) and if it has maps.
 
 ## Examples
 
