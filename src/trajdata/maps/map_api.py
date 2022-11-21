@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, Union
 
 if TYPE_CHECKING:
     from trajdata.maps.map_kdtree import MapElementKDTree
@@ -15,8 +15,8 @@ from trajdata.utils import map_utils
 
 
 class MapAPI:
-    def __init__(self, unified_cache_path: Path) -> None:
-        self.unified_cache_path: Path = unified_cache_path
+    def __init__(self, unified_cache_path: Union[Path, str]) -> None:
+        self.unified_cache_path: Path = Path(unified_cache_path)
         self.maps: Dict[str, VectorMap] = dict()
 
     def get_map(

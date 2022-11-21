@@ -360,6 +360,8 @@ class NuplanDataset(RawDataset):
         map_cache_class: Type[SceneCache],
         map_params: Dict[str, Any],
     ) -> None:
+        # TODO(pkarkus) add option to specify map location, or at least let the user know 
+        # where the maps are expected to be.
         nuplan_map: NuPlanMap = map_factory.get_maps_api(
             map_root=str(self.metadata.data_dir.parent / "maps"),
             map_version=nuplan_utils.NUPLAN_MAP_VERSION,
