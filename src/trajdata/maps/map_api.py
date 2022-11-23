@@ -15,9 +15,10 @@ from trajdata.utils import map_utils
 
 
 class MapAPI:
-    def __init__(self, unified_cache_path: Union[Path, str]) -> None:
+    def __init__(self, unified_cache_path: Union[Path, str], data_dirs: Optional[Dict] = None) -> None:
         self.unified_cache_path: Path = Path(unified_cache_path)
         self.maps: Dict[str, VectorMap] = dict()
+        self.data_dirs = data_dirs
 
     def get_map(
         self, map_id: str, scene_cache: Optional[SceneCache] = None, **kwargs
@@ -25,9 +26,27 @@ class MapAPI:
         if map_id not in self.maps:
             env_name, map_name = map_id.split(":")
             env_maps_path: Path = self.unified_cache_path / env_name / "maps"
-            stored_vec_map: VectorizedMap = map_utils.load_vector_map(
-                env_maps_path / f"{map_name}.pb"
-            )
+            vec_map_path: Path = env_maps_path / f"{map_name}.pb"
+
+            if not Path.exists(vec_map_path):
+                if self.data_dirs is None:
+                    raise ValueError(
+                        f"There is no cached map at {vec_map_path} and there was no " + 
+                        "`data_dirs` provided to rebuild cache.")
+
+                # Rebuild maps by creating a dummy dataset object.
+                # TODO(pkarkus) We need support for rebuilding map files only, without creating dataset and building agent data.
+                from trajdata.dataset import UnifiedDataset
+                dataset = UnifiedDataset(
+                    desired_data=[env_name],
+                    rebuild_maps=True,
+                    data_dirs=self.data_dirs,
+                    cache_location=self.unified_cache_path,
+                    verbose=True,
+                )
+                # Hopefully we successfully created map cache.
+
+            stored_vec_map: VectorizedMap = map_utils.load_vector_map(vec_map_path)
 
             vec_map: VectorMap = VectorMap.from_proto(stored_vec_map, **kwargs)
             vec_map.search_kdtrees: Dict[
