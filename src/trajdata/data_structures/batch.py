@@ -140,7 +140,7 @@ class AgentBatch:
             maps_resolution=_filter(self.maps_resolution)
             if self.maps_resolution is not None
             else None,
-            vector_maps=_filter(self.vector_maps)
+            vector_maps=_filter_tensor_or_list(self.vector_maps)
             if self.vector_maps is not None
             else None,
             rasters_from_world_tf=_filter(self.rasters_from_world_tf)
@@ -185,7 +185,12 @@ class SceneBatch:
 
     def to(self, device) -> None:
         excl_vals = {
+            "num_agents",
             "agent_names",
+            "agent_type",
+            "agent_hist_len",
+            "agent_fut_len",
+            "robot_fut_len",
             "map_names",
             "vector_maps",
             "history_pad_dir",
@@ -338,11 +343,11 @@ class SceneBatch:
             neigh_fut_len=index_neighbors(self.agent_fut_len),
             robot_fut=self.robot_fut,
             robot_fut_len=self.robot_fut_len,
-            map_names=index_agent_list(self.map_names),
-            maps=index_agent(self.maps),
-            vector_maps=index_agent(self.vector_maps),
-            maps_resolution=index_agent(self.maps_resolution),
-            rasters_from_world_tf=index_agent(self.rasters_from_world_tf),
+            map_names=self.map_names,
+            maps=self.maps,
+            vector_maps=self.vector_maps,
+            maps_resolution=self.maps_resolution,
+            rasters_from_world_tf=self.rasters_from_world_tf,
             agents_from_world_tf=self.centered_agent_from_world_tf,
             scene_ids=self.scene_ids,
             history_pad_dir=self.history_pad_dir,
