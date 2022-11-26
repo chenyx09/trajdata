@@ -48,6 +48,15 @@ class Polyline:
         return self.points[..., :3]
 
     @property
+    def xyh(self) -> np.ndarray:
+        if self.has_heading:
+            return self.points[..., (0, 1, 3)]
+        else:
+            raise ValueError(
+                f"This Polyline only has {self.points.shape[-1]} coordinates, expected 4."
+            )
+
+    @property
     def xyzh(self) -> np.ndarray:
         if self.has_heading:
             return self.points[..., :4]

@@ -241,6 +241,24 @@ def batch_nd_transform_points_angles_pt(
     return points_angles
 
 
+def batch_nd_transform_xyvvaahh_pt(traj_xyvvaahh: torch.Tensor, tf: torch.Tensor) -> torch.Tensor:
+    """
+    traj_xyvvaahh: [..., state_dim] where state_dim = [x, y, vx, vy, ax, ay, sinh, cosh]
+    This is the state representation used in AgentBatch and SceneBatch.
+    """
+    rot_only_tf = tf.clone()
+    rot_only_tf[..., :2, -1] = 0.
+
+    xy, vv, aa, hh = torch.split(traj_xyvvaahh, (2, 2, 2, 2), dim=-1)
+    xy = batch_nd_transform_points_pt(xy, tf)
+    vv = batch_nd_transform_points_pt(vv, rot_only_tf)
+    aa = batch_nd_transform_points_pt(aa, rot_only_tf)
+    # hh: sinh, cosh instead of cosh, sinh, so we use flip
+    hh = batch_nd_transform_points_pt(hh.flip(-1), rot_only_tf).flip(-1)
+
+    return torch.concat((xy, vv, aa, hh), dim=-1)
+
+
 def agent_aware_diff(values: np.ndarray, agent_ids: np.ndarray) -> np.ndarray:
     values_diff: np.ndarray = np.diff(
         values, axis=0, prepend=values[[0]] - (values[[1]] - values[[0]])

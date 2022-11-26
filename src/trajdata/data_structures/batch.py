@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Dict, List, Optional
 
 import torch
@@ -8,7 +8,7 @@ from torch import Tensor
 
 from trajdata.data_structures.agent import AgentType
 from trajdata.maps import VectorMap
-from trajdata.utils.arr_utils import PadDirection
+from trajdata.utils.arr_utils import PadDirection, batch_nd_transform_xyvvaahh_pt
 
 
 @dataclass
@@ -154,6 +154,48 @@ class AgentBatch:
             },
         )
 
+    def to_scene_batch(self, agent_ind: int) -> SceneBatch:
+        """
+        Converts AgentBatch to SeceneBatch by combining neighbors and agent.
+
+        The agent of AgentBatch will be treated as if it was the last neighbor.
+        self.extras will be simply copied over, any custom conversion must be
+        implemented externally.
+        """
+
+        batch_size = self.neigh_hist.shape[0]
+        num_neigh = self.neigh_hist.shape[1]
+
+        combine = lambda neigh, agent: torch.cat((neigh, agent.unsqueeze(0)), dim=0)
+        combine_list = lambda neigh, agent: neigh + [agent]
+
+        return SceneBatch(
+            data_idx=self.data_idx,
+            scene_ts=self.scene_ts,
+            dt=self.dt,
+            num_agents=self.num_neigh + 1,
+            agent_type=combine(self.neigh_types, self.agent_type),
+            centered_agent_state=self.curr_agent_state,  # TODO this is not actually the agent but the `global` coordinate frame
+            agent_names=combine_list(["UNKNOWN" for _ in range(num_neigh)], self.agent_name),
+            agent_hist=combine(self.neigh_hist, self.agent_hist),
+            agent_hist_extent=combine(self.neigh_hist_extents, self.agent_hist_extent),
+            agent_hist_len=combine(self.neigh_hist_len, self.agent_hist_len),
+            agent_fut=combine(self.neigh_fut, self.agent_fut),
+            agent_fut_extent=combine(self.neigh_fut_extents, self.agent_fut_extent),
+            agent_fut_len=combine(self.neigh_fut_len, self.agent_fut_len),
+            robot_fut=self.robot_fut,
+            robot_fut_len=self.robot_fut_len,
+            map_names=self.map_names,  # TODO
+            maps=self.maps,
+            maps_resolution=self.maps_resolution,
+            vector_maps=self.vector_maps,
+            rasters_from_world_tf=self.rasters_from_world_tf,
+            centered_agent_from_world_tf=self.agents_from_world_tf,
+            centered_world_from_agent_tf=torch.linalg.inv(self.agents_from_world_tf),
+            scene_ids=self.scene_ids,
+            history_pad_dir=self.history_pad_dir,
+            extras=self.extras,
+        )
 
 @dataclass
 class SceneBatch:
@@ -353,3 +395,31 @@ class SceneBatch:
             history_pad_dir=self.history_pad_dir,
             extras=self.extras,
         )
+
+    def apply_transform(self, tf: torch.Tensor) -> SceneBatch:
+        """
+        Applies a transformation matrix to all coordinates stored in the SceneBatch.
+
+        Returns a shallow copy, only coordinate fields are replaced.
+        self.extras will be simply copied over (shallow copy), any custom conversion must be
+        implemented externally.
+        """
+        assert tf.ndim == 3  # b, 3, 3
+        assert tf.shape[-1] == 3 and tf.shape[-1] == 3
+        assert tf.dtype == torch.double  # tf should be double precision, otherwise we have large numerical errors
+        dtype = self.agent_hist.dtype
+
+        # Shallow copy
+        batch: SceneBatch = replace(self)
+
+        # Transforms
+        batch.agent_hist = batch_nd_transform_xyvvaahh_pt(batch.agent_hist.double(), tf).type(dtype)
+        batch.agent_fut = batch_nd_transform_xyvvaahh_pt(batch.agent_fut.double(), tf).type(dtype)
+        batch.rasters_from_world_tf = tf.unsqueeze(1) @ batch.rasters_from_world_tf if batch.rasters_from_world_tf is not None else None
+        batch.centered_agent_from_world_tf = tf @ batch.centered_agent_from_world_tf
+        centered_world_from_agent_tf = torch.linalg.inv(batch.centered_agent_from_world_tf)
+        # sanity check
+        assert torch.isclose(batch.centered_world_from_agent_tf @ torch.linalg.inv(tf), centered_world_from_agent_tf).all()
+        batch.centered_world_from_agent_tf = centered_world_from_agent_tf
+
+        return batch        
