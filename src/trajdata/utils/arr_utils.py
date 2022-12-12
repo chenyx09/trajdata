@@ -128,8 +128,8 @@ def transform_matrices(angles: Tensor, translations: Optional[Tensor]) -> Tensor
     """Creates a 3x3 transformation matrix for each angle and translation in the input.
 
     Args:
-        angles (Tensor): The (N,)-shaped angles tensor to rotate points by.
-        translations (Tensor): The (N,2)-shaped translations to shift points by.
+        angles (Tensor): The (...)-shaped angles tensor to rotate points by.
+        translations (Tensor): The (...,2)-shaped translations to shift points by.
 
     Returns:
         Tensor: The Nx3x3 transformation matrices.
@@ -137,8 +137,8 @@ def transform_matrices(angles: Tensor, translations: Optional[Tensor]) -> Tensor
     cos_vals = torch.cos(angles)
     sin_vals = torch.sin(angles)
     last_rows = torch.tensor(
-        [[0.0, 0.0, 1.0]], dtype=angles.dtype, device=angles.device
-    ).expand((angles.shape[0], -1))
+        [0.0, 0.0, 1.0], dtype=angles.dtype, device=angles.device
+    ).view([1] * angles.ndim + [3]).expand(list(angles.shape) + [-1])
 
     if translations is None:
         trans_x = torch.zeros_like(angles)
