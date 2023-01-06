@@ -290,7 +290,7 @@ class StateTensor(State, Tensor):
         new_class = Tensor
         result = super().__torch_function__(func, types, args, kwargs)
 
-        if func == Tensor.cpu or func == Tensor.cuda:
+        if func == Tensor.cpu or func == Tensor.cuda or func == Tensor.add_:
             new_class = cls
 
         if func == Tensor.__getitem__:

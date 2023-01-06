@@ -548,7 +548,7 @@ def agent_collate_fn(
                 if history_pad_dir == arr_utils.PadDirection.BEFORE
                 else (0, 0, 0, to_add),
                 value=np.nan,
-            )
+            ).as_subclass(AgentObsTensor)
 
         if agent_history_extent_t.shape[-2] < hist_len:
             to_add: int = hist_len - agent_history_extent_t.shape[-2]
@@ -567,7 +567,7 @@ def agent_collate_fn(
                 agent_future_t,
                 (0, 0, 0, fut_len - agent_future_t.shape[-2]),
                 value=np.nan,
-            )
+            ).as_subclass(AgentObsTensor)
 
         if agent_future_extent_t.shape[-2] < fut_len:
             agent_future_extent_t = F.pad(
