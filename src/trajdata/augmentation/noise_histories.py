@@ -42,8 +42,15 @@ class NoiseHistories(BatchAugmentation):
                 len_mask.expand(-1, -1, -1, neigh_hist_noise.shape[-1])
             ] = 0
 
-        agent_batch.agent_hist += agent_hist_noise
-        agent_batch.neigh_hist += neigh_hist_noise
+        # TODO: Need to do addition this way otherwise agent_hist and neigh_hist will
+        # be made back into regular Tensor objects (instead of StateTensor).
+        agent_batch.agent_hist = (
+            agent_batch.agent_hist + agent_hist_noise
+        ).as_subclass(type(agent_batch.agent_hist))
+
+        agent_batch.neigh_hist = (
+            agent_batch.neigh_hist + neigh_hist_noise
+        ).as_subclass(type(agent_batch.neigh_hist))
 
     def apply_scene(self, scene_batch: SceneBatch) -> None:
         scene_batch.agent_hist[..., :-1, :] += torch.normal(
