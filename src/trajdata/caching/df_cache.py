@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -411,7 +412,11 @@ class DataFrameCache(SceneCache):
         first_index_incl: int
         last_index_incl: int = self.index_dict[(agent_info.name, scene_ts)]
         if history_sec[1] is not None:
-            max_history: int = floor(history_sec[1] / self.dt)
+            # Wrapping the input floats with Decimal for exact division
+            # (avoiding float roundoff errors).
+            max_history: int = floor(
+                Decimal(str(history_sec[1])) / Decimal(str(self.dt))
+            )
             first_index_incl = self.index_dict[
                 (
                     agent_info.name,
@@ -446,8 +451,8 @@ class DataFrameCache(SceneCache):
         scene_ts: int,
         future_sec: Tuple[Optional[float], Optional[float]],
     ) -> Tuple[StateArray, np.ndarray]:
-        # We don't have to check the mins here because our data_index filtering in dataset.py already
-        # took care of it.
+        # We don't have to check the mins here because our data_index filtering in
+        # dataset.py already took care of it.
         if scene_ts >= agent_info.last_timestep:
             # Extent shape = 3
             return np.zeros((0, self.obs_dim)), np.zeros((0, 3))
@@ -455,7 +460,9 @@ class DataFrameCache(SceneCache):
         first_index_incl: int = self.index_dict[(agent_info.name, scene_ts + 1)]
         last_index_incl: int
         if future_sec[1] is not None:
-            max_future = floor(future_sec[1] / self.dt)
+            # Wrapping the input floats with Decimal for exact division
+            # (avoiding float roundoff errors).
+            max_future = floor(Decimal(str(future_sec[1])) / Decimal(str(self.dt)))
             last_index_incl = self.index_dict[
                 (agent_info.name, min(scene_ts + max_future, agent_info.last_timestep))
             ]
@@ -491,7 +498,11 @@ class DataFrameCache(SceneCache):
             [agent.first_timestep for agent in agents], dtype=int
         )
         if history_sec[1] is not None:
-            max_history: int = floor(history_sec[1] / self.dt)
+            # Wrapping the input floats with Decimal for exact division
+            # (avoiding float roundoff errors).
+            max_history: int = floor(
+                Decimal(str(history_sec[1])) / Decimal(str(self.dt))
+            )
             first_timesteps = np.maximum(scene_ts - max_history, first_timesteps)
 
         first_index_incl: np.ndarray = np.array(
@@ -551,7 +562,9 @@ class DataFrameCache(SceneCache):
         first_timesteps = np.minimum(scene_ts + 1, last_timesteps)
 
         if future_sec[1] is not None:
-            max_future: int = floor(future_sec[1] / self.dt)
+            # Wrapping the input floats with Decimal for exact division
+            # (avoiding float roundoff errors).
+            max_future: int = floor(Decimal(str(future_sec[1])) / Decimal(str(self.dt)))
             last_timesteps = np.minimum(scene_ts + max_future, last_timesteps)
 
         first_index_incl: np.ndarray = np.array(
