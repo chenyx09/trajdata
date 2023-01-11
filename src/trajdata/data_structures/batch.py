@@ -294,6 +294,7 @@ class SceneBatch:
             dt=_filter(self.dt),
             num_agents=_filter(self.num_agents),
             agent_type=_filter(self.agent_type),
+            agent_names=_filter_tensor_or_list(self.agent_names),
             centered_agent_state=_filter(self.centered_agent_state),
             agent_hist=_filter(self.agent_hist),
             agent_hist_extent=_filter(self.agent_hist_extent),
@@ -312,7 +313,7 @@ class SceneBatch:
             maps_resolution=_filter(self.maps_resolution)
             if self.maps_resolution is not None
             else None,
-            vector_maps=_filter(self.vector_maps)
+            vector_maps=_filter_tensor_or_list(self.vector_maps)
             if self.vector_maps is not None
             else None,
             rasters_from_world_tf=_filter(self.rasters_from_world_tf)
@@ -323,7 +324,7 @@ class SceneBatch:
             scene_ids=_filter_tensor_or_list(self.scene_ids),
             history_pad_dir=self.history_pad_dir,
             extras={
-                key: _filter_tensor_or_list(val, filter_mask)
+                key: _filter_tensor_or_list(val)
                 for key, val in self.extras.items()
             },
         )
