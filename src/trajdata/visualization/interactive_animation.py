@@ -2,7 +2,8 @@ import sys
 from collections import defaultdict
 from decimal import Decimal
 from functools import partial
-from typing import Callable
+from pathlib import Path
+from typing import Any, Callable, Dict, Tuple
 
 import numpy as np
 import pandas as pd
@@ -23,6 +24,10 @@ from bokeh.server.server import Server
 from trajdata.data_structures.agent import AgentType
 from trajdata.data_structures.batch import AgentBatch
 from trajdata.data_structures.state import StateArray, StateTensor
+from trajdata.maps.map_api import MapAPI
+from trajdata.maps.vec_map import VectorMap
+from trajdata.maps.vec_map_elements import RoadLane
+from trajdata.utils.arr_utils import transform_coords_2d_np
 
 
 class InteractiveAnimation:
@@ -55,6 +60,46 @@ def get_agent_type_color(agent_type: AgentType) -> str:
     return palette[3]
 
 
+def compute_agent_rect_coords(
+    agent_type: int, hs: np.ndarray, lengths: np.ndarray, widths: np.ndarray
+) -> Tuple[np.ndarray, np.ndarray]:
+    raw_rect_coords = np.stack(
+        (
+            np.stack((-lengths / 2, -widths / 2), axis=-1),
+            np.stack((-lengths / 2, widths / 2), axis=-1),
+            np.stack((lengths / 2, widths / 2), axis=-1),
+            np.stack((lengths / 2, -widths / 2), axis=-1),
+        ),
+        axis=-2,
+    )
+
+    agent_rect_coords = transform_coords_2d_np(
+        raw_rect_coords,
+        angle=hs[:, None].repeat(raw_rect_coords.shape[-2], axis=-1),
+    )
+
+    size = 1.0
+    if agent_type == AgentType.PEDESTRIAN:
+        size = 0.25
+
+    raw_tri_coords = size * np.array(
+        [
+            [
+                [0, np.sqrt(3) / 3],
+                [-1 / 2, -np.sqrt(3) / 6],
+                [1 / 2, -np.sqrt(3) / 6],
+            ]
+        ]
+    ).repeat(hs.shape[0], axis=0)
+
+    dir_patch_coords = transform_coords_2d_np(
+        raw_tri_coords,
+        angle=hs[:, None].repeat(raw_tri_coords.shape[-2], axis=-1) - np.pi / 2,
+    )
+
+    return agent_rect_coords, dir_patch_coords
+
+
 def extract_full_agent_data_df(batch: AgentBatch, batch_idx: int) -> ColumnDataSource:
     main_data_dict = defaultdict(list)
 
@@ -67,16 +112,31 @@ def extract_full_agent_data_df(batch: AgentBatch, batch_idx: int) -> ColumnDataS
 
     speed_mps = np.linalg.norm(agent_hist_np.velocity, axis=1)
 
+    xs = agent_hist_np.get_attr("x")
+    ys = agent_hist_np.get_attr("y")
+    hs = agent_hist_np.get_attr("h")
+
+    lengths = agent_extent[:, 0]
+    widths = agent_extent[:, 1]
+
+    agent_rect_coords, dir_patch_coords = compute_agent_rect_coords(
+        agent_type, hs, lengths, widths
+    )
+
     main_data_dict["id"].extend([0] * H)
     main_data_dict["t"].extend(range(-H + 1, 1))
-    main_data_dict["x"].extend(agent_hist_np.get_attr("x"))
-    main_data_dict["y"].extend(agent_hist_np.get_attr("y"))
-    main_data_dict["h"].extend(agent_hist_np.get_attr("h"))
+    main_data_dict["x"].extend(xs)
+    main_data_dict["y"].extend(ys)
+    main_data_dict["h"].extend(hs)
+    main_data_dict["rect_xs"].extend(agent_rect_coords[..., 0] + xs[:, None])
+    main_data_dict["rect_ys"].extend(agent_rect_coords[..., 1] + ys[:, None])
+    main_data_dict["dir_patch_xs"].extend(dir_patch_coords[..., 0] + xs[:, None])
+    main_data_dict["dir_patch_ys"].extend(dir_patch_coords[..., 1] + ys[:, None])
     main_data_dict["speed_mps"].extend(speed_mps)
     main_data_dict["speed_kph"].extend(speed_mps * 3.6)
     main_data_dict["type"].extend([agent_type_to_str(agent_type)] * H)
-    main_data_dict["length"].extend(agent_extent[:, 0])
-    main_data_dict["width"].extend(agent_extent[:, 1])
+    main_data_dict["length"].extend(lengths)
+    main_data_dict["width"].extend(widths)
     main_data_dict["pred_agent"].extend([True] * H)
     main_data_dict["color"].extend([get_agent_type_color(agent_type)] * H)
 
@@ -95,16 +155,31 @@ def extract_full_agent_data_df(batch: AgentBatch, batch_idx: int) -> ColumnDataS
 
         speed_mps = np.linalg.norm(agent_hist_np.velocity, axis=1)
 
+        xs = agent_hist_np.get_attr("x")
+        ys = agent_hist_np.get_attr("y")
+        hs = agent_hist_np.get_attr("h")
+
+        lengths = agent_extent[:, 0]
+        widths = agent_extent[:, 1]
+
+        agent_rect_coords, dir_patch_coords = compute_agent_rect_coords(
+            agent_type, hs, lengths, widths
+        )
+
         main_data_dict["id"].extend([n_neigh + 1] * H)
         main_data_dict["t"].extend(range(-H + 1, 1))
-        main_data_dict["x"].extend(agent_hist_np.get_attr("x"))
-        main_data_dict["y"].extend(agent_hist_np.get_attr("y"))
-        main_data_dict["h"].extend(agent_hist_np.get_attr("h"))
+        main_data_dict["x"].extend(xs)
+        main_data_dict["y"].extend(ys)
+        main_data_dict["h"].extend(hs)
+        main_data_dict["rect_xs"].extend(agent_rect_coords[..., 0] + xs[:, None])
+        main_data_dict["rect_ys"].extend(agent_rect_coords[..., 1] + ys[:, None])
+        main_data_dict["dir_patch_xs"].extend(dir_patch_coords[..., 0] + xs[:, None])
+        main_data_dict["dir_patch_ys"].extend(dir_patch_coords[..., 1] + ys[:, None])
         main_data_dict["speed_mps"].extend(speed_mps)
         main_data_dict["speed_kph"].extend(speed_mps * 3.6)
         main_data_dict["type"].extend([agent_type_to_str(agent_type)] * H)
-        main_data_dict["length"].extend(agent_extent[:, 0])
-        main_data_dict["width"].extend(agent_extent[:, 1])
+        main_data_dict["length"].extend(lengths)
+        main_data_dict["width"].extend(widths)
         main_data_dict["pred_agent"].extend([False] * H)
         main_data_dict["color"].extend([get_agent_type_color(agent_type)] * H)
 
@@ -117,16 +192,31 @@ def extract_full_agent_data_df(batch: AgentBatch, batch_idx: int) -> ColumnDataS
 
     speed_mps = np.linalg.norm(agent_fut_np.velocity, axis=1)
 
+    xs = agent_fut_np.get_attr("x")
+    ys = agent_fut_np.get_attr("y")
+    hs = agent_fut_np.get_attr("h")
+
+    lengths = agent_extent[:, 0]
+    widths = agent_extent[:, 1]
+
+    agent_rect_coords, dir_patch_coords = compute_agent_rect_coords(
+        agent_type, hs, lengths, widths
+    )
+
     main_data_dict["id"].extend([0] * T)
     main_data_dict["t"].extend(range(1, T + 1))
-    main_data_dict["x"].extend(agent_fut_np.get_attr("x"))
-    main_data_dict["y"].extend(agent_fut_np.get_attr("y"))
-    main_data_dict["h"].extend(agent_fut_np.get_attr("h"))
+    main_data_dict["x"].extend(xs)
+    main_data_dict["y"].extend(ys)
+    main_data_dict["h"].extend(hs)
+    main_data_dict["rect_xs"].extend(agent_rect_coords[..., 0] + xs[:, None])
+    main_data_dict["rect_ys"].extend(agent_rect_coords[..., 1] + ys[:, None])
+    main_data_dict["dir_patch_xs"].extend(dir_patch_coords[..., 0] + xs[:, None])
+    main_data_dict["dir_patch_ys"].extend(dir_patch_coords[..., 1] + ys[:, None])
     main_data_dict["speed_mps"].extend(speed_mps)
     main_data_dict["speed_kph"].extend(speed_mps * 3.6)
     main_data_dict["type"].extend([agent_type_to_str(agent_type)] * T)
-    main_data_dict["length"].extend(agent_extent[:, 0])
-    main_data_dict["width"].extend(agent_extent[:, 1])
+    main_data_dict["length"].extend(lengths)
+    main_data_dict["width"].extend(widths)
     main_data_dict["pred_agent"].extend([True] * T)
     main_data_dict["color"].extend([get_agent_type_color(agent_type)] * T)
 
@@ -143,33 +233,91 @@ def extract_full_agent_data_df(batch: AgentBatch, batch_idx: int) -> ColumnDataS
 
         speed_mps = np.linalg.norm(agent_fut_np.velocity, axis=1)
 
+        xs = agent_fut_np.get_attr("x")
+        ys = agent_fut_np.get_attr("y")
+        hs = agent_fut_np.get_attr("h")
+
+        lengths = agent_extent[:, 0]
+        widths = agent_extent[:, 1]
+
+        agent_rect_coords, dir_patch_coords = compute_agent_rect_coords(
+            agent_type, hs, lengths, widths
+        )
+
         main_data_dict["id"].extend([n_neigh + 1] * T)
         main_data_dict["t"].extend(range(1, T + 1))
-        main_data_dict["x"].extend(agent_fut_np.get_attr("x"))
-        main_data_dict["y"].extend(agent_fut_np.get_attr("y"))
-        main_data_dict["h"].extend(agent_fut_np.get_attr("h"))
+        main_data_dict["x"].extend(xs)
+        main_data_dict["y"].extend(ys)
+        main_data_dict["h"].extend(hs)
+        main_data_dict["rect_xs"].extend(agent_rect_coords[..., 0] + xs[:, None])
+        main_data_dict["rect_ys"].extend(agent_rect_coords[..., 1] + ys[:, None])
+        main_data_dict["dir_patch_xs"].extend(dir_patch_coords[..., 0] + xs[:, None])
+        main_data_dict["dir_patch_ys"].extend(dir_patch_coords[..., 1] + ys[:, None])
         main_data_dict["speed_mps"].extend(speed_mps)
         main_data_dict["speed_kph"].extend(speed_mps * 3.6)
         main_data_dict["type"].extend([agent_type_to_str(agent_type)] * T)
-        main_data_dict["length"].extend(agent_extent[:, 0])
-        main_data_dict["width"].extend(agent_extent[:, 1])
+        main_data_dict["length"].extend(lengths)
+        main_data_dict["width"].extend(widths)
         main_data_dict["pred_agent"].extend([False] * T)
         main_data_dict["color"].extend([get_agent_type_color(agent_type)] * T)
 
     return pd.DataFrame(main_data_dict)
 
 
+def get_map_cds(
+    center_pt: StateTensor, vec_map: VectorMap, radius: float = 50.0, **kwargs
+) -> ColumnDataSource:
+    center_pt_np: StateArray = center_pt.cpu().numpy()
+
+    lines_data = {
+        "xs": [],
+        "ys": [],
+        "line_dash": [],
+        "line_color": [],
+        "line_alpha": [],
+    }
+
+    lanes = vec_map.get_lanes_within(center_pt_np.position3d, radius)
+    lane: RoadLane
+    for lane in lanes:
+        if lane.left_edge is not None:
+            lane_edge_pts: np.ndarray = transform_coords_2d_np(
+                lane.left_edge.xy - center_pt_np.position,
+                angle=-center_pt_np.heading,
+            )
+
+            lines_data["xs"].append(lane_edge_pts[:, 0])
+            lines_data["ys"].append(lane_edge_pts[:, 1])
+            lines_data["line_dash"].append("solid")
+            lines_data["line_color"].append("red")
+            lines_data["line_alpha"].append(0.7)
+
+        if lane.right_edge is not None:
+            lane_edge_pts: np.ndarray = transform_coords_2d_np(
+                lane.right_edge.xy - center_pt_np.position,
+                angle=-center_pt_np.heading,
+            )
+            lines_data["xs"].append(lane_edge_pts[:, 0])
+            lines_data["ys"].append(lane_edge_pts[:, 1])
+            lines_data["line_dash"].append("solid")
+            lines_data["line_color"].append("red")
+            lines_data["line_alpha"].append(0.7)
+
+        lane_center_pts: np.ndarray = transform_coords_2d_np(
+            lane.center.xy - center_pt_np.position, angle=-center_pt_np.heading
+        )
+        lines_data["xs"].append(lane_center_pts[:, 0])
+        lines_data["ys"].append(lane_center_pts[:, 1])
+        lines_data["line_dash"].append("solid")
+        lines_data["line_color"].append("gray")
+        lines_data["line_alpha"].append(0.5)
+
+    return ColumnDataSource(data=lines_data)
+
+
 def plot_full_agent_batch_interactive(
-    doc: Document, batch: AgentBatch, batch_idx: int
+    doc: Document, batch: AgentBatch, batch_idx: int, cache_path: Path
 ) -> None:
-    fig = figure(
-        match_aspect=True,
-    )
-    fig.grid.visible = False
-
-    # Setting the match_aspect property of bokeh's default BoxZoomTool
-    fig.tools[2].match_aspect = True
-
     agent_data_df = extract_full_agent_data_df(batch, batch_idx)
     agent_cds = ColumnDataSource(agent_data_df)
     curr_time_view = CDSView(
@@ -179,10 +327,14 @@ def plot_full_agent_batch_interactive(
     full_H = batch.agent_hist[batch_idx].shape[0]
     full_T = batch.agent_fut[batch_idx].shape[0]
 
-    def create_multi_line_data_df(agents_df: pd.DataFrame) -> pd.DataFrame:
+    def create_multi_line_data_df(agents_df: pd.DataFrame) -> Dict[str, Any]:
         lines_data = defaultdict(list)
         for agent_id, agent_df in agents_df.groupby(by="id"):
-            xs, ys, color = agent_df.x, agent_df.y, agent_df.color.iat[0]
+            xs, ys, color = (
+                agent_df.x.to_numpy(),
+                agent_df.y.to_numpy(),
+                agent_df.color.iat[0],
+            )
             if agent_id > 0:
                 pad_before = (
                     full_H - batch.neigh_hist_len[batch_idx, agent_id - 1].item()
@@ -195,33 +347,99 @@ def plot_full_agent_batch_interactive(
             lines_data["ys"].append(ys)
             lines_data["color"].append(color)
 
-        return pd.DataFrame(lines_data)
+        return lines_data
 
     def get_sliced_multi_line_data_df(
-        multi_line_df: pd.DataFrame, slice_obj
-    ) -> pd.DataFrame:
+        multi_line_df: Dict[str, Any], slice_obj, check_idx: int
+    ) -> Dict[str, Any]:
         lines_data = defaultdict(list)
-        for row in multi_line_df.itertuples(index=False):
-            lines_data["xs"].append(row.xs[slice_obj])
-            lines_data["ys"].append(row.ys[slice_obj])
-            lines_data["color"].append(row.color)
+        for i in range(len(multi_line_df["xs"])):
+            sliced_xs = multi_line_df["xs"][i][slice_obj]
+            sliced_ys = multi_line_df["ys"][i][slice_obj]
+            if (
+                sliced_xs.shape[0] > 0
+                and sliced_ys.shape[0] > 0
+                and np.isfinite(sliced_xs[check_idx])
+                and np.isfinite(sliced_ys[check_idx])
+            ):
+                lines_data["xs"].append(sliced_xs)
+                lines_data["ys"].append(sliced_ys)
+                lines_data["color"].append(multi_line_df["color"][i])
 
-        return pd.DataFrame(lines_data)
+        return lines_data
 
     history_line_data_df = create_multi_line_data_df(agent_data_df)
     history_lines_cds = ColumnDataSource(
-        get_sliced_multi_line_data_df(history_line_data_df, slice(None, full_H))
+        get_sliced_multi_line_data_df(
+            history_line_data_df, slice(None, full_H), check_idx=-1
+        )
     )
     future_line_data_df = history_line_data_df.copy()
     future_lines_cds = ColumnDataSource(
-        get_sliced_multi_line_data_df(future_line_data_df, slice(full_H, None))
+        get_sliced_multi_line_data_df(
+            future_line_data_df, slice(full_H, None), check_idx=0
+        )
     )
 
     dt: float = batch.dt[batch_idx].item()
     scene_ts: int = batch.scene_ts[batch_idx].item()
 
-    fig = figure()
-    s = fig.scatter(x="x", y="y", color="color", source=agent_cds, view=curr_time_view)
+    # Figure creation and a few initial settings.
+    x_min = agent_data_df["x"].min()
+    x_max = agent_data_df["x"].max()
+    x_range = x_max - x_min
+
+    y_min = agent_data_df["y"].min()
+    y_max = agent_data_df["y"].max()
+    y_range = y_max - y_min
+
+    buffer = 10
+    if x_range > y_range:
+        half_range_diff = (x_range - y_range) / 2
+        kwargs = {
+            "x_range": (x_min - buffer, x_max + buffer),
+            "y_range": (
+                y_min - half_range_diff - buffer,
+                y_max + half_range_diff + buffer,
+            ),
+        }
+    else:
+        half_range_diff = (y_range - x_range) / 2
+        kwargs = {
+            "y_range": (y_min - buffer, y_max + buffer),
+            "x_range": (
+                x_min - half_range_diff - buffer,
+                x_max + half_range_diff + buffer,
+            ),
+        }
+
+    fig = figure(match_aspect=True, **kwargs)
+
+    # No gridlines.
+    fig.grid.visible = False
+
+    # Set autohide to true to only show the toolbar when mouse is over plot.
+    fig.toolbar.autohide = True
+
+    # Setting the match_aspect property of bokeh's default BoxZoomTool.
+    fig.tools[2].match_aspect = True
+
+    if batch.map_names is not None:
+        mapAPI = MapAPI(cache_path)
+
+        map_cds = get_map_cds(
+            batch.curr_agent_state[batch_idx],
+            mapAPI.get_map(batch.map_names[batch_idx]),
+            alpha=1.0,
+        )
+
+        fig.multi_line(
+            source=map_cds,
+            # This is to ensure that the columns given in the
+            # ColumnDataSource are respected (e.g., "line_color").
+            **{x: x for x in map_cds.column_names},
+        )
+
     fig.multi_line(
         xs="xs",
         ys="ys",
@@ -229,8 +447,29 @@ def plot_full_agent_batch_interactive(
         line_dash="dashed",
         source=history_lines_cds,
     )
+
     fig.multi_line(
         xs="xs", ys="ys", line_color="color", line_dash="solid", source=future_lines_cds
+    )
+
+    agent_rects = fig.patches(
+        xs="rect_xs",
+        ys="rect_ys",
+        fill_color="color",
+        line_color="black",
+        fill_alpha=0.7,
+        source=agent_cds,
+        view=curr_time_view,
+    )
+
+    fig.patches(
+        xs="dir_patch_xs",
+        ys="dir_patch_ys",
+        fill_color="color",
+        line_color="black",
+        fill_alpha=0.7,
+        source=agent_cds,
+        view=curr_time_view,
     )
 
     time_slider = Slider(
@@ -244,10 +483,10 @@ def plot_full_agent_batch_interactive(
     def time_callback(attr, old, new) -> None:
         curr_time_view.filters = [BooleanFilter(agent_cds.data["t"] == new)]
         history_lines_cds.data = get_sliced_multi_line_data_df(
-            history_line_data_df, slice(None, new + full_H)
+            history_line_data_df, slice(None, new + full_H), check_idx=-1
         )
         future_lines_cds.data = get_sliced_multi_line_data_df(
-            future_line_data_df, slice(new + full_H, None)
+            future_line_data_df, slice(new + full_H, None), check_idx=0
         )
 
         if new == 0:
@@ -262,10 +501,10 @@ def plot_full_agent_batch_interactive(
         HoverTool(
             tooltips=[
                 ("Class", "@type"),
-                ("Position", "($x, $y) m"),
+                ("Position", "(@x, @y) m"),
                 ("Speed", "@speed_mps m/s (@speed_kph km/h)"),
             ],
-            renderers=[s],
+            renderers=[agent_rects],
         )
     )
 
