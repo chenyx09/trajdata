@@ -1,0 +1,418 @@
+from collections import defaultdict
+from typing import List, Tuple
+
+import geopandas as gpd
+import numpy as np
+import pandas as pd
+import seaborn as sns
+from bokeh.models import ColumnDataSource, GlyphRenderer
+from bokeh.plotting import Figure
+from shapely.geometry import LineString, Polygon
+
+from trajdata.data_structures.agent import AgentType
+from trajdata.data_structures.batch import AgentBatch
+from trajdata.data_structures.state import StateArray, StateTensor
+from trajdata.maps.vec_map import VectorMap
+from trajdata.maps.vec_map_elements import (
+    MapElementType,
+    PedCrosswalk,
+    PedWalkway,
+    RoadArea,
+    RoadLane,
+)
+from trajdata.utils.arr_utils import transform_coords_2d_np
+
+
+def agent_type_to_str(agent_type: AgentType) -> str:
+    return str(AgentType(agent_type))[len("AgentType.") :]
+
+
+def get_agent_type_color(agent_type: AgentType) -> str:
+    palette = sns.color_palette("husl", 4).as_hex()
+    if agent_type == AgentType.VEHICLE:
+        return palette[0]
+    elif agent_type == AgentType.PEDESTRIAN:
+        return palette[1]
+    elif agent_type == AgentType.BICYCLE:
+        return palette[2]
+    elif agent_type == AgentType.MOTORCYCLE:
+        return palette[3]
+    else:
+        return "#A9A9A9"
+
+
+def get_map_patch_color(map_elem_type: MapElementType) -> str:
+    if map_elem_type == MapElementType.ROAD_AREA:
+        return "lightgray"
+    elif map_elem_type == MapElementType.ROAD_LANE:
+        return "red"
+    elif map_elem_type == MapElementType.PED_CROSSWALK:
+        return "blue"
+    elif map_elem_type == MapElementType.PED_WALKWAY:
+        return "green"
+    else:
+        raise ValueError()
+
+
+def compute_agent_rect_coords(
+    agent_type: int, hs: np.ndarray, lengths: np.ndarray, widths: np.ndarray
+) -> Tuple[np.ndarray, np.ndarray]:
+    raw_rect_coords = np.stack(
+        (
+            np.stack((-lengths / 2, -widths / 2), axis=-1),
+            np.stack((-lengths / 2, widths / 2), axis=-1),
+            np.stack((lengths / 2, widths / 2), axis=-1),
+            np.stack((lengths / 2, -widths / 2), axis=-1),
+        ),
+        axis=-2,
+    )
+
+    agent_rect_coords = transform_coords_2d_np(
+        raw_rect_coords,
+        angle=hs[:, None].repeat(raw_rect_coords.shape[-2], axis=-1),
+    )
+
+    size = 1.0
+    if agent_type == AgentType.PEDESTRIAN or agent_type == AgentType.BICYCLE:
+        size = 0.25
+
+    raw_tri_coords = size * np.array(
+        [
+            [
+                [0, np.sqrt(3) / 3],
+                [-1 / 2, -np.sqrt(3) / 6],
+                [1 / 2, -np.sqrt(3) / 6],
+            ]
+        ]
+    ).repeat(hs.shape[0], axis=0)
+
+    dir_patch_coords = transform_coords_2d_np(
+        raw_tri_coords,
+        angle=hs[:, None].repeat(raw_tri_coords.shape[-2], axis=-1) - np.pi / 2,
+    )
+
+    return agent_rect_coords, dir_patch_coords
+
+
+def extract_full_agent_data_df(batch: AgentBatch, batch_idx: int) -> pd.DataFrame:
+    main_data_dict = defaultdict(list)
+
+    # Historical information
+    ## Agent
+    H = batch.agent_hist_len[batch_idx].item()
+    agent_type = batch.agent_type[batch_idx].item()
+    agent_extent: np.ndarray = batch.agent_hist_extent[batch_idx, -H:].cpu().numpy()
+    agent_hist_np: StateArray = batch.agent_hist[batch_idx, -H:].cpu().numpy()
+
+    speed_mps = np.linalg.norm(agent_hist_np.velocity, axis=1)
+
+    xs = agent_hist_np.get_attr("x")
+    ys = agent_hist_np.get_attr("y")
+    hs = agent_hist_np.get_attr("h")
+
+    lengths = agent_extent[:, 0]
+    widths = agent_extent[:, 1]
+
+    agent_rect_coords, dir_patch_coords = compute_agent_rect_coords(
+        agent_type, hs, lengths, widths
+    )
+
+    main_data_dict["id"].extend([0] * H)
+    main_data_dict["t"].extend(range(-H + 1, 1))
+    main_data_dict["x"].extend(xs)
+    main_data_dict["y"].extend(ys)
+    main_data_dict["h"].extend(hs)
+    main_data_dict["rect_xs"].extend(agent_rect_coords[..., 0] + xs[:, None])
+    main_data_dict["rect_ys"].extend(agent_rect_coords[..., 1] + ys[:, None])
+    main_data_dict["dir_patch_xs"].extend(dir_patch_coords[..., 0] + xs[:, None])
+    main_data_dict["dir_patch_ys"].extend(dir_patch_coords[..., 1] + ys[:, None])
+    main_data_dict["speed_mps"].extend(speed_mps)
+    main_data_dict["speed_kph"].extend(speed_mps * 3.6)
+    main_data_dict["type"].extend([agent_type_to_str(agent_type)] * H)
+    main_data_dict["length"].extend(lengths)
+    main_data_dict["width"].extend(widths)
+    main_data_dict["pred_agent"].extend([True] * H)
+    main_data_dict["color"].extend([get_agent_type_color(agent_type)] * H)
+
+    ## Neighbors
+    num_neighbors: int = batch.num_neigh[batch_idx].item()
+
+    for n_neigh in range(num_neighbors):
+        H = batch.neigh_hist_len[batch_idx, n_neigh].item()
+        agent_type = batch.neigh_types[batch_idx, n_neigh].item()
+        agent_extent: np.ndarray = (
+            batch.neigh_hist_extents[batch_idx, n_neigh, -H:].cpu().numpy()
+        )
+        agent_hist_np: StateArray = (
+            batch.neigh_hist[batch_idx, n_neigh, -H:].cpu().numpy()
+        )
+
+        speed_mps = np.linalg.norm(agent_hist_np.velocity, axis=1)
+
+        xs = agent_hist_np.get_attr("x")
+        ys = agent_hist_np.get_attr("y")
+        hs = agent_hist_np.get_attr("h")
+
+        lengths = agent_extent[:, 0]
+        widths = agent_extent[:, 1]
+
+        agent_rect_coords, dir_patch_coords = compute_agent_rect_coords(
+            agent_type, hs, lengths, widths
+        )
+
+        main_data_dict["id"].extend([n_neigh + 1] * H)
+        main_data_dict["t"].extend(range(-H + 1, 1))
+        main_data_dict["x"].extend(xs)
+        main_data_dict["y"].extend(ys)
+        main_data_dict["h"].extend(hs)
+        main_data_dict["rect_xs"].extend(agent_rect_coords[..., 0] + xs[:, None])
+        main_data_dict["rect_ys"].extend(agent_rect_coords[..., 1] + ys[:, None])
+        main_data_dict["dir_patch_xs"].extend(dir_patch_coords[..., 0] + xs[:, None])
+        main_data_dict["dir_patch_ys"].extend(dir_patch_coords[..., 1] + ys[:, None])
+        main_data_dict["speed_mps"].extend(speed_mps)
+        main_data_dict["speed_kph"].extend(speed_mps * 3.6)
+        main_data_dict["type"].extend([agent_type_to_str(agent_type)] * H)
+        main_data_dict["length"].extend(lengths)
+        main_data_dict["width"].extend(widths)
+        main_data_dict["pred_agent"].extend([False] * H)
+        main_data_dict["color"].extend([get_agent_type_color(agent_type)] * H)
+
+    # Future information
+    ## Agent
+    T = batch.agent_fut_len[batch_idx].item()
+    agent_type = batch.agent_type[batch_idx].item()
+    agent_extent: np.ndarray = batch.agent_fut_extent[batch_idx, :T].cpu().numpy()
+    agent_fut_np: StateArray = batch.agent_fut[batch_idx, :T].cpu().numpy()
+
+    speed_mps = np.linalg.norm(agent_fut_np.velocity, axis=1)
+
+    xs = agent_fut_np.get_attr("x")
+    ys = agent_fut_np.get_attr("y")
+    hs = agent_fut_np.get_attr("h")
+
+    lengths = agent_extent[:, 0]
+    widths = agent_extent[:, 1]
+
+    agent_rect_coords, dir_patch_coords = compute_agent_rect_coords(
+        agent_type, hs, lengths, widths
+    )
+
+    main_data_dict["id"].extend([0] * T)
+    main_data_dict["t"].extend(range(1, T + 1))
+    main_data_dict["x"].extend(xs)
+    main_data_dict["y"].extend(ys)
+    main_data_dict["h"].extend(hs)
+    main_data_dict["rect_xs"].extend(agent_rect_coords[..., 0] + xs[:, None])
+    main_data_dict["rect_ys"].extend(agent_rect_coords[..., 1] + ys[:, None])
+    main_data_dict["dir_patch_xs"].extend(dir_patch_coords[..., 0] + xs[:, None])
+    main_data_dict["dir_patch_ys"].extend(dir_patch_coords[..., 1] + ys[:, None])
+    main_data_dict["speed_mps"].extend(speed_mps)
+    main_data_dict["speed_kph"].extend(speed_mps * 3.6)
+    main_data_dict["type"].extend([agent_type_to_str(agent_type)] * T)
+    main_data_dict["length"].extend(lengths)
+    main_data_dict["width"].extend(widths)
+    main_data_dict["pred_agent"].extend([True] * T)
+    main_data_dict["color"].extend([get_agent_type_color(agent_type)] * T)
+
+    ## Neighbors
+    num_neighbors: int = batch.num_neigh[batch_idx].item()
+
+    for n_neigh in range(num_neighbors):
+        T = batch.neigh_fut_len[batch_idx, n_neigh].item()
+        agent_type = batch.neigh_types[batch_idx, n_neigh].item()
+        agent_extent: np.ndarray = (
+            batch.neigh_fut_extents[batch_idx, n_neigh, :T].cpu().numpy()
+        )
+        agent_fut_np: StateArray = batch.neigh_fut[batch_idx, n_neigh, :T].cpu().numpy()
+
+        speed_mps = np.linalg.norm(agent_fut_np.velocity, axis=1)
+
+        xs = agent_fut_np.get_attr("x")
+        ys = agent_fut_np.get_attr("y")
+        hs = agent_fut_np.get_attr("h")
+
+        lengths = agent_extent[:, 0]
+        widths = agent_extent[:, 1]
+
+        agent_rect_coords, dir_patch_coords = compute_agent_rect_coords(
+            agent_type, hs, lengths, widths
+        )
+
+        main_data_dict["id"].extend([n_neigh + 1] * T)
+        main_data_dict["t"].extend(range(1, T + 1))
+        main_data_dict["x"].extend(xs)
+        main_data_dict["y"].extend(ys)
+        main_data_dict["h"].extend(hs)
+        main_data_dict["rect_xs"].extend(agent_rect_coords[..., 0] + xs[:, None])
+        main_data_dict["rect_ys"].extend(agent_rect_coords[..., 1] + ys[:, None])
+        main_data_dict["dir_patch_xs"].extend(dir_patch_coords[..., 0] + xs[:, None])
+        main_data_dict["dir_patch_ys"].extend(dir_patch_coords[..., 1] + ys[:, None])
+        main_data_dict["speed_mps"].extend(speed_mps)
+        main_data_dict["speed_kph"].extend(speed_mps * 3.6)
+        main_data_dict["type"].extend([agent_type_to_str(agent_type)] * T)
+        main_data_dict["length"].extend(lengths)
+        main_data_dict["width"].extend(widths)
+        main_data_dict["pred_agent"].extend([False] * T)
+        main_data_dict["color"].extend([get_agent_type_color(agent_type)] * T)
+
+    return pd.DataFrame(main_data_dict)
+
+
+def convert_to_gpd(vec_map: VectorMap) -> gpd.GeoDataFrame:
+    geo_data = defaultdict(list)
+    for elem in vec_map.iter_elems():
+        geo_data["id"].append(elem.id)
+        geo_data["type"].append(elem.elem_type)
+        if isinstance(elem, RoadLane):
+            geo_data["geometry"].append(LineString(elem.center.xyz))
+        elif isinstance(elem, PedCrosswalk) or isinstance(elem, PedWalkway):
+            geo_data["geometry"].append(Polygon(shell=elem.polygon.xyz))
+        elif isinstance(elem, RoadArea):
+            geo_data["geometry"].append(
+                Polygon(
+                    shell=elem.exterior_polygon.xyz,
+                    holes=[hole.xyz for hole in elem.interior_holes],
+                )
+            )
+
+    return gpd.GeoDataFrame(geo_data)
+
+
+def get_map_cds(
+    center_pt: StateTensor, vec_map: VectorMap, radius: float
+) -> Tuple[
+    ColumnDataSource,
+    ColumnDataSource,
+    ColumnDataSource,
+    ColumnDataSource,
+    ColumnDataSource,
+]:
+    center_pt_np: StateArray = center_pt.cpu().numpy()
+    x, y = center_pt_np.position
+
+    road_lane_data = defaultdict(list)
+    lane_center_data = defaultdict(list)
+    ped_crosswalk_data = defaultdict(list)
+    ped_walkway_data = defaultdict(list)
+    road_area_data = defaultdict(list)
+
+    map_gpd = convert_to_gpd(vec_map)
+    elems_gdf: gpd.GeoDataFrame = map_gpd.cx[
+        x - radius : x + radius, y - radius : y + radius
+    ]
+
+    for row_idx, row in elems_gdf.iterrows():
+        if row["type"] == MapElementType.PED_CROSSWALK:
+            xy = np.stack(row["geometry"].exterior.xy, axis=1)
+            transformed_xy: np.ndarray = transform_coords_2d_np(
+                xy - center_pt_np.position,
+                angle=-center_pt_np.heading,
+            )
+            ped_crosswalk_data["xs"].append(transformed_xy[..., 0])
+            ped_crosswalk_data["ys"].append(transformed_xy[..., 1])
+        if row["type"] == MapElementType.PED_WALKWAY:
+            xy = np.stack(row["geometry"].exterior.xy, axis=1)
+            transformed_xy: np.ndarray = transform_coords_2d_np(
+                xy - center_pt_np.position,
+                angle=-center_pt_np.heading,
+            )
+            ped_walkway_data["xs"].append(transformed_xy[..., 0])
+            ped_walkway_data["ys"].append(transformed_xy[..., 1])
+        elif row["type"] == MapElementType.ROAD_LANE:
+            xy = np.stack(row["geometry"].xy, axis=1)
+            transformed_xy: np.ndarray = transform_coords_2d_np(
+                xy - center_pt_np.position,
+                angle=-center_pt_np.heading,
+            )
+
+            lane_center_data["xs"].append(transformed_xy[..., 0])
+            lane_center_data["ys"].append(transformed_xy[..., 1])
+            lane_obj: RoadLane = vec_map.elements[MapElementType.ROAD_LANE][row["id"]]
+            if lane_obj.left_edge is not None and lane_obj.right_edge is not None:
+                left_xy = lane_obj.left_edge.xy
+                right_xy = lane_obj.right_edge.xy[::-1]
+                patch_xy = np.concatenate((left_xy, right_xy), axis=0)
+
+                transformed_xy: np.ndarray = transform_coords_2d_np(
+                    patch_xy - center_pt_np.position,
+                    angle=-center_pt_np.heading,
+                )
+
+                road_lane_data["xs"].append(transformed_xy[..., 0])
+                road_lane_data["ys"].append(transformed_xy[..., 1])
+        elif row["type"] == MapElementType.ROAD_AREA:
+            xy = np.stack(row["geometry"].exterior.xy, axis=1)
+            transformed_xy: np.ndarray = transform_coords_2d_np(
+                xy - center_pt_np.position,
+                angle=-center_pt_np.heading,
+            )
+
+            holes_xy: List[np.ndarray] = [
+                transform_coords_2d_np(
+                    np.stack(interior.xy, axis=1) - center_pt_np.position,
+                    angle=-center_pt_np.heading,
+                )
+                for interior in row["geometry"].interiors
+            ]
+
+            road_area_data["xs"].append(
+                [[transformed_xy[..., 0]] + [hole[..., 0] for hole in holes_xy]]
+            )
+            road_area_data["ys"].append(
+                [[transformed_xy[..., 1]] + [hole[..., 1] for hole in holes_xy]]
+            )
+    return (
+        ColumnDataSource(data=lane_center_data),
+        ColumnDataSource(data=road_lane_data),
+        ColumnDataSource(data=ped_crosswalk_data),
+        ColumnDataSource(data=ped_walkway_data),
+        ColumnDataSource(data=road_area_data),
+    )
+
+
+def draw_map_elems(
+    fig: Figure, vec_map: VectorMap, center_pt: StateTensor, radius: float = 50.0
+) -> Tuple[GlyphRenderer, GlyphRenderer, GlyphRenderer, GlyphRenderer, GlyphRenderer]:
+    (
+        lane_center_cds,
+        road_lane_cds,
+        ped_crosswalk_cds,
+        ped_walkway_cds,
+        road_area_cds,
+    ) = get_map_cds(center_pt=center_pt, vec_map=vec_map, radius=radius)
+
+    road_areas = fig.multi_polygons(
+        source=road_area_cds,
+        line_color="black",
+        fill_alpha=0.1,
+        fill_color=get_map_patch_color(MapElementType.ROAD_AREA),
+    )
+
+    road_lanes = fig.patches(
+        source=road_lane_cds,
+        line_color="black",
+        fill_alpha=0.1,
+        fill_color=get_map_patch_color(MapElementType.ROAD_LANE),
+    )
+
+    ped_crosswalks = fig.patches(
+        source=ped_crosswalk_cds,
+        line_color="black",
+        fill_alpha=0.1,
+        fill_color=get_map_patch_color(MapElementType.PED_CROSSWALK),
+    )
+
+    ped_walkways = fig.patches(
+        source=ped_walkway_cds,
+        line_color="black",
+        fill_alpha=0.1,
+        fill_color=get_map_patch_color(MapElementType.PED_WALKWAY),
+    )
+
+    lane_centers = fig.multi_line(
+        source=lane_center_cds,
+        line_color="gray",
+        line_alpha=0.5,
+    )
+
+    return road_areas, road_lanes, ped_crosswalks, ped_walkways, lane_centers
