@@ -28,8 +28,8 @@ from tornado.ioloop import IOLoop
 
 from trajdata.data_structures.agent import AgentType
 from trajdata.data_structures.batch import AgentBatch
+from trajdata.data_structures.state import StateArray
 from trajdata.maps.map_api import MapAPI
-from trajdata.maps.vec_map_elements import MapElementType
 from trajdata.utils import vis_utils
 
 
@@ -82,7 +82,7 @@ class InteractiveAnimation:
             server.io_loop.close()
 
 
-def plot_full_agent_batch_interactive(
+def animate_agent_batch_interactive(
     doc: Document, io_loop: IOLoop, batch: AgentBatch, batch_idx: int, cache_path: Path
 ) -> None:
     agent_data_df = vis_utils.extract_full_agent_data_df(batch, batch_idx)
@@ -120,8 +120,15 @@ def plot_full_agent_batch_interactive(
 
     agent_name: str = batch.agent_name[batch_idx]
     agent_type: AgentType = AgentType(batch.agent_type[batch_idx].item())
-    current_state = batch.curr_agent_state[batch_idx].numpy()
-    fig.title = f"{str(agent_type)}/{agent_name} at x={current_state[0]:.2f}, y={current_state[1]:.2f}, h={current_state[-1]:.2f}"
+    current_state: StateArray = batch.curr_agent_state[batch_idx].cpu().numpy()
+    map_id: str = batch.map_names[batch_idx]
+    env_name, map_name = map_id.split(":")
+    scene_id: str = batch.scene_ids[batch_idx]
+    fig.title = (
+        f"Dataset: {env_name}, Location: {map_name}, Scene: {scene_id}"
+        + "\n"
+        + f"Agent ID: {agent_name} ({vis_utils.pretty_print_agent_type(agent_type)}) at x = {current_state[0]:.2f} m, y = {current_state[1]:.2f} m, heading = {current_state[-1]:.2f} rad ({np.rad2deg(current_state[-1]):.2f} deg)"
+    )
 
     # No gridlines.
     fig.grid.visible = False
@@ -150,7 +157,12 @@ def plot_full_agent_batch_interactive(
             ped_crosswalks,
             ped_walkways,
             lane_centers,
-        ) = vis_utils.draw_map_elems(fig, vec_map, batch.curr_agent_state[batch_idx])
+        ) = vis_utils.draw_map_elems(
+            fig,
+            vec_map,
+            batch.agents_from_world_tf[batch_idx].cpu().numpy(),
+            bbox=(x_min - buffer, x_max + buffer, y_min - buffer, y_max + buffer),
+        )
 
     # Preparing agent information for fast slicing with the time_slider.
     agent_cds = ColumnDataSource(agent_data_df)
@@ -332,7 +344,7 @@ def plot_full_agent_batch_interactive(
         fig.rect(
             fill_color=vis_utils.get_agent_type_color(x),
             line_color="black",
-            name=str(x)[len("AgentType.") :],
+            name=vis_utils.agent_type_to_str(x),
         )
         for x in AgentType
     ]
@@ -342,23 +354,23 @@ def plot_full_agent_batch_interactive(
     map_area_legend_elems = [
         LegendItem(label="Road Area", renderers=[road_areas]),
         LegendItem(label="Road Lanes", renderers=[road_lanes]),
-        LegendItem(label="Pedestrian Crosswalks", renderers=[ped_crosswalks]),
-        LegendItem(label="Pedestrian Walkways", renderers=[ped_walkways]),
+        LegendItem(label="Crosswalks", renderers=[ped_crosswalks]),
+        LegendItem(label="Sidewalks", renderers=[ped_walkways]),
     ]
 
     hist_future_legend_elems = [
         LegendItem(
             label="Past Motion",
             renderers=[
-                fig.multi_line(line_color="black", line_dash="dashed"),
                 history_lines,
+                fig.multi_line(line_color="black", line_dash="dashed", line_alpha=1.0),
             ],
         ),
         LegendItem(
             label="Future Motion",
             renderers=[
-                fig.multi_line(line_color="black", line_dash="solid"),
                 future_lines,
+                fig.multi_line(line_color="black", line_dash="solid", line_alpha=1.0),
             ],
         ),
     ]

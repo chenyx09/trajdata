@@ -8,8 +8,8 @@ from trajdata.data_structures.agent import AgentType
 from trajdata.data_structures.batch import AgentBatch, SceneBatch
 from trajdata.data_structures.state import StateArray, StateTensor
 from trajdata.maps.map_api import MapAPI
-from trajdata.utils.arr_utils import transform_coords_2d_np
 from trajdata.utils import vis_utils
+from trajdata.utils.arr_utils import transform_coords_2d_np
 from trajdata.visualization.interactive_figure import InteractiveFigure
 
 
@@ -26,6 +26,7 @@ def plot_agent_batch_interactive(batch: AgentBatch, batch_idx: int, cache_path: 
     num_neighbors: int = batch.num_neigh[batch_idx].item()
     agent_hist_np: StateArray = batch.agent_hist[batch_idx].cpu().numpy()
     neigh_hist_np: StateArray = batch.neigh_hist[batch_idx].cpu().numpy()
+    neigh_types = batch.neigh_types[batch_idx].cpu().numpy()
     agent_histories = ColumnDataSource(
         data={
             "xs": [agent_hist_np.get_attr("x")]
@@ -37,7 +38,11 @@ def plot_agent_batch_interactive(batch: AgentBatch, batch_idx: int, cache_path: 
                 neigh_hist_np[n_neigh].get_attr("y") for n_neigh in range(num_neighbors)
             ],
             "line_dash": ["dashed"] * (num_neighbors + 1),
-            "line_color": [vis_utils.get_agent_type_color(agent_type)] + ["olive"] * num_neighbors,
+            "line_color": [vis_utils.get_agent_type_color(agent_type)]
+            + [
+                vis_utils.get_agent_type_color(neigh_types[n_neigh])
+                for n_neigh in range(num_neighbors)
+            ],
         }
     )
 
@@ -50,22 +55,35 @@ def plot_agent_batch_interactive(batch: AgentBatch, batch_idx: int, cache_path: 
             "ys": [agent_fut_np.get_attr("y")]
             + [neigh_fut_np[n_neigh].get_attr("y") for n_neigh in range(num_neighbors)],
             "line_dash": ["solid"] * (num_neighbors + 1),
-            "line_color": [vis_utils.get_agent_type_color(agent_type)] + ["darkgreen"] * num_neighbors,
+            "line_color": [vis_utils.get_agent_type_color(agent_type)]
+            + [
+                vis_utils.get_agent_type_color(neigh_types[n_neigh])
+                for n_neigh in range(num_neighbors)
+            ],
         }
     )
+
+    agent_state: StateArray = batch.agent_hist[batch_idx, -1].cpu().numpy()
+    x, y = agent_state.position
 
     if batch.map_names is not None:
         mapAPI = MapAPI(cache_path)
         fig.add_map_at(
-            batch.curr_agent_state[batch_idx],
-            mapAPI.get_map(batch.map_names[batch_idx]),
-            alpha=1.0,
+            batch.agents_from_world_tf[batch_idx].cpu().numpy(),
+            mapAPI.get_map(
+                batch.map_names[batch_idx],
+                incl_road_lanes=True,
+                incl_road_areas=True,
+                incl_ped_crosswalks=True,
+                incl_ped_walkways=True,
+            ),
+            # x_min, x_max, y_min, y_max
+            bbox=(x - 50, x + 50, y - 50, y + 50),
         )
 
     fig.add_lines(agent_histories)
     fig.add_lines(agent_futures)
 
-    agent_state: StateArray = batch.agent_hist[batch_idx, -1].cpu().numpy()
     agent_extent: np.ndarray = batch.agent_hist_extent[batch_idx, -1]
     if agent_extent.isnan().any():
         if agent_type == AgentType.VEHICLE:
@@ -84,7 +102,6 @@ def plot_agent_batch_interactive(batch: AgentBatch, batch_idx: int, cache_path: 
         length = agent_extent[0].item()
         width = agent_extent[1].item()
 
-    x, y = agent_state.position
     heading: float = agent_state.heading.item()
     speed_mps: float = np.linalg.norm(agent_state.velocity).item()
 
@@ -174,7 +191,9 @@ def plot_agent_batch_interactive(batch: AgentBatch, batch_idx: int, cache_path: 
 
         agent_rects_data["xs"].append(agent_rect_coords[:, 0] + x)
         agent_rects_data["ys"].append(agent_rect_coords[:, 1] + y)
-        agent_rects_data["fill_color"].append("olive")
+        agent_rects_data["fill_color"].append(
+            vis_utils.get_agent_type_color(agent_type)
+        )
         agent_rects_data["line_color"].append("black")
         agent_rects_data["fill_alpha"].append(0.7)
         agent_rects_data["type"].append(str(AgentType(agent_type))[len("AgentType.") :])
@@ -198,7 +217,9 @@ def plot_agent_batch_interactive(batch: AgentBatch, batch_idx: int, cache_path: 
         )
         dir_patches_data["xs"].append(dir_patch_coords[:, 0] + x)
         dir_patches_data["ys"].append(dir_patch_coords[:, 1] + y)
-        dir_patches_data["fill_color"].append("olive")
+        dir_patches_data["fill_color"].append(
+            vis_utils.get_agent_type_color(agent_type)
+        )
         dir_patches_data["line_color"].append("black")
         dir_patches_data["alpha"].append(0.7)
 
@@ -206,5 +227,5 @@ def plot_agent_batch_interactive(batch: AgentBatch, batch_idx: int, cache_path: 
         ColumnDataSource(data=agent_rects_data), ColumnDataSource(data=dir_patches_data)
     )
 
-    fig.fig.hover.renderers = [rects]
+    fig.raw_figure.hover.renderers = [rects]
     fig.show()

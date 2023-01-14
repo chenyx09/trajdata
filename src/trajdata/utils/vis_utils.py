@@ -11,7 +11,7 @@ from shapely.geometry import LineString, Polygon
 
 from trajdata.data_structures.agent import AgentType
 from trajdata.data_structures.batch import AgentBatch
-from trajdata.data_structures.state import StateArray, StateTensor
+from trajdata.data_structures.state import StateArray
 from trajdata.maps.vec_map import VectorMap
 from trajdata.maps.vec_map_elements import (
     MapElementType,
@@ -23,8 +23,12 @@ from trajdata.maps.vec_map_elements import (
 from trajdata.utils.arr_utils import transform_coords_2d_np
 
 
-def agent_type_to_str(agent_type: AgentType) -> str:
-    return str(AgentType(agent_type))[len("AgentType.") :]
+def pretty_print_agent_type(agent_type: AgentType):
+    return str(agent_type)[len("AgentType.") :].capitalize()
+
+
+def agent_type_to_str(agent_type_int: int) -> str:
+    return pretty_print_agent_type(AgentType(agent_type_int))
 
 
 def get_agent_type_color(agent_type: AgentType) -> str:
@@ -279,7 +283,9 @@ def convert_to_gpd(vec_map: VectorMap) -> gpd.GeoDataFrame:
 
 
 def get_map_cds(
-    center_pt: StateTensor, vec_map: VectorMap, radius: float
+    map_from_world_tf: np.ndarray,
+    vec_map: VectorMap,
+    bbox: Tuple[float, float, float, float],
 ) -> Tuple[
     ColumnDataSource,
     ColumnDataSource,
@@ -287,9 +293,6 @@ def get_map_cds(
     ColumnDataSource,
     ColumnDataSource,
 ]:
-    center_pt_np: StateArray = center_pt.cpu().numpy()
-    x, y = center_pt_np.position
-
     road_lane_data = defaultdict(list)
     lane_center_data = defaultdict(list)
     ped_crosswalk_data = defaultdict(list)
@@ -297,36 +300,26 @@ def get_map_cds(
     road_area_data = defaultdict(list)
 
     map_gpd = convert_to_gpd(vec_map)
-    elems_gdf: gpd.GeoDataFrame = map_gpd.cx[
-        x - radius : x + radius, y - radius : y + radius
-    ]
+    affine_tf_params = (
+        map_from_world_tf[:2, :2].flatten().tolist()
+        + map_from_world_tf[:2, -1].flatten().tolist()
+    )
+    map_gpd["geometry"] = map_gpd["geometry"].affine_transform(affine_tf_params)
+    elems_gdf: gpd.GeoDataFrame = map_gpd.cx[bbox[0] : bbox[1], bbox[2] : bbox[3]]
 
     for row_idx, row in elems_gdf.iterrows():
         if row["type"] == MapElementType.PED_CROSSWALK:
             xy = np.stack(row["geometry"].exterior.xy, axis=1)
-            transformed_xy: np.ndarray = transform_coords_2d_np(
-                xy - center_pt_np.position,
-                angle=-center_pt_np.heading,
-            )
-            ped_crosswalk_data["xs"].append(transformed_xy[..., 0])
-            ped_crosswalk_data["ys"].append(transformed_xy[..., 1])
+            ped_crosswalk_data["xs"].append(xy[..., 0])
+            ped_crosswalk_data["ys"].append(xy[..., 1])
         if row["type"] == MapElementType.PED_WALKWAY:
             xy = np.stack(row["geometry"].exterior.xy, axis=1)
-            transformed_xy: np.ndarray = transform_coords_2d_np(
-                xy - center_pt_np.position,
-                angle=-center_pt_np.heading,
-            )
-            ped_walkway_data["xs"].append(transformed_xy[..., 0])
-            ped_walkway_data["ys"].append(transformed_xy[..., 1])
+            ped_walkway_data["xs"].append(xy[..., 0])
+            ped_walkway_data["ys"].append(xy[..., 1])
         elif row["type"] == MapElementType.ROAD_LANE:
             xy = np.stack(row["geometry"].xy, axis=1)
-            transformed_xy: np.ndarray = transform_coords_2d_np(
-                xy - center_pt_np.position,
-                angle=-center_pt_np.heading,
-            )
-
-            lane_center_data["xs"].append(transformed_xy[..., 0])
-            lane_center_data["ys"].append(transformed_xy[..., 1])
+            lane_center_data["xs"].append(xy[..., 0])
+            lane_center_data["ys"].append(xy[..., 1])
             lane_obj: RoadLane = vec_map.elements[MapElementType.ROAD_LANE][row["id"]]
             if lane_obj.left_edge is not None and lane_obj.right_edge is not None:
                 left_xy = lane_obj.left_edge.xy
@@ -334,32 +327,24 @@ def get_map_cds(
                 patch_xy = np.concatenate((left_xy, right_xy), axis=0)
 
                 transformed_xy: np.ndarray = transform_coords_2d_np(
-                    patch_xy - center_pt_np.position,
-                    angle=-center_pt_np.heading,
+                    patch_xy,
+                    offset=map_from_world_tf[:2, -1],
+                    rot_mat=map_from_world_tf[:2, :2],
                 )
 
                 road_lane_data["xs"].append(transformed_xy[..., 0])
                 road_lane_data["ys"].append(transformed_xy[..., 1])
         elif row["type"] == MapElementType.ROAD_AREA:
             xy = np.stack(row["geometry"].exterior.xy, axis=1)
-            transformed_xy: np.ndarray = transform_coords_2d_np(
-                xy - center_pt_np.position,
-                angle=-center_pt_np.heading,
-            )
-
             holes_xy: List[np.ndarray] = [
-                transform_coords_2d_np(
-                    np.stack(interior.xy, axis=1) - center_pt_np.position,
-                    angle=-center_pt_np.heading,
-                )
-                for interior in row["geometry"].interiors
+                np.stack(interior.xy, axis=1) for interior in row["geometry"].interiors
             ]
 
             road_area_data["xs"].append(
-                [[transformed_xy[..., 0]] + [hole[..., 0] for hole in holes_xy]]
+                [[xy[..., 0]] + [hole[..., 0] for hole in holes_xy]]
             )
             road_area_data["ys"].append(
-                [[transformed_xy[..., 1]] + [hole[..., 1] for hole in holes_xy]]
+                [[xy[..., 1]] + [hole[..., 1] for hole in holes_xy]]
             )
     return (
         ColumnDataSource(data=lane_center_data),
@@ -371,15 +356,30 @@ def get_map_cds(
 
 
 def draw_map_elems(
-    fig: Figure, vec_map: VectorMap, center_pt: StateTensor, radius: float = 50.0
+    fig: Figure,
+    vec_map: VectorMap,
+    map_from_world_tf: np.ndarray,
+    bbox: Tuple[float, float, float, float],
+    **kwargs
 ) -> Tuple[GlyphRenderer, GlyphRenderer, GlyphRenderer, GlyphRenderer, GlyphRenderer]:
+    """_summary_
+
+    Args:
+        fig (Figure): _description_
+        vec_map (VectorMap): _description_
+        map_from_world_tf (np.ndarray): _description_
+        bbox (Tuple[float, float, float, float]): x_min, x_max, y_min, y_max
+
+    Returns:
+        Tuple[GlyphRenderer, GlyphRenderer, GlyphRenderer, GlyphRenderer, GlyphRenderer]: _description_
+    """
     (
         lane_center_cds,
         road_lane_cds,
         ped_crosswalk_cds,
         ped_walkway_cds,
         road_area_cds,
-    ) = get_map_cds(center_pt=center_pt, vec_map=vec_map, radius=radius)
+    ) = get_map_cds(map_from_world_tf, vec_map, bbox)
 
     road_areas = fig.multi_polygons(
         source=road_area_cds,

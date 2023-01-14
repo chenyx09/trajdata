@@ -8,29 +8,29 @@ from bokeh.models.renderers import GlyphRenderer
 from torch import Tensor
 
 from trajdata.data_structures.agent import AgentType
-from trajdata.data_structures.state import StateArray, StateTensor
+from trajdata.data_structures.state import StateTensor
 from trajdata.maps import VectorMap
-from trajdata.maps.vec_map_elements import RoadLane
+from trajdata.utils import vis_utils
 from trajdata.utils.arr_utils import transform_coords_2d_np
 
 
 class InteractiveFigure:
     def __init__(self, **kwargs) -> None:
-        self.fig = plt.figure(match_aspect=True, **kwargs)
-        self.fig.grid.visible = False
+        self.raw_figure = plt.figure(match_aspect=True, **kwargs)
+        self.raw_figure.grid.visible = False
 
         # Setting the match_aspect property of bokeh's default BoxZoomTool
-        self.fig.tools[2].match_aspect = True
+        self.raw_figure.tools[2].match_aspect = True
 
     def show(self) -> None:
-        plt.show(self.fig)
+        plt.show(self.raw_figure)
 
     def add_line(self, past_states: StateTensor, **kwargs) -> GlyphRenderer:
         xy_pos = past_states.position.cpu().numpy()
-        return self.fig.line(xy_pos[:, 0], xy_pos[:, 1], **kwargs)
+        return self.raw_figure.line(xy_pos[:, 0], xy_pos[:, 1], **kwargs)
 
     def add_lines(self, lines_data: ColumnDataSource, **kwargs) -> GlyphRenderer:
-        return self.fig.multi_line(
+        return self.raw_figure.multi_line(
             source=lines_data,
             # This is to ensure that the columns given in the
             # ColumnDataSource are respected (e.g., "line_color").
@@ -39,54 +39,27 @@ class InteractiveFigure:
         )
 
     def add_map_at(
-        self, center_pt: StateTensor, vec_map: VectorMap, radius: float = 50.0, **kwargs
-    ):
-        center_pt_np: StateArray = center_pt.cpu().numpy()
+        self,
+        map_from_world_tf: np.ndarray,
+        vec_map: VectorMap,
+        bbox: Tuple[float, float, float, float],
+        **kwargs,
+    ) -> Tuple[
+        GlyphRenderer, GlyphRenderer, GlyphRenderer, GlyphRenderer, GlyphRenderer
+    ]:
+        """_summary_
 
-        lines_data = {
-            "xs": [],
-            "ys": [],
-            "line_dash": [],
-            "line_color": [],
-            "line_alpha": [],
-        }
+        Args:
+            map_from_world_tf (np.ndarray): _description_
+            vec_map (VectorMap): _description_
+            bbox (Tuple[float, float, float, float]): x_min, x_max, y_min, y_max
 
-        lanes = vec_map.get_lanes_within(center_pt_np.position3d, radius)
-        lane: RoadLane
-        for lane in lanes:
-            if lane.left_edge is not None:
-                lane_edge_pts: np.ndarray = transform_coords_2d_np(
-                    lane.left_edge.xy - center_pt_np.position,
-                    angle=-center_pt_np.heading,
-                )
-
-                lines_data["xs"].append(lane_edge_pts[:, 0])
-                lines_data["ys"].append(lane_edge_pts[:, 1])
-                lines_data["line_dash"].append("solid")
-                lines_data["line_color"].append("red")
-                lines_data["line_alpha"].append(0.7)
-
-            if lane.right_edge is not None:
-                lane_edge_pts: np.ndarray = transform_coords_2d_np(
-                    lane.right_edge.xy - center_pt_np.position,
-                    angle=-center_pt_np.heading,
-                )
-                lines_data["xs"].append(lane_edge_pts[:, 0])
-                lines_data["ys"].append(lane_edge_pts[:, 1])
-                lines_data["line_dash"].append("solid")
-                lines_data["line_color"].append("red")
-                lines_data["line_alpha"].append(0.7)
-
-            lane_center_pts: np.ndarray = transform_coords_2d_np(
-                lane.center.xy - center_pt_np.position, angle=-center_pt_np.heading
-            )
-            lines_data["xs"].append(lane_center_pts[:, 0])
-            lines_data["ys"].append(lane_center_pts[:, 1])
-            lines_data["line_dash"].append("solid")
-            lines_data["line_color"].append("gray")
-            lines_data["line_alpha"].append(0.5)
-
-        return self.add_lines(ColumnDataSource(data=lines_data))
+        Returns:
+            Tuple[ GlyphRenderer, GlyphRenderer, GlyphRenderer, GlyphRenderer, GlyphRenderer ]: _description_
+        """
+        return vis_utils.draw_map_elems(
+            self.raw_figure, vec_map, map_from_world_tf, bbox, **kwargs
+        )
 
     def add_agent(
         self,
@@ -131,7 +104,7 @@ class InteractiveFigure:
             "type": [str(AgentType(agent_type.item()))[len("AgentType.") :]],
             "speed": [torch.linalg.norm(agent_state.velocity).item()],
         }
-        r = self.fig.rect(
+        r = self.raw_figure.rect(
             x="x",
             y="y",
             angle="angle",
@@ -156,7 +129,7 @@ class InteractiveFigure:
             * size,
             angle=heading - np.pi / 2,
         )
-        p = self.fig.patch(
+        p = self.raw_figure.patch(
             x=dir_patch_coords[:, 0] + x, y=dir_patch_coords[:, 1] + y, **kwargs
         )
 
@@ -168,7 +141,7 @@ class InteractiveFigure:
         dir_patches_data: ColumnDataSource,
         **kwargs,
     ) -> Tuple[GlyphRenderer, GlyphRenderer]:
-        r = self.fig.patches(
+        r = self.raw_figure.patches(
             source=agent_rects_data,
             # This is to ensure that the columns given in the
             # ColumnDataSource are respected (e.g., "line_color").
@@ -180,7 +153,7 @@ class InteractiveFigure:
             **kwargs,
         )
 
-        p = self.fig.patches(
+        p = self.raw_figure.patches(
             source=dir_patches_data,
             # This is to ensure that the columns given in the
             # ColumnDataSource are respected (e.g., "line_color").

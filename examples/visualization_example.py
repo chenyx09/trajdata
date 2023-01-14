@@ -4,18 +4,15 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from trajdata import AgentBatch, AgentType, UnifiedDataset
-from trajdata.augmentation import NoiseHistories
 from trajdata.visualization.interactive_animation import (
     InteractiveAnimation,
-    plot_full_agent_batch_interactive,
+    animate_agent_batch_interactive,
 )
 from trajdata.visualization.interactive_vis import plot_agent_batch_interactive
 from trajdata.visualization.vis import plot_agent_batch
 
 
 def main():
-    noise_hists = NoiseHistories()
-
     dataset = UnifiedDataset(
         desired_data=["nusc_mini", "lyft_sample", "nuplan_mini"],
         centric="agent",
@@ -33,8 +30,7 @@ def main():
             "map_size_px": 224,
             "offset_frac_xy": (-0.5, 0.0),
         },
-        augmentations=[noise_hists],
-        num_workers=0,
+        num_workers=4,
         verbose=True,
         data_dirs={  # Remember to change this to match your filesystem!
             "nusc_mini": "~/datasets/nuScenes",
@@ -59,7 +55,7 @@ def main():
         plot_agent_batch(batch, batch_idx=0)
 
         animation = InteractiveAnimation(
-            plot_full_agent_batch_interactive,
+            animate_agent_batch_interactive,
             batch=batch,
             batch_idx=0,
             cache_path=dataset.cache_path,
