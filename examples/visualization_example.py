@@ -17,7 +17,7 @@ def main():
     noise_hists = NoiseHistories()
 
     dataset = UnifiedDataset(
-        desired_data=["nusc_mini-mini_train-boston"],
+        desired_data=["nusc_mini", "lyft_sample", "nuplan_mini"],
         centric="agent",
         desired_dt=0.1,
         history_sec=(3.2, 3.2),
@@ -38,6 +38,8 @@ def main():
         verbose=True,
         data_dirs={  # Remember to change this to match your filesystem!
             "nusc_mini": "~/datasets/nuScenes",
+            "lyft_sample": "~/datasets/lyft/scenes/sample.zarr",
+            "nuplan_mini": "~/datasets/nuplan/dataset/nuplan-v1.1",
         },
     )
 
@@ -53,6 +55,9 @@ def main():
 
     batch: AgentBatch
     for batch in tqdm(dataloader):
+        # plot_agent_batch_interactive(batch, batch_idx=0, cache_path=dataset.cache_path)
+        # plot_agent_batch(batch, batch_idx=0)
+
         animation = InteractiveAnimation(
             plot_full_agent_batch_interactive,
             batch=batch,
@@ -60,9 +65,6 @@ def main():
             cache_path=dataset.cache_path,
         )
         animation.show()
-
-        # plot_agent_batch_interactive(batch, batch_idx=0, cache_path=dataset.cache_path)
-        # plot_agent_batch(batch, batch_idx=0)
         break
 
 

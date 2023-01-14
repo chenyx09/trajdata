@@ -1,13 +1,17 @@
-import sys
+import socket
+import warnings
 from collections import defaultdict
-from decimal import Decimal
+from contextlib import closing
 from functools import partial
 from pathlib import Path
-from typing import Any, Callable, Dict, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
+import geopandas as gpd
 import numpy as np
 import pandas as pd
 import seaborn as sns
+from bokeh.application import Application
+from bokeh.application.handlers import FunctionHandler
 from bokeh.document import Document
 from bokeh.layouts import column, row
 from bokeh.models import (
@@ -16,32 +20,77 @@ from bokeh.models import (
     CDSView,
     ColumnDataSource,
     HoverTool,
+    Legend,
+    LegendItem,
     Slider,
 )
 from bokeh.plotting import figure
 from bokeh.server.server import Server
+from shapely.geometry import LineString, Polygon
+from tornado.ioloop import IOLoop
 
 from trajdata.data_structures.agent import AgentType
 from trajdata.data_structures.batch import AgentBatch
 from trajdata.data_structures.state import StateArray, StateTensor
 from trajdata.maps.map_api import MapAPI
 from trajdata.maps.vec_map import VectorMap
-from trajdata.maps.vec_map_elements import RoadLane
+from trajdata.maps.vec_map_elements import (
+    MapElementType,
+    PedCrosswalk,
+    PedWalkway,
+    RoadArea,
+    RoadLane,
+)
 from trajdata.utils.arr_utils import transform_coords_2d_np
 
 
 class InteractiveAnimation:
-    def __init__(self, main_func: Callable[[Document], None], **kwargs) -> None:
+    def __init__(
+        self,
+        main_func: Callable[[Document, IOLoop], None],
+        port: Optional[int] = None,
+        **kwargs,
+    ) -> None:
         self.main_func = main_func
+        self.port = port
         self.kwargs = kwargs
 
+    def get_open_port(self) -> int:
+        with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+            s.bind(("", 0))
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            return s.getsockname()[1]
+
     def show(self) -> None:
-        server = Server({"/": partial(self.main_func, **self.kwargs)})
+        io_loop = IOLoop()
+
+        if self.port is None:
+            self.port = self.get_open_port()
+
+        def kill_on_tab_close(session_context):
+            io_loop.stop()
+
+        def app_init(doc: Document):
+            doc.on_session_destroyed(kill_on_tab_close)
+            self.main_func(doc=doc, io_loop=io_loop, **self.kwargs)
+            return doc
+
+        server = Server(
+            {"/": Application(FunctionHandler(app_init))},
+            io_loop=io_loop,
+            port=self.port,
+            check_unused_sessions_milliseconds=500,
+            unused_session_lifetime_milliseconds=500,
+        )
         server.start()
 
-        print("Opening Bokeh application on http://localhost:5006/")
+        # print(f"Opening Bokeh application on http://localhost:{self.port}/")
         server.io_loop.add_callback(server.show, "/")
         server.io_loop.start()
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=RuntimeWarning)
+            server.io_loop.close()
 
 
 def agent_type_to_str(agent_type: AgentType) -> str:
@@ -56,8 +105,23 @@ def get_agent_type_color(agent_type: AgentType) -> str:
         return palette[1]
     elif agent_type == AgentType.BICYCLE:
         return palette[2]
+    elif agent_type == AgentType.MOTORCYCLE:
+        return palette[3]
+    else:
+        return "#A9A9A9"
 
-    return palette[3]
+
+def get_map_patch_color(map_elem_type: MapElementType) -> str:
+    if map_elem_type == MapElementType.ROAD_AREA:
+        return "lightgray"
+    elif map_elem_type == MapElementType.ROAD_LANE:
+        return "red"
+    elif map_elem_type == MapElementType.PED_CROSSWALK:
+        return "blue"
+    elif map_elem_type == MapElementType.PED_WALKWAY:
+        return "green"
+    else:
+        raise ValueError()
 
 
 def compute_agent_rect_coords(
@@ -79,7 +143,7 @@ def compute_agent_rect_coords(
     )
 
     size = 1.0
-    if agent_type == AgentType.PEDESTRIAN:
+    if agent_type == AgentType.PEDESTRIAN or agent_type == AgentType.BICYCLE:
         size = 0.25
 
     raw_tri_coords = size * np.array(
@@ -264,61 +328,168 @@ def extract_full_agent_data_df(batch: AgentBatch, batch_idx: int) -> ColumnDataS
     return pd.DataFrame(main_data_dict)
 
 
+def convert_to_gpd(vec_map: VectorMap):
+    geo_data = defaultdict(list)
+    for elem in vec_map.iter_elems():
+        geo_data["id"].append(elem.id)
+        geo_data["type"].append(elem.elem_type)
+        if isinstance(elem, RoadLane):
+            geo_data["geometry"].append(LineString(elem.center.xyz))
+        elif isinstance(elem, PedCrosswalk) or isinstance(elem, PedWalkway):
+            geo_data["geometry"].append(Polygon(shell=elem.polygon.xyz))
+        elif isinstance(elem, RoadArea):
+            geo_data["geometry"].append(
+                Polygon(
+                    shell=elem.exterior_polygon.xyz,
+                    holes=[hole.xyz for hole in elem.interior_holes],
+                )
+            )
+
+    return gpd.GeoDataFrame(geo_data)
+
+
 def get_map_cds(
     center_pt: StateTensor, vec_map: VectorMap, radius: float = 50.0, **kwargs
-) -> ColumnDataSource:
+) -> Tuple[
+    ColumnDataSource,
+    ColumnDataSource,
+    ColumnDataSource,
+    ColumnDataSource,
+    ColumnDataSource,
+]:
     center_pt_np: StateArray = center_pt.cpu().numpy()
+    x, y = center_pt_np.position
 
-    lines_data = {
-        "xs": [],
-        "ys": [],
-        "line_dash": [],
-        "line_color": [],
-        "line_alpha": [],
-    }
+    road_lane_data = defaultdict(list)
+    lane_center_data = defaultdict(list)
+    ped_crosswalk_data = defaultdict(list)
+    ped_walkway_data = defaultdict(list)
+    road_area_data = defaultdict(list)
 
-    lanes = vec_map.get_lanes_within(center_pt_np.position3d, radius)
-    lane: RoadLane
-    for lane in lanes:
-        if lane.left_edge is not None:
-            lane_edge_pts: np.ndarray = transform_coords_2d_np(
-                lane.left_edge.xy - center_pt_np.position,
+    map_gpd = convert_to_gpd(vec_map)
+    elems_gdf: gpd.GeoDataFrame = map_gpd.cx[
+        x - radius : x + radius, y - radius : y + radius
+    ]
+
+    for row_idx, row in elems_gdf.iterrows():
+        if row["type"] == MapElementType.PED_CROSSWALK:
+            xy = np.stack(row["geometry"].exterior.xy, axis=1)
+            transformed_xy: np.ndarray = transform_coords_2d_np(
+                xy - center_pt_np.position,
+                angle=-center_pt_np.heading,
+            )
+            ped_crosswalk_data["xs"].append(transformed_xy[..., 0])
+            ped_crosswalk_data["ys"].append(transformed_xy[..., 1])
+        if row["type"] == MapElementType.PED_WALKWAY:
+            xy = np.stack(row["geometry"].exterior.xy, axis=1)
+            transformed_xy: np.ndarray = transform_coords_2d_np(
+                xy - center_pt_np.position,
+                angle=-center_pt_np.heading,
+            )
+            ped_walkway_data["xs"].append(transformed_xy[..., 0])
+            ped_walkway_data["ys"].append(transformed_xy[..., 1])
+        elif row["type"] == MapElementType.ROAD_LANE:
+            xy = np.stack(row["geometry"].xy, axis=1)
+            transformed_xy: np.ndarray = transform_coords_2d_np(
+                xy - center_pt_np.position,
                 angle=-center_pt_np.heading,
             )
 
-            lines_data["xs"].append(lane_edge_pts[:, 0])
-            lines_data["ys"].append(lane_edge_pts[:, 1])
-            lines_data["line_dash"].append("solid")
-            lines_data["line_color"].append("red")
-            lines_data["line_alpha"].append(0.7)
+            lane_center_data["xs"].append(transformed_xy[..., 0])
+            lane_center_data["ys"].append(transformed_xy[..., 1])
+            lane_obj: RoadLane = vec_map.elements[MapElementType.ROAD_LANE][row["id"]]
+            if lane_obj.left_edge is not None and lane_obj.right_edge is not None:
+                left_xy = lane_obj.left_edge.xy
+                right_xy = lane_obj.right_edge.xy[::-1]
+                patch_xy = np.concatenate((left_xy, right_xy), axis=0)
 
-        if lane.right_edge is not None:
-            lane_edge_pts: np.ndarray = transform_coords_2d_np(
-                lane.right_edge.xy - center_pt_np.position,
+                transformed_xy: np.ndarray = transform_coords_2d_np(
+                    patch_xy - center_pt_np.position,
+                    angle=-center_pt_np.heading,
+                )
+
+                road_lane_data["xs"].append(transformed_xy[..., 0])
+                road_lane_data["ys"].append(transformed_xy[..., 1])
+        elif row["type"] == MapElementType.ROAD_AREA:
+            xy = np.stack(row["geometry"].exterior.xy, axis=1)
+            transformed_xy: np.ndarray = transform_coords_2d_np(
+                xy - center_pt_np.position,
                 angle=-center_pt_np.heading,
             )
-            lines_data["xs"].append(lane_edge_pts[:, 0])
-            lines_data["ys"].append(lane_edge_pts[:, 1])
-            lines_data["line_dash"].append("solid")
-            lines_data["line_color"].append("red")
-            lines_data["line_alpha"].append(0.7)
 
-        lane_center_pts: np.ndarray = transform_coords_2d_np(
-            lane.center.xy - center_pt_np.position, angle=-center_pt_np.heading
-        )
-        lines_data["xs"].append(lane_center_pts[:, 0])
-        lines_data["ys"].append(lane_center_pts[:, 1])
-        lines_data["line_dash"].append("solid")
-        lines_data["line_color"].append("gray")
-        lines_data["line_alpha"].append(0.5)
+            holes_xy: List[np.ndarray] = [
+                transform_coords_2d_np(
+                    np.stack(interior.xy, axis=1) - center_pt_np.position,
+                    angle=-center_pt_np.heading,
+                )
+                for interior in row["geometry"].interiors
+            ]
 
-    return ColumnDataSource(data=lines_data)
+            road_area_data["xs"].append(
+                [[transformed_xy[..., 0]] + [hole[..., 0] for hole in holes_xy]]
+            )
+            road_area_data["ys"].append(
+                [[transformed_xy[..., 1]] + [hole[..., 1] for hole in holes_xy]]
+            )
+    return (
+        ColumnDataSource(data=lane_center_data),
+        ColumnDataSource(data=road_lane_data),
+        ColumnDataSource(data=ped_crosswalk_data),
+        ColumnDataSource(data=ped_walkway_data),
+        ColumnDataSource(data=road_area_data),
+    )
 
 
 def plot_full_agent_batch_interactive(
-    doc: Document, batch: AgentBatch, batch_idx: int, cache_path: Path
+    doc: Document, io_loop: IOLoop, batch: AgentBatch, batch_idx: int, cache_path: Path
 ) -> None:
     agent_data_df = extract_full_agent_data_df(batch, batch_idx)
+
+    # Figure creation and a few initial settings.
+    x_min = agent_data_df["x"].min()
+    x_max = agent_data_df["x"].max()
+    x_range = x_max - x_min
+
+    y_min = agent_data_df["y"].min()
+    y_max = agent_data_df["y"].max()
+    y_range = y_max - y_min
+
+    buffer = 10
+    if x_range > y_range:
+        half_range_diff = (x_range - y_range) / 2
+        kwargs = {
+            "x_range": (x_min - buffer, x_max + buffer),
+            "y_range": (
+                y_min - half_range_diff - buffer,
+                y_max + half_range_diff + buffer,
+            ),
+        }
+    else:
+        half_range_diff = (y_range - x_range) / 2
+        kwargs = {
+            "y_range": (y_min - buffer, y_max + buffer),
+            "x_range": (
+                x_min - half_range_diff - buffer,
+                x_max + half_range_diff + buffer,
+            ),
+        }
+
+    fig = figure(match_aspect=True, width=800, sizing_mode="scale_width", **kwargs)
+
+    agent_name: str = batch.agent_name[batch_idx]
+    agent_type: AgentType = AgentType(batch.agent_type[batch_idx].item())
+    current_state = batch.curr_agent_state[batch_idx].numpy()
+    fig.title = f"{str(agent_type)}/{agent_name} at x={current_state[0]:.2f}, y={current_state[1]:.2f}, h={current_state[-1]:.2f}"
+
+    # No gridlines.
+    fig.grid.visible = False
+
+    # Set autohide to true to only show the toolbar when mouse is over plot.
+    fig.toolbar.autohide = True
+
+    # Setting the match_aspect property of bokeh's default BoxZoomTool.
+    fig.tools[2].match_aspect = True
+
     agent_cds = ColumnDataSource(agent_data_df)
     curr_time_view = CDSView(
         source=agent_cds, filters=[BooleanFilter(agent_cds.data["t"] == 0)]
@@ -384,63 +555,62 @@ def plot_full_agent_batch_interactive(
     dt: float = batch.dt[batch_idx].item()
     scene_ts: int = batch.scene_ts[batch_idx].item()
 
-    # Figure creation and a few initial settings.
-    x_min = agent_data_df["x"].min()
-    x_max = agent_data_df["x"].max()
-    x_range = x_max - x_min
-
-    y_min = agent_data_df["y"].min()
-    y_max = agent_data_df["y"].max()
-    y_range = y_max - y_min
-
-    buffer = 10
-    if x_range > y_range:
-        half_range_diff = (x_range - y_range) / 2
-        kwargs = {
-            "x_range": (x_min - buffer, x_max + buffer),
-            "y_range": (
-                y_min - half_range_diff - buffer,
-                y_max + half_range_diff + buffer,
-            ),
-        }
-    else:
-        half_range_diff = (y_range - x_range) / 2
-        kwargs = {
-            "y_range": (y_min - buffer, y_max + buffer),
-            "x_range": (
-                x_min - half_range_diff - buffer,
-                x_max + half_range_diff + buffer,
-            ),
-        }
-
-    fig = figure(match_aspect=True, **kwargs)
-
-    # No gridlines.
-    fig.grid.visible = False
-
-    # Set autohide to true to only show the toolbar when mouse is over plot.
-    fig.toolbar.autohide = True
-
-    # Setting the match_aspect property of bokeh's default BoxZoomTool.
-    fig.tools[2].match_aspect = True
-
     if batch.map_names is not None:
         mapAPI = MapAPI(cache_path)
 
-        map_cds = get_map_cds(
+        (
+            lane_center_cds,
+            road_lane_cds,
+            ped_crosswalk_cds,
+            ped_walkway_cds,
+            road_area_cds,
+        ) = get_map_cds(
             batch.curr_agent_state[batch_idx],
-            mapAPI.get_map(batch.map_names[batch_idx]),
+            mapAPI.get_map(
+                batch.map_names[batch_idx],
+                incl_road_lanes=True,
+                incl_road_areas=True,
+                incl_ped_crosswalks=True,
+                incl_ped_walkways=True,
+            ),
             alpha=1.0,
         )
 
-        fig.multi_line(
-            source=map_cds,
-            # This is to ensure that the columns given in the
-            # ColumnDataSource are respected (e.g., "line_color").
-            **{x: x for x in map_cds.column_names},
+        road_areas = fig.multi_polygons(
+            source=road_area_cds,
+            line_color="black",
+            fill_alpha=0.1,
+            fill_color=get_map_patch_color(MapElementType.ROAD_AREA),
         )
 
-    fig.multi_line(
+        road_lanes = fig.patches(
+            source=road_lane_cds,
+            line_color="black",
+            fill_alpha=0.1,
+            fill_color=get_map_patch_color(MapElementType.ROAD_LANE),
+        )
+
+        ped_crosswalks = fig.patches(
+            source=ped_crosswalk_cds,
+            line_color="black",
+            fill_alpha=0.1,
+            fill_color=get_map_patch_color(MapElementType.PED_CROSSWALK),
+        )
+
+        ped_walkways = fig.patches(
+            source=ped_walkway_cds,
+            line_color="black",
+            fill_alpha=0.1,
+            fill_color=get_map_patch_color(MapElementType.PED_WALKWAY),
+        )
+
+        lane_centers = fig.multi_line(
+            source=lane_center_cds,
+            line_color="gray",
+            line_alpha=0.5,
+        )
+
+    history_lines = fig.multi_line(
         xs="xs",
         ys="ys",
         line_color="color",
@@ -448,7 +618,7 @@ def plot_full_agent_batch_interactive(
         source=history_lines_cds,
     )
 
-    fig.multi_line(
+    future_lines = fig.multi_line(
         xs="xs", ys="ys", line_color="color", line_dash="solid", source=future_lines_cds
     )
 
@@ -457,17 +627,17 @@ def plot_full_agent_batch_interactive(
         ys="rect_ys",
         fill_color="color",
         line_color="black",
-        fill_alpha=0.7,
+        # fill_alpha=0.7,
         source=agent_cds,
         view=curr_time_view,
     )
 
-    fig.patches(
+    agent_dir_patches = fig.patches(
         xs="dir_patch_xs",
         ys="dir_patch_ys",
         fill_color="color",
         line_color="black",
-        fill_alpha=0.7,
+        # fill_alpha=0.7,
         source=agent_cds,
         view=curr_time_view,
     )
@@ -510,7 +680,7 @@ def plot_full_agent_batch_interactive(
 
     def button_callback():
         # Stop the server.
-        sys.exit()
+        io_loop.stop()
 
     exit_button = Button(label="Exit", button_type="danger", width=60)
     exit_button.on_click(button_callback)
@@ -540,4 +710,64 @@ def plot_full_agent_batch_interactive(
     play_button = Button(label="► Play", width=100)
     play_button.on_click(animate)
 
-    doc.add_root(column(fig, row(play_button, time_slider, exit_button)))
+    agent_legend_elems = [
+        fig.rect(
+            fill_color=get_agent_type_color(x),
+            line_color="black",
+            name=str(x)[len("AgentType.") :],
+        )
+        for x in AgentType
+    ]
+
+    map_legend_elems = [
+        LegendItem(label="Lane Center", renderers=[lane_centers])
+    ]
+
+    map_area_legend_elems = [
+        LegendItem(label="Road Area", renderers=[road_areas]),
+        LegendItem(label="Road Lanes", renderers=[road_lanes]),
+        LegendItem(label="Pedestrian Crosswalks", renderers=[ped_crosswalks]),
+        LegendItem(label="Pedestrian Walkways", renderers=[ped_walkways]),
+    ]
+
+    hist_future_legend_elems = [
+        LegendItem(
+            label="Past Motion",
+            renderers=[
+                fig.multi_line(line_color="black", line_dash="dashed"),
+                history_lines,
+            ],
+        ),
+        LegendItem(
+            label="Future Motion",
+            renderers=[
+                fig.multi_line(line_color="black", line_dash="solid"),
+                future_lines,
+            ],
+        ),
+    ]
+
+    legend = Legend(
+        items=[
+            LegendItem(label=legend_item.name, renderers=[legend_item])
+            for legend_item in agent_legend_elems
+        ]
+        + hist_future_legend_elems
+        + map_legend_elems
+        + map_area_legend_elems,
+        click_policy="hide",
+    )
+    fig.add_layout(legend, "right")
+
+    video_button = Button(
+        label="Render Animation",
+        width=120,
+    )
+
+    def save_animation(file_path: Path) -> None:
+        video_button.disabled = True
+        video_button.label = "Implement me!"
+
+    video_button.on_click(partial(save_animation, file_path=Path("video.avi")))
+
+    doc.add_root(column(fig, row(play_button, time_slider, exit_button), video_button))
