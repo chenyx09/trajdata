@@ -30,8 +30,8 @@ from bokeh.models import (
 from bokeh.plotting import Figure
 from bokeh.server.server import Server
 from selenium import webdriver
-from tornado.ioloop import IOLoop
 from tornado import gen
+from tornado.ioloop import IOLoop
 from tqdm import trange
 
 from trajdata.data_structures.agent import AgentType
@@ -141,6 +141,9 @@ def animate_agent_batch_interactive(
     # No gridlines.
     fig.grid.visible = False
 
+    # Setting the scroll wheel to active by default.
+    fig.toolbar.active_scroll = fig.tools[1]
+
     # Set autohide to true to only show the toolbar when mouse is over plot.
     fig.toolbar.autohide = True
 
@@ -237,11 +240,17 @@ def animate_agent_batch_interactive(
         ys="ys",
         line_color="color",
         line_dash="dashed",
+        line_width=2,
         source=history_lines_cds,
     )
 
     future_lines = fig.multi_line(
-        xs="xs", ys="ys", line_color="color", line_dash="solid", source=future_lines_cds
+        xs="xs",
+        ys="ys",
+        line_color="color",
+        line_dash="solid",
+        line_width=2,
+        source=future_lines_cds,
     )
 
     # Agent rectangles/directional arrows at the current timestep.
@@ -367,14 +376,18 @@ def animate_agent_batch_interactive(
             label="Past Motion",
             renderers=[
                 history_lines,
-                fig.multi_line(line_color="black", line_dash="dashed", line_alpha=1.0),
+                fig.multi_line(
+                    line_color="black", line_dash="dashed", line_alpha=1.0, line_width=2
+                ),
             ],
         ),
         LegendItem(
             label="Future Motion",
             renderers=[
                 future_lines,
-                fig.multi_line(line_color="black", line_dash="solid", line_alpha=1.0),
+                fig.multi_line(
+                    line_color="black", line_dash="solid", line_alpha=1.0, line_width=2
+                ),
             ],
         ),
     ]
@@ -410,7 +423,7 @@ def animate_agent_batch_interactive(
     def after_frame_save(label: str) -> None:
         video_button.label = label
         animate_update()
-    
+
     def execute_save_animation(file_path: Path) -> None:
         images = []
 

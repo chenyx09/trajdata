@@ -36,7 +36,7 @@ def get_agent_type_color(agent_type: AgentType) -> str:
     if agent_type == AgentType.VEHICLE:
         return palette[0]
     elif agent_type == AgentType.PEDESTRIAN:
-        return palette[1]
+        return "darkorange"
     elif agent_type == AgentType.BICYCLE:
         return palette[2]
     elif agent_type == AgentType.MOTORCYCLE:
@@ -47,11 +47,11 @@ def get_agent_type_color(agent_type: AgentType) -> str:
 
 def get_map_patch_color(map_elem_type: MapElementType) -> str:
     if map_elem_type == MapElementType.ROAD_AREA:
-        return "lightgray"
+        return "gray"
     elif map_elem_type == MapElementType.ROAD_LANE:
         return "red"
     elif map_elem_type == MapElementType.PED_CROSSWALK:
-        return "blue"
+        return "gold"  # "blue"
     elif map_elem_type == MapElementType.PED_WALKWAY:
         return "green"
     else:
@@ -384,6 +384,7 @@ def draw_map_elems(
     road_areas = fig.multi_polygons(
         source=road_area_cds,
         line_color="black",
+        line_width=0.3,
         fill_alpha=0.1,
         fill_color=get_map_patch_color(MapElementType.ROAD_AREA),
     )
@@ -391,6 +392,7 @@ def draw_map_elems(
     road_lanes = fig.patches(
         source=road_lane_cds,
         line_color="black",
+        line_width=0.3,
         fill_alpha=0.1,
         fill_color=get_map_patch_color(MapElementType.ROAD_LANE),
     )
@@ -398,14 +400,16 @@ def draw_map_elems(
     ped_crosswalks = fig.patches(
         source=ped_crosswalk_cds,
         line_color="black",
-        fill_alpha=0.1,
+        line_width=0.3,
+        fill_alpha=0.5,
         fill_color=get_map_patch_color(MapElementType.PED_CROSSWALK),
     )
 
     ped_walkways = fig.patches(
         source=ped_walkway_cds,
         line_color="black",
-        fill_alpha=0.1,
+        line_width=0.3,
+        fill_alpha=0.3,
         fill_color=get_map_patch_color(MapElementType.PED_WALKWAY),
     )
 
