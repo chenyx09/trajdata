@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import numpy as np
-import seaborn as sns
 from bokeh.models import ColumnDataSource
 
 from trajdata.data_structures.agent import AgentType

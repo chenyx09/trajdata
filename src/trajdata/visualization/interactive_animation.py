@@ -1,4 +1,7 @@
+import logging
 import socket
+import threading
+import time
 import warnings
 from collections import defaultdict
 from contextlib import closing
@@ -6,11 +9,13 @@ from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
+import cv2
 import numpy as np
 import pandas as pd
 from bokeh.application import Application
 from bokeh.application.handlers import FunctionHandler
-from bokeh.document import Document
+from bokeh.document import Document, without_document_lock
+from bokeh.io.export import get_screenshot_as_png
 from bokeh.layouts import column, row
 from bokeh.models import (
     BooleanFilter,
@@ -22,9 +27,12 @@ from bokeh.models import (
     LegendItem,
     Slider,
 )
-from bokeh.plotting import figure
+from bokeh.plotting import Figure
 from bokeh.server.server import Server
+from selenium import webdriver
 from tornado.ioloop import IOLoop
+from tornado import gen
+from tqdm import trange
 
 from trajdata.data_structures.agent import AgentType
 from trajdata.data_structures.batch import AgentBatch
@@ -116,7 +124,7 @@ def animate_agent_batch_interactive(
             ),
         }
 
-    fig = figure(match_aspect=True, width=800, sizing_mode="scale_width", **kwargs)
+    fig = Figure(match_aspect=True, width=800, output_backend="canvas", **kwargs)
 
     agent_name: str = batch.agent_name[batch_idx]
     agent_type: AgentType = AgentType(batch.agent_type[batch_idx].item())
@@ -195,7 +203,7 @@ def animate_agent_batch_interactive(
 
         return lines_data
 
-    def get_sliced_multi_line_data(
+    def slice_multi_line_data(
         multi_line_df: Dict[str, Any], slice_obj, check_idx: int
     ) -> Dict[str, List]:
         lines_data = defaultdict(list)
@@ -217,15 +225,11 @@ def animate_agent_batch_interactive(
     # Getting initial historical and future trajectory information ready for plotting.
     history_line_data_df = create_multi_line_data(agent_data_df)
     history_lines_cds = ColumnDataSource(
-        get_sliced_multi_line_data(
-            history_line_data_df, slice(None, full_H), check_idx=-1
-        )
+        slice_multi_line_data(history_line_data_df, slice(None, full_H), check_idx=-1)
     )
     future_line_data_df = history_line_data_df.copy()
     future_lines_cds = ColumnDataSource(
-        get_sliced_multi_line_data(
-            future_line_data_df, slice(full_H, None), check_idx=0
-        )
+        slice_multi_line_data(future_line_data_df, slice(full_H, None), check_idx=0)
     )
 
     history_lines = fig.multi_line(
@@ -277,10 +281,10 @@ def animate_agent_batch_interactive(
     # Ensuring that information gets updated upon a cahnge in the slider value.
     def time_callback(attr, old, new) -> None:
         curr_time_view.filters = [BooleanFilter(agent_cds.data["t"] == new)]
-        history_lines_cds.data = get_sliced_multi_line_data(
+        history_lines_cds.data = slice_multi_line_data(
             history_line_data_df, slice(None, new + full_H), check_idx=-1
         )
-        future_lines_cds.data = get_sliced_multi_line_data(
+        future_lines_cds.data = slice_multi_line_data(
             future_line_data_df, slice(new + full_H, None), check_idx=0
         )
 
@@ -388,14 +392,82 @@ def animate_agent_batch_interactive(
     )
     fig.add_layout(legend, "right")
 
+    # Video rendering functions.
     video_button = Button(
-        label="Render Animation",
+        label="Render Video",
         width=120,
     )
 
+    def reset_buttons() -> None:
+        video_button.label = "Render Video"
+        video_button.disabled = False
+        time_slider.disabled = False
+        play_button.disabled = False
+        fig.toolbar_location = "right"
+
+        logging.basicConfig(level=logging.WARNING, force=True)
+
+    def after_frame_save(label: str) -> None:
+        video_button.label = label
+        animate_update()
+    
+    def execute_save_animation(file_path: Path) -> None:
+        images = []
+
+        chrome_options = webdriver.ChromeOptions()
+        chrome_options.headless = True
+        driver = webdriver.Chrome(chrome_options=chrome_options)
+
+        n_frames = time_slider.end + 1
+        for frame_index in trange(n_frames, desc="Rendering Video"):
+            image = get_screenshot_as_png(fig, driver=driver)
+            shape = image.size
+            images.append(image)
+
+            doc.add_next_tick_callback(
+                partial(
+                    after_frame_save,
+                    label=f"Rendering Video... ({100*(frame_index+1)/n_frames:.0f}%)",
+                )
+            )
+
+            # Giving the doc a chance to update the figure.
+            time.sleep(0.1)
+
+        fourcc = cv2.VideoWriter_fourcc("M", "J", "P", "G")
+        video_obj = cv2.VideoWriter(
+            filename=str(file_path), fourcc=fourcc, fps=1.0 / dt, frameSize=shape
+        )
+        for image in images:
+            cv2_image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+            video_obj.write(cv2_image)
+        video_obj.release()
+
+        doc.add_next_tick_callback(reset_buttons)
+
+    @gen.coroutine
+    @without_document_lock
     def save_animation(file_path: Path) -> None:
+        video_button.label = "Rendering Video..."
         video_button.disabled = True
-        video_button.label = "Implement me!"
+        time_slider.disabled = True
+        play_button.disabled = True
+        fig.toolbar_location = None
+
+        # Bokeh logs a lot of warnings here related to some figure elements not having
+        # 'x', 'y', etc attributes set (most of these are legend items for which this
+        # is intentional). Accordingly, ignore WARNINGs and ERRORs now and re-enable
+        # them after.
+        logging.basicConfig(level=logging.CRITICAL, force=True)
+
+        # Stop any ongoing animation.
+        if play_button.label.startswith("❚❚"):
+            animate()
+
+        # Reset the current timestep to 0.
+        time_slider.value = 0
+
+        threading.Thread(target=execute_save_animation, args=(file_path,)).start()
 
     video_button.on_click(partial(save_animation, file_path=Path("video.avi")))
 
