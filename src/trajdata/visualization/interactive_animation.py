@@ -25,6 +25,8 @@ from bokeh.models import (
     HoverTool,
     Legend,
     LegendItem,
+    RangeSlider,
+    Select,
     Slider,
 )
 from bokeh.plotting import Figure
@@ -96,35 +98,41 @@ def animate_agent_batch_interactive(
     agent_data_df = vis_utils.extract_full_agent_data_df(batch, batch_idx)
 
     # Figure creation and a few initial settings.
+    width = 1280
+    aspect_ratio: float = 16 / 9
+
     x_min = agent_data_df["x"].min()
     x_max = agent_data_df["x"].max()
     x_range = x_max - x_min
+    x_center = (x_min + x_max) / 2
 
     y_min = agent_data_df["y"].min()
     y_max = agent_data_df["y"].max()
     y_range = y_max - y_min
+    y_center = (y_min + y_max) / 2
 
     buffer = 10
-    if x_range > y_range:
-        half_range_diff = (x_range - y_range) / 2
-        kwargs = {
-            "x_range": (x_min - buffer, x_max + buffer),
-            "y_range": (
-                y_min - half_range_diff - buffer,
-                y_max + half_range_diff + buffer,
-            ),
-        }
-    else:
-        half_range_diff = (y_range - x_range) / 2
-        kwargs = {
-            "y_range": (y_min - buffer, y_max + buffer),
-            "x_range": (
-                x_min - half_range_diff - buffer,
-                x_max + half_range_diff + buffer,
-            ),
-        }
+    radius = (x_range / 2 if x_range > y_range else y_range / 2) + buffer
+    kwargs = {
+        "x_range": (x_center - radius, x_center + radius),
+        "y_range": (y_center - radius / aspect_ratio, y_center + radius / aspect_ratio),
+    }
 
-    fig = Figure(match_aspect=True, width=800, output_backend="canvas", **kwargs)
+    fig = Figure(
+        match_aspect=True,
+        width=width,
+        height=int(width / aspect_ratio),
+        output_backend="canvas",
+        **kwargs,
+    )
+
+    # fig.xaxis.axis_label="x [m]"
+    fig.xaxis.axis_label_text_font_size = "10pt"
+    fig.xaxis.major_label_text_font_size = "10pt"
+
+    # fig.yaxis.axis_label="y [m]"
+    fig.yaxis.axis_label_text_font_size = "10pt"
+    fig.yaxis.major_label_text_font_size = "10pt"
 
     agent_name: str = batch.agent_name[batch_idx]
     agent_type: AgentType = AgentType(batch.agent_type[batch_idx].item())
@@ -137,6 +145,7 @@ def animate_agent_batch_interactive(
         + "\n"
         + f"Agent ID: {agent_name} ({vis_utils.pretty_print_agent_type(agent_type)}) at x = {current_state[0]:.2f} m, y = {current_state[1]:.2f} m, heading = {current_state[-1]:.2f} rad ({np.rad2deg(current_state[-1]):.2f} deg)"
     )
+    fig.title.text_font_size = "13pt"
 
     # No gridlines.
     fig.grid.visible = False
@@ -181,8 +190,15 @@ def animate_agent_batch_interactive(
         source=agent_cds, filters=[BooleanFilter(agent_cds.data["t"] == 0)]
     )
 
-    full_H = batch.agent_hist[batch_idx].shape[0]
-    full_T = batch.agent_fut[batch_idx].shape[0]
+    # Some neighbors can have more history than the agent to be predicted
+    # (the data-collecting agent has observed the neighbors for longer).
+    full_H = max(
+        batch.agent_hist_len[batch_idx].item(),
+        *batch.neigh_hist_len[batch_idx].tolist(),
+    )
+    full_T = max(
+        batch.agent_fut_len[batch_idx].item(), *batch.neigh_fut_len[batch_idx].tolist()
+    )
 
     def create_multi_line_data(agents_df: pd.DataFrame) -> Dict[str, List]:
         lines_data = defaultdict(list)
@@ -192,13 +208,19 @@ def animate_agent_batch_interactive(
                 agent_df.y.to_numpy(),
                 agent_df.color.iat[0],
             )
-            if agent_id > 0:
+
+            if agent_id == 0:
+                pad_before = full_H - batch.agent_hist_len[batch_idx].item()
+                pad_after = full_T - batch.agent_fut_len[batch_idx].item()
+
+            else:
                 pad_before = (
                     full_H - batch.neigh_hist_len[batch_idx, agent_id - 1].item()
                 )
                 pad_after = full_T - batch.neigh_fut_len[batch_idx, agent_id - 1].item()
-                xs = np.pad(xs, (pad_before, pad_after), constant_values=np.nan)
-                ys = np.pad(ys, (pad_before, pad_after), constant_values=np.nan)
+
+            xs = np.pad(xs, (pad_before, pad_after), constant_values=np.nan)
+            ys = np.pad(ys, (pad_before, pad_after), constant_values=np.nan)
 
             lines_data["xs"].append(xs)
             lines_data["ys"].append(ys)
@@ -402,6 +424,8 @@ def animate_agent_batch_interactive(
         + map_legend_elems
         + map_area_legend_elems,
         click_policy="hide",
+        label_text_font_size="15pt",
+        spacing=10,
     )
     fig.add_layout(legend, "right")
 
@@ -411,10 +435,23 @@ def animate_agent_batch_interactive(
         width=120,
     )
 
+    render_range_slider = RangeSlider(
+        value=(0, time_slider.end),
+        start=time_slider.start,
+        end=time_slider.end,
+        title=f"Timesteps to Render",
+    )
+
+    filetype_select = Select(
+        title="Filetype:", value=".mp4", options=[".mp4", ".avi"], width=80
+    )
+
     def reset_buttons() -> None:
         video_button.label = "Render Video"
         video_button.disabled = False
         time_slider.disabled = False
+        render_range_slider.disabled = False
+        filetype_select.disabled = False
         play_button.disabled = False
         fig.toolbar_location = "right"
 
@@ -431,8 +468,11 @@ def animate_agent_batch_interactive(
         chrome_options.headless = True
         driver = webdriver.Chrome(chrome_options=chrome_options)
 
-        n_frames = time_slider.end + 1
+        n_frames = render_range_slider.value[1] - render_range_slider.value[0] + 1
         for frame_index in trange(n_frames, desc="Rendering Video"):
+            # Giving the doc a chance to update the figure.
+            time.sleep(0.1)
+
             image = get_screenshot_as_png(fig, driver=driver)
             shape = image.size
             images.append(image)
@@ -440,14 +480,15 @@ def animate_agent_batch_interactive(
             doc.add_next_tick_callback(
                 partial(
                     after_frame_save,
-                    label=f"Rendering Video... ({100*(frame_index+1)/n_frames:.0f}%)",
+                    label=f"Rendering... ({100*(frame_index+1)/n_frames:.0f}%)",
                 )
             )
 
-            # Giving the doc a chance to update the figure.
-            time.sleep(0.1)
+        if file_path.suffix == ".mp4":
+            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        elif file_path.suffix == ".avi":
+            fourcc = cv2.VideoWriter_fourcc("M", "J", "P", "G")
 
-        fourcc = cv2.VideoWriter_fourcc("M", "J", "P", "G")
         video_obj = cv2.VideoWriter(
             filename=str(file_path), fourcc=fourcc, fps=1.0 / dt, frameSize=shape
         )
@@ -460,10 +501,12 @@ def animate_agent_batch_interactive(
 
     @gen.coroutine
     @without_document_lock
-    def save_animation(file_path: Path) -> None:
-        video_button.label = "Rendering Video..."
+    def save_animation(filename: str) -> None:
+        video_button.label = "Rendering..."
         video_button.disabled = True
         time_slider.disabled = True
+        render_range_slider.disabled = True
+        filetype_select.disabled = True
         play_button.disabled = True
         fig.toolbar_location = None
 
@@ -477,11 +520,27 @@ def animate_agent_batch_interactive(
         if play_button.label.startswith("❚❚"):
             animate()
 
-        # Reset the current timestep to 0.
-        time_slider.value = 0
+        # Reset the current timestep to the left end of the range.
+        time_slider.value = render_range_slider.value[0]
 
-        threading.Thread(target=execute_save_animation, args=(file_path,)).start()
+        threading.Thread(
+            target=execute_save_animation,
+            args=(Path(filename + filetype_select.value),),
+        ).start()
 
-    video_button.on_click(partial(save_animation, file_path=Path("video.avi")))
+    video_button.on_click(
+        partial(
+            save_animation,
+            filename=(
+                "_".join([env_name, map_name, scene_id, f"t{scene_ts}", agent_name])
+            ),
+        )
+    )
 
-    doc.add_root(column(fig, row(play_button, time_slider, exit_button), video_button))
+    doc.add_root(
+        column(
+            fig,
+            row(play_button, time_slider, exit_button),
+            row(video_button, render_range_slider, filetype_select),
+        )
+    )
