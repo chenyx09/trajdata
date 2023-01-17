@@ -98,41 +98,39 @@ def animate_agent_batch_interactive(
     agent_data_df = vis_utils.extract_full_agent_data_df(batch, batch_idx)
 
     # Figure creation and a few initial settings.
-    width = 1280
+    width: int = 1280
     aspect_ratio: float = 16 / 9
+    data_vis_margin: float = 10.0
 
     x_min = agent_data_df["x"].min()
     x_max = agent_data_df["x"].max()
-    x_range = x_max - x_min
-    x_center = (x_min + x_max) / 2
 
     y_min = agent_data_df["y"].min()
     y_max = agent_data_df["y"].max()
-    y_range = y_max - y_min
-    y_center = (y_min + y_max) / 2
 
-    buffer = 10
-    radius = (x_range / 2 if x_range > y_range else y_range / 2) + buffer
+    (
+        x_range_min,
+        x_range_max,
+        y_range_min,
+        y_range_max,
+    ) = vis_utils.calculate_figure_sizes(
+        data_bbox=(x_min, x_max, y_min, y_max),
+        data_margin=data_vis_margin,
+        aspect_ratio=aspect_ratio,
+    )
+
     kwargs = {
-        "x_range": (x_center - radius, x_center + radius),
-        "y_range": (y_center - radius / aspect_ratio, y_center + radius / aspect_ratio),
+        "x_range": (x_range_min, x_range_max),
+        "y_range": (y_range_min, y_range_max),
     }
 
     fig = Figure(
-        match_aspect=True,
         width=width,
         height=int(width / aspect_ratio),
         output_backend="canvas",
         **kwargs,
     )
-
-    # fig.xaxis.axis_label="x [m]"
-    fig.xaxis.axis_label_text_font_size = "10pt"
-    fig.xaxis.major_label_text_font_size = "10pt"
-
-    # fig.yaxis.axis_label="y [m]"
-    fig.yaxis.axis_label_text_font_size = "10pt"
-    fig.yaxis.major_label_text_font_size = "10pt"
+    vis_utils.apply_default_settings(fig)
 
     agent_name: str = batch.agent_name[batch_idx]
     agent_type: AgentType = AgentType(batch.agent_type[batch_idx].item())
@@ -145,19 +143,6 @@ def animate_agent_batch_interactive(
         + "\n"
         + f"Agent ID: {agent_name} ({vis_utils.pretty_print_agent_type(agent_type)}) at x = {current_state[0]:.2f} m, y = {current_state[1]:.2f} m, heading = {current_state[-1]:.2f} rad ({np.rad2deg(current_state[-1]):.2f} deg)"
     )
-    fig.title.text_font_size = "13pt"
-
-    # No gridlines.
-    fig.grid.visible = False
-
-    # Setting the scroll wheel to active by default.
-    fig.toolbar.active_scroll = fig.tools[1]
-
-    # Set autohide to true to only show the toolbar when mouse is over plot.
-    fig.toolbar.autohide = True
-
-    # Setting the match_aspect property of bokeh's default BoxZoomTool.
-    fig.tools[2].match_aspect = True
 
     # Map plotting.
     if batch.map_names is not None:
@@ -181,7 +166,12 @@ def animate_agent_batch_interactive(
             fig,
             vec_map,
             batch.agents_from_world_tf[batch_idx].cpu().numpy(),
-            bbox=(x_min - buffer, x_max + buffer, y_min - buffer, y_max + buffer),
+            bbox=(
+                x_min - data_vis_margin,
+                x_max + data_vis_margin,
+                y_min - data_vis_margin,
+                y_max + data_vis_margin,
+            ),
         )
 
     # Preparing agent information for fast slicing with the time_slider.

@@ -3,8 +3,9 @@ from typing import Tuple
 import bokeh.plotting as plt
 import numpy as np
 import torch
-from bokeh.models import ColumnDataSource
+from bokeh.models import ColumnDataSource, Range1d
 from bokeh.models.renderers import GlyphRenderer
+from bokeh.plotting import Figure
 from torch import Tensor
 
 from trajdata.data_structures.agent import AgentType
@@ -16,20 +17,53 @@ from trajdata.utils.arr_utils import transform_coords_2d_np
 
 class InteractiveFigure:
     def __init__(self, **kwargs) -> None:
-        self.raw_figure = plt.figure(match_aspect=True, **kwargs)
-        self.raw_figure.grid.visible = False
+        self.aspect_ratio: float = kwargs.get("aspect_ratio", 16 / 9)
+        self.width: int = kwargs.get("width", 1280)
+        self.height: int = kwargs.get("height", int(self.width / self.aspect_ratio))
 
-        # Setting the match_aspect property of bokeh's default BoxZoomTool
-        self.raw_figure.tools[2].match_aspect = True
+        # We'll be tracking the maxes and mins of data with these.
+        self.x_min = np.inf
+        self.x_max = -np.inf
+        self.y_min = np.inf
+        self.y_max = -np.inf
+
+        self.raw_figure = Figure(width=self.width, height=self.height, **kwargs)
+        vis_utils.apply_default_settings(self.raw_figure)
+
+    def update_mins_maxs(self, x_min, x_max, y_min, y_max) -> None:
+        self.x_min = min(self.x_min, x_min)
+        self.x_max = max(self.x_max, x_max)
+        self.y_min = min(self.y_min, y_min)
+        self.y_max = max(self.y_max, y_max)
 
     def show(self) -> None:
+        if np.isfinite((self.x_min, self.x_max, self.y_min, self.y_max)).all():
+            (
+                x_range_min,
+                x_range_max,
+                y_range_min,
+                y_range_max,
+            ) = vis_utils.calculate_figure_sizes(
+                data_bbox=(self.x_min, self.x_max, self.y_min, self.y_max),
+                aspect_ratio=self.aspect_ratio,
+            )
+
+            self.raw_figure.x_range = Range1d(x_range_min, x_range_max)
+            self.raw_figure.y_range = Range1d(y_range_min, y_range_max)
+
         plt.show(self.raw_figure)
 
-    def add_line(self, past_states: StateTensor, **kwargs) -> GlyphRenderer:
-        xy_pos = past_states.position.cpu().numpy()
+    def add_line(self, states: StateTensor, **kwargs) -> GlyphRenderer:
+        xy_pos = states.position.cpu().numpy()
+
+        x_min, y_min = np.nanmin(xy_pos, axis=0)
+        x_max, y_max = np.nanmax(xy_pos, axis=0)
+        self.update_mins_maxs(x_min.item(), x_max.item(), y_min.item(), y_max.item())
+
         return self.raw_figure.line(xy_pos[:, 0], xy_pos[:, 1], **kwargs)
 
     def add_lines(self, lines_data: ColumnDataSource, **kwargs) -> GlyphRenderer:
+        self.update_mins_maxs(*vis_utils.get_multi_line_bbox(lines_data))
         return self.raw_figure.multi_line(
             source=lines_data,
             # This is to ensure that the columns given in the
@@ -38,7 +72,7 @@ class InteractiveFigure:
             **kwargs,
         )
 
-    def add_map_at(
+    def add_map(
         self,
         map_from_world_tf: np.ndarray,
         vec_map: VectorMap,
@@ -76,58 +110,30 @@ class InteractiveFigure:
             agent_extent (Tensor): _description_
         """
         if torch.any(torch.isnan(agent_extent)):
-            if agent_type == AgentType.VEHICLE:
-                length = 4.3
-                width = 1.8
-            elif agent_type == AgentType.PEDESTRIAN:
-                length = 0.5
-                width = 0.5
-            elif agent_type == AgentType.BICYCLE:
-                length = 1.9
-                width = 0.5
-            else:
-                length = 1.0
-                width = 1.0
-        else:
-            length = agent_extent[0].item()
-            width = agent_extent[1].item()
+            raise ValueError("Agent extents cannot be NaN!")
+
+        length = agent_extent[0].item()
+        width = agent_extent[1].item()
 
         x, y = agent_state.position.cpu().numpy()
         heading = agent_state.heading.cpu().numpy()
 
-        source = {
-            "x": [x],
-            "y": [y],
-            "angle": [-heading],
-            "width": [length],
-            "height": [width],
-            "type": [str(AgentType(agent_type.item()))[len("AgentType.") :]],
-            "speed": [torch.linalg.norm(agent_state.velocity).item()],
-        }
-        r = self.raw_figure.rect(
-            x="x",
-            y="y",
-            angle="angle",
-            width="width",
-            height="height",
-            source=source,
-            **kwargs,
+        agent_rect_coords, dir_patch_coords = vis_utils.compute_agent_rect_coords(
+            agent_type, heading, length, width
         )
 
-        size = 1.0
-        if agent_type == AgentType.PEDESTRIAN:
-            size = 0.25
+        source = {
+            "x": agent_rect_coords[:, 0] + x,
+            "y": agent_rect_coords[:, 1] + y,
+            "type": [vis_utils.pretty_print_agent_type(agent_type)],
+            "speed": [torch.linalg.norm(agent_state.velocity).item()],
+        }
 
-        dir_patch_coords = transform_coords_2d_np(
-            np.array(
-                [
-                    [0, np.sqrt(3) / 3],
-                    [-1 / 2, -np.sqrt(3) / 6],
-                    [1 / 2, -np.sqrt(3) / 6],
-                ]
-            )
-            * size,
-            angle=heading - np.pi / 2,
+        r = self.raw_figure.patch(
+            x="x",
+            y="y",
+            source=source,
+            **kwargs,
         )
         p = self.raw_figure.patch(
             x=dir_patch_coords[:, 0] + x, y=dir_patch_coords[:, 1] + y, **kwargs

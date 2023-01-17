@@ -23,6 +23,64 @@ from trajdata.maps.vec_map_elements import (
 from trajdata.utils.arr_utils import transform_coords_2d_np
 
 
+def apply_default_settings(fig: Figure) -> None:
+    # Pixel dimensions match data dimensions,
+    # a 1x1 area in data space is a square in pixels.
+    fig.match_aspect = True
+
+    # No gridlines.
+    fig.grid.visible = False
+
+    # Setting the scroll wheel to active by default.
+    fig.toolbar.active_scroll = fig.tools[1]
+
+    # Set autohide to true to only show the toolbar when mouse is over plot.
+    fig.toolbar.autohide = True
+
+    # Setting the match_aspect property of bokeh's default BoxZoomTool.
+    fig.tools[2].match_aspect = True
+
+    fig.xaxis.axis_label_text_font_size = "10pt"
+    fig.xaxis.major_label_text_font_size = "10pt"
+
+    fig.yaxis.axis_label_text_font_size = "10pt"
+    fig.yaxis.major_label_text_font_size = "10pt"
+
+    fig.title.text_font_size = "13pt"
+
+
+def calculate_figure_sizes(
+    data_bbox: Tuple[float, float, float, float],
+    data_margin: float = 10,
+    aspect_ratio: float = 16 / 9,
+) -> Tuple[float, float, float, float]:
+    """_summary_
+
+    Args:
+        data_bbox (Tuple[float, float, float, float]): x_min, x_max, y_min, y_max (in data units)
+        data_margin (float, optional): _description_. Defaults to 10.
+        aspect_ratio (float, optional): _description_. Defaults to 16/9.
+
+    Returns:
+        Tuple[float, float, float, float]: Visualization x_min, x_max, y_min, y_max (in data units) matching the desired aspect ratio and clear margin around data points.
+    """
+    x_min, x_max, y_min, y_max = data_bbox
+
+    x_range = x_max - x_min
+    x_center = (x_min + x_max) / 2
+
+    y_range = y_max - y_min
+    y_center = (y_min + y_max) / 2
+
+    radius = (x_range / 2 if x_range > y_range else y_range / 2) + data_margin
+    return (
+        x_center - radius,
+        x_center + radius,
+        y_center - radius / aspect_ratio,
+        y_center + radius / aspect_ratio,
+    )
+
+
 def pretty_print_agent_type(agent_type: AgentType):
     return str(agent_type)[len("AgentType.") :].capitalize()
 
@@ -58,7 +116,65 @@ def get_map_patch_color(map_elem_type: MapElementType) -> str:
         raise ValueError()
 
 
+def get_multi_line_bbox(
+    lines_data: ColumnDataSource,
+) -> Tuple[float, float, float, float]:
+    """_summary_
+
+    Args:
+        lines_data (ColumnDataSource): _description_
+
+    Returns:
+        Tuple[float, float, float, float]: x_min, x_max, y_min, y_max
+    """
+    all_xs = np.concatenate(lines_data.data["xs"], axis=0)
+    all_ys = np.concatenate(lines_data.data["ys"], axis=0)
+    all_xy = np.stack((all_xs, all_ys), axis=1)
+    x_min, y_min = np.nanmin(all_xy, axis=0)
+    x_max, y_max = np.nanmax(all_xy, axis=0)
+    return (
+        x_min.item(),
+        x_max.item(),
+        y_min.item(),
+        y_max.item(),
+    )
+
+
 def compute_agent_rect_coords(
+    agent_type: int, heading: float, length: float, width: float
+) -> Tuple[np.ndarray, np.ndarray]:
+    agent_rect_coords = transform_coords_2d_np(
+        np.array(
+            [
+                [-length / 2, -width / 2],
+                [-length / 2, width / 2],
+                [length / 2, width / 2],
+                [length / 2, -width / 2],
+            ]
+        ),
+        angle=heading,
+    )
+
+    size = 1.0
+    if agent_type == AgentType.PEDESTRIAN or agent_type == AgentType.BICYCLE:
+        size = 0.25
+
+    dir_patch_coords = transform_coords_2d_np(
+        np.array(
+            [
+                [0, np.sqrt(3) / 3],
+                [-1 / 2, -np.sqrt(3) / 6],
+                [1 / 2, -np.sqrt(3) / 6],
+            ]
+        )
+        * size,
+        angle=heading - np.pi / 2,
+    )
+
+    return agent_rect_coords, dir_patch_coords
+
+
+def compute_agent_rects_coords(
     agent_type: int, hs: np.ndarray, lengths: np.ndarray, widths: np.ndarray
 ) -> Tuple[np.ndarray, np.ndarray]:
     raw_rect_coords = np.stack(
@@ -117,7 +233,7 @@ def extract_full_agent_data_df(batch: AgentBatch, batch_idx: int) -> pd.DataFram
     lengths = agent_extent[:, 0]
     widths = agent_extent[:, 1]
 
-    agent_rect_coords, dir_patch_coords = compute_agent_rect_coords(
+    agent_rect_coords, dir_patch_coords = compute_agent_rects_coords(
         agent_type, hs, lengths, widths
     )
 
@@ -160,7 +276,7 @@ def extract_full_agent_data_df(batch: AgentBatch, batch_idx: int) -> pd.DataFram
         lengths = agent_extent[:, 0]
         widths = agent_extent[:, 1]
 
-        agent_rect_coords, dir_patch_coords = compute_agent_rect_coords(
+        agent_rect_coords, dir_patch_coords = compute_agent_rects_coords(
             agent_type, hs, lengths, widths
         )
 
@@ -197,7 +313,7 @@ def extract_full_agent_data_df(batch: AgentBatch, batch_idx: int) -> pd.DataFram
     lengths = agent_extent[:, 0]
     widths = agent_extent[:, 1]
 
-    agent_rect_coords, dir_patch_coords = compute_agent_rect_coords(
+    agent_rect_coords, dir_patch_coords = compute_agent_rects_coords(
         agent_type, hs, lengths, widths
     )
 
@@ -238,7 +354,7 @@ def extract_full_agent_data_df(batch: AgentBatch, batch_idx: int) -> pd.DataFram
         lengths = agent_extent[:, 0]
         widths = agent_extent[:, 1]
 
-        agent_rect_coords, dir_patch_coords = compute_agent_rect_coords(
+        agent_rect_coords, dir_patch_coords = compute_agent_rects_coords(
             agent_type, hs, lengths, widths
         )
 

@@ -51,8 +51,8 @@ def main():
 
     batch: AgentBatch
     for batch in tqdm(dataloader):
-        # plot_agent_batch_interactive(batch, batch_idx=0, cache_path=dataset.cache_path)
-        # plot_agent_batch(batch, batch_idx=0)
+        plot_agent_batch_interactive(batch, batch_idx=0, cache_path=dataset.cache_path)
+        plot_agent_batch(batch, batch_idx=0)
 
         animation = InteractiveAnimation(
             animate_agent_batch_interactive,

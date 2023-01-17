@@ -16,7 +16,7 @@ def plot_agent_batch_interactive(batch: AgentBatch, batch_idx: int, cache_path: 
     fig = InteractiveFigure(
         tooltips=[
             ("Class", "@type"),
-            ("Position", "($x, $y) m"),
+            ("Position", "(@x, @y) m"),
             ("Speed", "@speed_mps m/s (@speed_kph km/h)"),
         ]
     )
@@ -66,8 +66,9 @@ def plot_agent_batch_interactive(batch: AgentBatch, batch_idx: int, cache_path: 
     x, y = agent_state.position
 
     if batch.map_names is not None:
+        map_vis_radius: float = 50.0
         mapAPI = MapAPI(cache_path)
-        fig.add_map_at(
+        fig.add_map(
             batch.agents_from_world_tf[batch_idx].cpu().numpy(),
             mapAPI.get_map(
                 batch.map_names[batch_idx],
@@ -77,7 +78,12 @@ def plot_agent_batch_interactive(batch: AgentBatch, batch_idx: int, cache_path: 
                 incl_ped_walkways=True,
             ),
             # x_min, x_max, y_min, y_max
-            bbox=(x - 50, x + 50, y - 50, y + 50),
+            bbox=(
+                x - map_vis_radius,
+                x + map_vis_radius,
+                y - map_vis_radius,
+                y + map_vis_radius,
+            ),
         )
 
     fig.add_lines(agent_histories)
@@ -85,21 +91,10 @@ def plot_agent_batch_interactive(batch: AgentBatch, batch_idx: int, cache_path: 
 
     agent_extent: np.ndarray = batch.agent_hist_extent[batch_idx, -1]
     if agent_extent.isnan().any():
-        if agent_type == AgentType.VEHICLE:
-            length = 4.3
-            width = 1.8
-        elif agent_type == AgentType.PEDESTRIAN:
-            length = 0.5
-            width = 0.5
-        elif agent_type == AgentType.BICYCLE:
-            length = 1.9
-            width = 0.5
-        else:
-            length = 1.0
-            width = 1.0
-    else:
-        length = agent_extent[0].item()
-        width = agent_extent[1].item()
+        raise ValueError("Agent extents cannot be NaN!")
+
+    length = agent_extent[0].item()
+    width = agent_extent[1].item()
 
     heading: float = agent_state.heading.item()
     speed_mps: float = np.linalg.norm(agent_state.velocity).item()
@@ -117,6 +112,8 @@ def plot_agent_batch_interactive(batch: AgentBatch, batch_idx: int, cache_path: 
     )
 
     agent_rects_data = {
+        "x": [x],
+        "y": [y],
         "xs": [agent_rect_coords[:, 0] + x],
         "ys": [agent_rect_coords[:, 1] + y],
         "fill_color": [vis_utils.get_agent_type_color(agent_type)],
@@ -156,38 +153,21 @@ def plot_agent_batch_interactive(batch: AgentBatch, batch_idx: int, cache_path: 
         agent_extent: np.ndarray = batch.neigh_hist_extents[batch_idx, n_neigh, -1]
 
         if agent_extent.isnan().any():
-            if agent_type == AgentType.VEHICLE:
-                length = 4.3
-                width = 1.8
-            elif agent_type == AgentType.PEDESTRIAN:
-                length = 0.5
-                width = 0.5
-            elif agent_type == AgentType.BICYCLE:
-                length = 1.9
-                width = 0.5
-            else:
-                length = 1.0
-                width = 1.0
-        else:
-            length = agent_extent[0].item()
-            width = agent_extent[1].item()
+            raise ValueError("Agent extents cannot be NaN!")
+
+        length = agent_extent[0].item()
+        width = agent_extent[1].item()
 
         x, y = agent_state.position
         heading: float = agent_state.heading.item()
         speed_mps: float = np.linalg.norm(agent_state.velocity).item()
 
-        agent_rect_coords = transform_coords_2d_np(
-            np.array(
-                [
-                    [-length / 2, -width / 2],
-                    [-length / 2, width / 2],
-                    [length / 2, width / 2],
-                    [length / 2, -width / 2],
-                ]
-            ),
-            angle=heading,
+        agent_rect_coords, dir_patch_coords = vis_utils.compute_agent_rect_coords(
+            agent_type, heading, length, width
         )
 
+        agent_rects_data["x"].append(x)
+        agent_rects_data["y"].append(y)
         agent_rects_data["xs"].append(agent_rect_coords[:, 0] + x)
         agent_rects_data["ys"].append(agent_rect_coords[:, 1] + y)
         agent_rects_data["fill_color"].append(
@@ -199,21 +179,6 @@ def plot_agent_batch_interactive(batch: AgentBatch, batch_idx: int, cache_path: 
         agent_rects_data["speed_mps"].append(speed_mps)
         agent_rects_data["speed_kph"].append(speed_mps * 3.6)
 
-        size = 1.0
-        if agent_type == AgentType.PEDESTRIAN:
-            size = 0.25
-
-        dir_patch_coords = transform_coords_2d_np(
-            np.array(
-                [
-                    [0, np.sqrt(3) / 3],
-                    [-1 / 2, -np.sqrt(3) / 6],
-                    [1 / 2, -np.sqrt(3) / 6],
-                ]
-            )
-            * size,
-            angle=heading - np.pi / 2,
-        )
         dir_patches_data["xs"].append(dir_patch_coords[:, 0] + x)
         dir_patches_data["ys"].append(dir_patch_coords[:, 1] + y)
         dir_patches_data["fill_color"].append(
