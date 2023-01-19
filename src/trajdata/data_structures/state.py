@@ -14,7 +14,7 @@ If you want to add state column info to an array
 """
 from abc import abstractclassmethod
 from collections import defaultdict
-from typing import Callable, ClassVar, Dict, List, Type, TypeVar, Union
+from typing import Callable, ClassVar, Dict, List, Type, TypeVar
 
 import numpy as np
 import torch
@@ -53,7 +53,7 @@ class State:
     state_dim: int = 0
 
     # needs to be defined in subclass
-    _FUNCS: ClassVar[dict[str:Callable]] = {}
+    _FUNCS: ClassVar[Dict[str, Callable]] = {}
 
     def __init_subclass__(cls, **kwargs) -> None:
         super().__init_subclass__(**kwargs)
@@ -363,5 +363,5 @@ class StateTypeFactory(defaultdict):
 
 
 # DEFINE STATE TYPES
-TORCH_STATE_TYPES: dict[str, Type[StateTensor]] = StateTypeFactory(StateTensor)
-NP_STATE_TYPES: dict[str, Type[StateArray]] = StateTypeFactory(StateArray)
+TORCH_STATE_TYPES: Dict[str, Type[StateTensor]] = StateTypeFactory(StateTensor)
+NP_STATE_TYPES: Dict[str, Type[StateArray]] = StateTypeFactory(StateArray)
