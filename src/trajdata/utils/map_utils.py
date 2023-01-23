@@ -5,13 +5,17 @@ from typing import TYPE_CHECKING
 from tqdm import tqdm
 
 if TYPE_CHECKING:
-    from trajdata.maps import map_kdtree, vec_map
+    from trajdata.maps import map_kdtree, vec_map, RasterizedMapMetadata, RasterizedMapPatch
 
 from pathlib import Path
-from typing import Dict, Final, Optional
+from typing import Dict, Final, Optional, Tuple, List, Union
 
 import dill
+import kornia
 import numpy as np
+import math
+import torch
+import zarr
 from scipy.stats import circmean
 
 import trajdata.maps.vec_map_elements as vec_map_elems
@@ -19,6 +23,272 @@ import trajdata.proto.vectorized_map_pb2 as map_proto
 from trajdata.utils import arr_utils
 
 MM_PER_M: Final[float] = 1000
+
+
+def pad_map_patch(
+    patch: np.ndarray,
+    #                 top, bot, left, right
+    patch_sides: Tuple[int, int, int, int],
+    patch_size: int,
+    map_dims: Tuple[int, int, int],
+) -> np.ndarray:
+    # TODO(pkarkus) remove equivalent function from df_cache
+
+    if patch.shape[-2:] == (patch_size, patch_size):
+        return patch
+
+    top, bot, left, right = patch_sides
+    channels, height, width = map_dims
+
+    # If we're off the map, just return zeros in the
+    # desired size of the patch.
+    if bot <= 0 or top >= height or right <= 0 or left >= width:
+        return np.zeros((channels, patch_size, patch_size))
+
+    pad_top, pad_bot, pad_left, pad_right = 0, 0, 0, 0
+    if top < 0:
+        pad_top = 0 - top
+    if bot >= height:
+        pad_bot = bot - height
+    if left < 0:
+        pad_left = 0 - left
+    if right >= width:
+        pad_right = right - width
+
+    return np.pad(patch, [(0, 0), (pad_top, pad_bot), (pad_left, pad_right)])
+
+
+def load_map_patch(
+    raster_map_path: Path,
+    raster_metadata_path: Path,
+    world_x: float,
+    world_y: float,
+    desired_patch_size: int,
+    resolution: float,
+    offset_xy: Tuple[float, float],
+    agent_heading: float,
+    return_rgb: bool,
+    rot_pad_factor: float = 1.0,
+    no_map_val: float = 0.0,
+    allow_missing_map: bool = False,
+) -> Tuple[np.ndarray, np.ndarray, bool]:
+
+    # TODO(pkarkus) remove equivalent function from df_cache
+
+    if not raster_metadata_path.exists():
+        if not allow_missing_map:
+            raise ValueError(f"Missing map at {raster_metadata_path}")
+        # This dataset (or location) does not have any maps,
+        # so we return an empty map.
+        patch_size: int = math.ceil((rot_pad_factor * desired_patch_size) / 2) * 2
+
+        return (
+            np.full(
+                (1 if not return_rgb else 3, patch_size, patch_size),
+                fill_value=no_map_val,
+            ),
+            np.eye(3),
+            False,
+        )
+
+    with open(raster_metadata_path, "rb") as f:
+        map_info: RasterizedMapMetadata = dill.load(f)
+
+    raster_from_world_tf: np.ndarray = map_info.map_from_world
+    map_coords: np.ndarray = map_info.map_from_world @ np.array(
+        [world_x, world_y, 1.0]
+    )
+    map_x, map_y = map_coords[0].item(), map_coords[1].item()
+
+    raster_from_world_tf = (
+        np.array(
+            [
+                [1.0, 0.0, -map_x],
+                [0.0, 1.0, -map_y],
+                [0.0, 0.0, 1.0],
+            ]
+        )
+        @ raster_from_world_tf
+    )
+
+    # This first size is how much of the map we
+    # need to extract to match the requested metric size (meters x meters) of
+    # the patch.
+    data_patch_size: int = math.ceil(
+        desired_patch_size * map_info.resolution / resolution
+    )
+
+    # Incorporating offsets.
+    if offset_xy != (0.0, 0.0):
+        # x is negative here because I am moving the map
+        # center so that the agent ends up where the user wishes
+        # (the agent is pinned from the end user's perspective).
+        map_offset: Tuple[float, float] = (
+            -offset_xy[0] * data_patch_size // 2,
+            offset_xy[1] * data_patch_size // 2,
+        )
+
+        rotated_offset: np.ndarray = (
+            arr_utils.rotation_matrix(agent_heading) @ map_offset
+        )
+
+        off_x = rotated_offset[0]
+        off_y = rotated_offset[1]
+
+        map_x += off_x
+        map_y += off_y
+
+        raster_from_world_tf = (
+            np.array(
+                [
+                    [1.0, 0.0, -off_x],
+                    [0.0, 1.0, -off_y],
+                    [0.0, 0.0, 1.0],
+                ]
+            )
+            @ raster_from_world_tf
+        )
+
+    # This is the size of the patch taking into account expansion to allow for
+    # rotation to match the agent's heading. We also ensure the final size is
+    # divisible by two so that the // 2 below does not chop any information off.
+    data_with_rot_pad_size: int = math.ceil((rot_pad_factor * data_patch_size) / 2) * 2
+
+    disk_data = zarr.open_array(raster_map_path, mode="r")
+
+    map_x = round(map_x)
+    map_y = round(map_y)
+
+    # Half of the patch's side length.
+    half_extent: int = data_with_rot_pad_size // 2
+
+    top: int = map_y - half_extent
+    bot: int = map_y + half_extent
+    left: int = map_x - half_extent
+    right: int = map_x + half_extent
+
+    data_patch: np.ndarray = pad_map_patch(
+        disk_data[
+            ...,
+            max(top, 0) : min(bot, disk_data.shape[1]),
+            max(left, 0) : min(right, disk_data.shape[2]),
+        ],
+        (top, bot, left, right),
+        data_with_rot_pad_size,
+        disk_data.shape,
+    )
+
+    if return_rgb:
+        rgb_groups = map_info.layer_rgb_groups
+        data_patch = np.stack(
+            [
+                np.amax(data_patch[rgb_groups[0]], axis=0),
+                np.amax(data_patch[rgb_groups[1]], axis=0),
+                np.amax(data_patch[rgb_groups[2]], axis=0),
+            ],
+        )
+
+    if desired_patch_size != data_patch_size:
+        scale_factor: float = desired_patch_size / data_patch_size
+        data_patch = (
+            kornia.geometry.rescale(
+                torch.from_numpy(data_patch).unsqueeze(0),
+                scale_factor,
+                # Default align_corners value, just putting it to remove warnings
+                align_corners=False,
+                antialias=True,
+            )
+            .squeeze(0)
+            .numpy()
+        )
+
+        raster_from_world_tf = (
+            np.array(
+                [
+                    [1 / scale_factor, 0.0, 0.0],
+                    [0.0, 1 / scale_factor, 0.0],
+                    [0.0, 0.0, 1.0],
+                ]
+            )
+            @ raster_from_world_tf
+        )
+
+    return data_patch, raster_from_world_tf, True
+
+
+def batch_transform_raster_maps(
+    map_patches: List[RasterizedMapPatch],
+):
+
+    patch_size: int = map_patches[0].crop_size
+    assert all(
+        x.crop_size == patch_size for x in map_patches
+    )
+
+    agents_rasters_from_world_tfs: List[np.ndarray] = [
+        x.raster_from_world_tf for x in map_patches
+    ]
+    agents_patches: List[np.ndarray] = [x.data for x in map_patches]
+    agents_rot_angles_list: List[float] = [
+        x.rot_angle for x in map_patches]
+    agents_res_list: List[float] = [x.resolution for x in map_patches]
+
+    patch_data: torch.Tensor = torch.as_tensor(np.stack(agents_patches), dtype=torch.float)
+    agents_rot_angles: torch.Tensor = torch.as_tensor(
+        np.stack(agents_rot_angles_list), dtype=torch.float
+    )
+    agents_rasters_from_world_tf: torch.Tensor = torch.as_tensor(
+        np.stack(agents_rasters_from_world_tfs), dtype=torch.float
+    )
+    agents_resolution: torch.Tensor = torch.as_tensor(
+        np.stack(agents_res_list), dtype=torch.float
+    )
+
+    patch_size_y, patch_size_x = patch_data.shape[-2:]
+    center_y: int = patch_size_y // 2
+    center_x: int = patch_size_x // 2
+    half_extent: int = patch_size // 2
+
+    if torch.count_nonzero(agents_rot_angles) == 0:
+        agents_rasters_from_world_tf = torch.bmm(
+            torch.tensor(
+                [
+                    [
+                        [1.0, 0.0, half_extent],
+                        [0.0, 1.0, half_extent],
+                        [0.0, 0.0, 1.0],
+                    ]
+                ],
+                dtype=agents_rasters_from_world_tf.dtype,
+                device=agents_rasters_from_world_tf.device,
+            ).expand((agents_rasters_from_world_tf.shape[0], -1, -1)),
+            agents_rasters_from_world_tf,
+        )
+
+        rot_crop_patches = patch_data
+    else:
+        agents_rasters_from_world_tf = torch.bmm(
+            arr_utils.transform_matrices(
+                -agents_rot_angles,
+                torch.tensor([[half_extent, half_extent]]).expand(
+                    (agents_rot_angles.shape[0], -1)
+                ),
+            ),
+            agents_rasters_from_world_tf,
+        )
+
+        # Batch rotating patches by rot_angles.
+        rot_patches: torch.Tensor = kornia.geometry.transform.rotate(
+            patch_data, torch.rad2deg(agents_rot_angles))
+
+        # Center cropping via slicing.
+        rot_crop_patches = rot_patches[
+            ...,
+            center_y - half_extent : center_y + half_extent,
+            center_x - half_extent : center_x + half_extent,
+        ]
+
+    return rot_crop_patches, agents_resolution, agents_rasters_from_world_tf
 
 
 def decompress_values(data: np.ndarray) -> np.ndarray:

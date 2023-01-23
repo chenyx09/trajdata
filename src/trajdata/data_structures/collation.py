@@ -11,7 +11,8 @@ from torch.nn.utils.rnn import pad_sequence
 from trajdata.augmentation import BatchAugmentation
 from trajdata.data_structures.batch import AgentBatch, SceneBatch
 from trajdata.data_structures.batch_element import AgentBatchElement, SceneBatchElement
-from trajdata.maps import VectorMap
+from trajdata.maps import VectorMap, RasterizedMapPatch
+from trajdata.utils.map_utils import batch_transform_raster_maps
 from trajdata.utils import arr_utils
 
 
@@ -37,6 +38,8 @@ def _collate_data(elems):
 def raster_map_collate_fn_agent(
     batch_elems: List[AgentBatchElement],
 ):
+    # TODO(pkarkus) refactor with batch_rotate_raster_maps
+
     if batch_elems[0].map_patch is None:
         return None, None, None, None
 
@@ -180,89 +183,48 @@ def raster_map_collate_fn_scene(
     batch_elems: List[SceneBatchElement],
     max_agent_num: Optional[int] = None,
     pad_value: Any = np.nan,
-) -> Tuple[Optional[Tensor], Optional[Tensor], Optional[Tensor]]:
+) -> Tuple[Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor]]:
 
     if batch_elems[0].map_patches is None:
         return None, None, None, None
 
-    patch_size: int = batch_elems[0].map_patches[0].crop_size
-    assert all(
-        batch_elem.map_patches[0].crop_size == patch_size for batch_elem in batch_elems
-    )
-
+    # Collect map patches for all elements and agents into a flat list
     map_names: List[str] = list()
     num_agents: List[int] = list()
-    agents_rasters_from_world_tfs: List[np.ndarray] = list()
-    agents_patches: List[np.ndarray] = list()
-    agents_rot_angles_list: List[float] = list()
-    agents_res_list: List[float] = list()
+    map_patches: List[RasterizedMapPatch] = list()
 
     for elem in batch_elems:
         map_names.append(elem.map_name)
         num_agents.append(min(elem.num_agents, max_agent_num))
-        agents_rasters_from_world_tfs += [
-            x.raster_from_world_tf for x in elem.map_patches[:max_agent_num]
-        ]
-        agents_patches += [x.data for x in elem.map_patches[:max_agent_num]]
-        agents_rot_angles_list += [
-            x.rot_angle for x in elem.map_patches[:max_agent_num]
-        ]
-        agents_res_list += [x.resolution for x in elem.map_patches[:max_agent_num]]
+        map_patches += elem.map_patches[:max_agent_num]
 
-    patch_data: Tensor = torch.as_tensor(np.stack(agents_patches), dtype=torch.float)
-    agents_rot_angles: Tensor = torch.as_tensor(
-        np.stack(agents_rot_angles_list), dtype=torch.float
-    )
-    agents_rasters_from_world_tf: Tensor = torch.as_tensor(
-        np.stack(agents_rasters_from_world_tfs), dtype=torch.float
-    )
-    agents_resolution: Tensor = torch.as_tensor(
-        np.stack(agents_res_list), dtype=torch.float
+    # Batch transform map patches and pad
+    (
+        rot_crop_patches, 
+        agents_resolution, 
+        agents_rasters_from_world_tf
+    ) = batch_rotate_raster_maps_for_agents_in_scene(
+        map_patches, num_agents, max_agent_num, pad_value
     )
 
-    patch_size_y, patch_size_x = patch_data.shape[-2:]
-    center_y: int = patch_size_y // 2
-    center_x: int = patch_size_x // 2
-    half_extent: int = patch_size // 2
+    return map_names, rot_crop_patches, agents_resolution, agents_rasters_from_world_tf
 
-    if torch.count_nonzero(agents_rot_angles) == 0:
-        agents_rasters_from_world_tf = torch.bmm(
-            torch.tensor(
-                [
-                    [
-                        [1.0, 0.0, half_extent],
-                        [0.0, 1.0, half_extent],
-                        [0.0, 0.0, 1.0],
-                    ]
-                ],
-                dtype=agents_rasters_from_world_tf.dtype,
-                device=agents_rasters_from_world_tf.device,
-            ).expand((agents_rasters_from_world_tf.shape[0], -1, -1)),
-            agents_rasters_from_world_tf,
-        )
 
-        rot_crop_patches = patch_data
-    else:
-        agents_rasters_from_world_tf = torch.bmm(
-            arr_utils.transform_matrices(
-                -agents_rot_angles,
-                torch.tensor([[half_extent, half_extent]]).expand(
-                    (agents_rot_angles.shape[0], -1)
-                ),
-            ),
-            agents_rasters_from_world_tf,
-        )
+def batch_rotate_raster_maps_for_agents_in_scene(
+    map_patches: List[RasterizedMapPatch],
+    num_agents: List[int],
+    max_agent_num: Optional[int] = None,
+    pad_value: Any = np.nan,
+) -> Tuple[Tensor, Tensor, Tensor]:
 
-        # Batch rotating patches by rot_angles.
-        rot_patches: Tensor = rotate(patch_data, torch.rad2deg(agents_rot_angles))
+    # Batch transform map patches
+    (
+        rot_crop_patches, 
+        agents_resolution, 
+        agents_rasters_from_world_tf
+    ) = batch_transform_raster_maps(map_patches)
 
-        # Center cropping via slicing.
-        rot_crop_patches = rot_patches[
-            ...,
-            center_y - half_extent : center_y + half_extent,
-            center_x - half_extent : center_x + half_extent,
-        ]
-
+    # Separate batch and agents
     rot_crop_patches = split_pad_crop(
         rot_crop_patches, num_agents, pad_value=pad_value, desired_size=max_agent_num
     )
@@ -277,7 +239,7 @@ def raster_map_collate_fn_scene(
         agents_resolution, num_agents, pad_value=0, desired_size=max_agent_num
     )
 
-    return map_names, rot_crop_patches, agents_resolution, agents_rasters_from_world_tf
+    return rot_crop_patches, agents_resolution, agents_rasters_from_world_tf
 
 
 def agent_collate_fn(

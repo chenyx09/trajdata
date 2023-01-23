@@ -1,16 +1,24 @@
 from collections import defaultdict
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
+import torch
+
+from pathlib import Path
 
 from trajdata.data_structures import (
     AgentBatch,
     AgentBatchElement,
     AgentType,
+    SceneBatch,
     SceneBatchElement,
     SceneTimeAgent,
 )
-from trajdata.data_structures.collation import agent_collate_fn
+from trajdata.data_structures.collation import agent_collate_fn, batch_rotate_raster_maps_for_agents_in_scene
+from trajdata.maps import RasterizedMapPatch
+from trajdata.utils.map_utils import load_map_patch
+from trajdata.utils.arr_utils import batch_nd_transform_xyvvaahh_pt, batch_select, PadDirection
+from trajdata.caching.df_cache import DataFrameCache
 
 
 def convert_to_agent_batch(
@@ -84,3 +92,107 @@ def convert_to_agent_batch(
         )
 
     return agent_collate_fn(batch_elems, return_dict=False, pad_format=pad_format)
+
+
+def get_agents_map_patch(
+    cache_path: Path, 
+    map_name: str,
+    patch_params: Dict[str, int], 
+    agent_world_states_xyh: Union[np.ndarray, torch.Tensor], 
+    allow_nan: float = False,
+) -> List[RasterizedMapPatch]:
+
+    if isinstance(agent_world_states_xyh, torch.Tensor):
+        agent_world_states_xyh = agent_world_states_xyh.cpu().numpy()
+    assert agent_world_states_xyh.ndim == 2
+    assert agent_world_states_xyh.shape[-1] == 3
+    
+    desired_patch_size: int = patch_params["map_size_px"]
+    resolution: float = patch_params["px_per_m"]
+    offset_xy: Tuple[float, float] = patch_params.get("offset_frac_xy", (0.0, 0.0))
+    return_rgb: bool = patch_params.get("return_rgb", True)
+    no_map_fill_val: float = patch_params.get("no_map_fill_value", 0.0)
+
+    env_name, location_name = map_name.split(':')  # assumes map_name format nusc_mini:boston-seaport
+
+    map_patches = list()
+
+    (
+        maps_path,
+        _,
+        _,
+        raster_map_path,
+        raster_metadata_path,
+    ) = DataFrameCache.get_map_paths(
+        cache_path, env_name, location_name, resolution
+    )
+
+    for i in range(agent_world_states_xyh.shape[0]):
+        patch_data, raster_from_world_tf, has_data = load_map_patch(
+            raster_map_path,
+            raster_metadata_path,
+            agent_world_states_xyh[i, 0],
+            agent_world_states_xyh[i, 1],
+            desired_patch_size,
+            resolution,
+            offset_xy,
+            agent_world_states_xyh[i, 2],
+            return_rgb,
+            rot_pad_factor=np.sqrt(2),
+            no_map_val=no_map_fill_val,
+        )
+        map_patches.append(
+            RasterizedMapPatch(
+                data=patch_data,
+                rot_angle=agent_world_states_xyh[i, 2],
+                crop_size=desired_patch_size,
+                resolution=resolution,
+                raster_from_world_tf=raster_from_world_tf,
+                has_data=has_data,
+            )
+        )
+
+    return map_patches
+
+
+def get_raster_maps_for_scene_batch(batch: SceneBatch, cache_path: Path, raster_map_params: Dict):
+
+    # Get current states
+    if batch.history_pad_dir == PadDirection.AFTER:
+        agent_states = batch_select(batch.agent_hist, index=batch.agent_hist_len-1, batch_dims=2)  # b, N, t, 8           
+    else:
+        agent_states = batch.agent_hist[:, :, -1]
+
+    agent_world_states_xyvvaahh = batch_nd_transform_xyvvaahh_pt(
+        agent_states.type_as(batch.centered_world_from_agent_tf), 
+        batch.centered_world_from_agent_tf
+    ).type_as(batch.agent_hist)
+
+    assert agent_world_states_xyvvaahh.shape[-1] == 8
+    agent_world_states_xyh = torch.concat((
+        agent_world_states_xyvvaahh[..., :2], 
+        torch.atan2(agent_world_states_xyvvaahh[..., 6:7], agent_world_states_xyvvaahh[..., 7:8])), dim=-1)
+
+    maps: List[torch.Tensor] = []
+    maps_resolution: List[torch.Tensor] = []
+    raster_from_world_tf: List[torch.Tensor] = []
+
+    # Collect map patches for all elements and agents into a flat list
+    num_agents: List[int] = []
+    map_patches: List[RasterizedMapPatch] = []
+
+    for b_i in range(agent_world_states_xyh.shape[0]):
+        num_agents.append(batch.num_agents[b_i])
+        map_patches += get_agents_map_patch(
+            cache_path, batch.map_names[b_i], raster_map_params, agent_world_states_xyh[b_i, :batch.num_agents[b_i]])
+
+    # Batch transform map patches and pad
+    (
+        maps, 
+        maps_resolution, 
+        raster_from_world_tf
+    ) = batch_rotate_raster_maps_for_agents_in_scene(
+        map_patches, num_agents, agent_world_states_xyh.shape[1], pad_value=np.nan,
+    )
+
+    return maps, maps_resolution, raster_from_world_tf

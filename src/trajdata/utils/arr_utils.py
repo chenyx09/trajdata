@@ -340,3 +340,24 @@ def quaternion_to_yaw(q: np.ndarray):
         2 * (q[..., 0] * q[..., 3] - q[..., 1] * q[..., 2]),
         1 - 2 * (q[..., 2] ** 2 + q[..., 3] ** 2),
     )
+
+
+def batch_select(
+    x: torch.Tensor, 
+    index: torch.Tensor, 
+    batch_dims: int
+) -> torch.Tensor:
+    # Indexing into tensor, treating the first `batch_dims` dimensions as batch.
+    # Kind of: output[..., k] = x[..., index[...]]
+
+    assert index.ndim >= batch_dims
+    assert index.ndim <= x.ndim
+    assert x.shape[:batch_dims] == index.shape[:batch_dims]
+
+    batch_shape = x.shape[:batch_dims]
+    x_flat = x.reshape(-1, *x.shape[batch_dims:])
+    index_flat = index.reshape(-1, *index.shape[batch_dims:])
+    x_flat = x_flat[torch.arange(x_flat.shape[0]), index_flat]
+    x = x_flat.reshape(*batch_shape, *x_flat.shape[1:])
+    
+    return x
