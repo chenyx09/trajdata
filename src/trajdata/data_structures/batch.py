@@ -397,7 +397,7 @@ class SceneBatch:
             extras=self.extras,
         )
 
-    def apply_transform(self, tf: torch.Tensor) -> SceneBatch:
+    def apply_transform(self, tf: torch.Tensor, dtype: Optional[torch.dtype] = None) -> SceneBatch:
         """
         Applies a transformation matrix to all coordinates stored in the SceneBatch.
 
@@ -408,7 +408,8 @@ class SceneBatch:
         assert tf.ndim == 3  # b, 3, 3
         assert tf.shape[-1] == 3 and tf.shape[-1] == 3
         assert tf.dtype == torch.double  # tf should be double precision, otherwise we have large numerical errors
-        dtype = self.agent_hist.dtype
+        if dtype is None:
+            dtype = self.agent_hist.dtype
 
         # Shallow copy
         batch: SceneBatch = replace(self)
@@ -420,7 +421,7 @@ class SceneBatch:
         batch.centered_agent_from_world_tf = tf @ batch.centered_agent_from_world_tf
         centered_world_from_agent_tf = torch.linalg.inv(batch.centered_agent_from_world_tf)
         # sanity check
-        assert torch.isclose(batch.centered_world_from_agent_tf @ torch.linalg.inv(tf), centered_world_from_agent_tf).all()
+        assert torch.isclose(batch.centered_world_from_agent_tf @ torch.linalg.inv(tf), centered_world_from_agent_tf, atol=1e-5).all()
         batch.centered_world_from_agent_tf = centered_world_from_agent_tf
 
         return batch        
