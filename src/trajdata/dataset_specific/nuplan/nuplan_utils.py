@@ -187,6 +187,7 @@ class NuPlanObject:
 
 
 def nuplan_type_to_unified_type(nuplan_type: str) -> AgentType:
+    # TODO (pkarkus) map traffic cones, barriers to static; generic_object to pedestrian
     if nuplan_type == "pedestrian":
         return AgentType.PEDESTRIAN
     elif nuplan_type == "bicycle":

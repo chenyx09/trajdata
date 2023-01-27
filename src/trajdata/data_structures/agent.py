@@ -11,6 +11,7 @@ class AgentType(IntEnum):
     PEDESTRIAN = 2
     BICYCLE = 3
     MOTORCYCLE = 4
+    STATIC = 5
 
 
 class Extent:
