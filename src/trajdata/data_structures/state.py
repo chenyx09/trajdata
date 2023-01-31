@@ -290,7 +290,9 @@ class StateTensor(State, Tensor):
         new_class = Tensor
         result = super().__torch_function__(func, types, args, kwargs)
 
-        if func in [Tensor.cpu, Tensor.to, Tensor.cuda, Tensor.add, Tensor.add_]:
+        # TODO(bivanovic): Ideally we would have Tensor.to here as well, but...
+        # https://github.com/pytorch/pytorch/issues/47051
+        if func in {Tensor.cpu, Tensor.cuda, Tensor.add, Tensor.add_}:
             new_class = cls
 
         if func == Tensor.__getitem__:
