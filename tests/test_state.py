@@ -21,6 +21,22 @@ class TestStateTensor(unittest.TestCase):
         b = torch.rand(8).as_subclass(AgentStateTensor)
         c = AgentObsTensor(torch.rand(5, 9))
 
+    def test_class_propagation(self):
+        a = AgentStateTensor(torch.rand(2, 8))
+        self.assertTrue(isinstance(a.to("cpu"), AgentStateTensor))
+
+        a = AgentStateTensor(torch.rand(2, 8))
+        self.assertTrue(isinstance(a.cpu(), AgentStateTensor))
+
+        b = AgentStateTensor(torch.rand(2, 8))
+        self.assertTrue(isinstance(a + b, AgentStateTensor))
+
+        b = torch.rand(2, 8)
+        self.assertTrue(isinstance(a + b, AgentStateTensor))
+
+        a += 1
+        self.assertTrue(isinstance(a, AgentStateTensor))
+
     def test_property_access(self):
         a = AgentStateTensor(torch.rand(2, 8))
         position = a[..., :3]
