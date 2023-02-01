@@ -146,6 +146,15 @@ class Polyline:
         return length
 
 
+    def get_length_from(self, start_ind: np.ndarray):
+        # TODO(pkarkus) we could store cummulative distances to speed this up
+        assert start_ind.ndim == 1
+        dists = np.linalg.norm(self.xyz[1:, :3] - self.xyz[:-1, :3], axis=-1)
+        length_upto = np.cumsum(np.pad(dists, (1, 0)))
+        length_from = length_upto[-1][None] - length_upto[start_ind]
+        return length_from
+
+
     def traverse_along(self, dist: np.ndarray, start_ind: Optional[np.ndarray] = None) -> np.ndarray:
         """
         Interpolated endpoint of traversing `dist` distance along polyline from a starting point. 
@@ -183,6 +192,9 @@ class Polyline:
 
         # Remaining distance from last point
         remaining_dist = dist - cum_len[inds-1]
+
+        # Invalidate negative remaining dist (this should only happen when dist < 0)
+        invalid = np.logical_or(invalid, remaining_dist < 0.)
         
         # Interpolate between the previous and next points.
         segment_vect_xyz = self.xyz[inds] - self.xyz[inds-1]
