@@ -14,7 +14,7 @@ If you want to add state column info to an array
 """
 from abc import abstractclassmethod
 from collections import defaultdict
-from typing import Callable, ClassVar, Dict, List, Type, TypeVar
+from typing import Callable, ClassVar, Dict, List, Set, Type, TypeVar
 
 import numpy as np
 import torch
@@ -281,6 +281,25 @@ class StateTensor(State, Tensor):
         "arctan": torch.arctan2,
     }
 
+    CAPTURED_FUNCS: Set[Callable] = {
+        Tensor.cpu,
+        Tensor.cuda,
+        Tensor.add,
+        Tensor.add_,
+        Tensor.__deepcopy__,
+    }
+
+    @classmethod
+    def new_empty(cls, *args, **kwargs):
+        return torch.empty(*args, **kwargs).as_subclass(cls)
+
+    def to(self, *args, **kwargs):
+        new_obj = self.__class__()
+        tempTensor = super().to(*args, **kwargs)
+        new_obj.data = tempTensor.data
+        new_obj.requires_grad = tempTensor.requires_grad
+        return new_obj
+
     @classmethod
     def __torch_function__(cls, func, types, args=(), kwargs=None):
         # overriding this to ensure operations yield base Tensors
@@ -290,9 +309,7 @@ class StateTensor(State, Tensor):
         new_class = Tensor
         result = super().__torch_function__(func, types, args, kwargs)
 
-        # TODO(bivanovic): Ideally we would have Tensor.to here as well, but...
-        # https://github.com/pytorch/pytorch/issues/47051
-        if func in {Tensor.cpu, Tensor.cuda, Tensor.add, Tensor.add_}:
+        if func in StateTensor.CAPTURED_FUNCS:
             new_class = cls
 
         if func == Tensor.__getitem__:
