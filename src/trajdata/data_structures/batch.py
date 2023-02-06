@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 
 import torch
 from torch import Tensor
 
 from trajdata.data_structures.agent import AgentType
+from trajdata.data_structures.state import StateTensor
 from trajdata.maps import VectorMap
 from trajdata.utils.arr_utils import PadDirection, batch_nd_transform_xyvvaahh_pt
 
@@ -18,22 +19,22 @@ class AgentBatch:
     dt: Tensor
     agent_name: List[str]
     agent_type: Tensor
-    curr_agent_state: Tensor
-    agent_hist: Tensor
+    curr_agent_state: StateTensor
+    agent_hist: StateTensor
     agent_hist_extent: Tensor
     agent_hist_len: Tensor
-    agent_fut: Tensor
+    agent_fut: StateTensor
     agent_fut_extent: Tensor
     agent_fut_len: Tensor
     num_neigh: Tensor
     neigh_types: Tensor
-    neigh_hist: Tensor
+    neigh_hist: StateTensor
     neigh_hist_extents: Tensor
     neigh_hist_len: Tensor
-    neigh_fut: Tensor
+    neigh_fut: StateTensor
     neigh_fut_extents: Tensor
     neigh_fut_len: Tensor
-    robot_fut: Optional[Tensor]
+    robot_fut: Optional[StateTensor]
     robot_fut_len: Optional[Tensor]
     map_names: Optional[List[str]]
     maps: Optional[Tensor]
@@ -66,7 +67,7 @@ class AgentBatch:
         for val in vars(self).keys():
             tensor_val = getattr(self, val)
             if val not in excl_vals and tensor_val is not None:
-                tensor_val: Tensor
+                tensor_val: Union[Tensor, StateTensor]
                 setattr(self, val, tensor_val.to(device, non_blocking=True))
 
         for key, val in self.extras.items():
@@ -204,15 +205,15 @@ class SceneBatch:
     dt: Tensor
     num_agents: Tensor
     agent_type: Tensor
-    centered_agent_state: Tensor
+    centered_agent_state: StateTensor
     agent_names: List[str]
-    agent_hist: Tensor
+    agent_hist: StateTensor
     agent_hist_extent: Tensor
     agent_hist_len: Tensor
-    agent_fut: Tensor
+    agent_fut: StateTensor
     agent_fut_extent: Tensor
     agent_fut_len: Tensor
-    robot_fut: Optional[Tensor]
+    robot_fut: Optional[StateTensor]
     robot_fut_len: Optional[Tensor]
     map_names: Optional[Tensor]
     maps: Optional[Tensor]
@@ -275,7 +276,8 @@ class SceneBatch:
             self.agent_hist.device
         )
 
-        _filter = lambda tensor: tensor[filter_mask_dict[str(tensor.device)]]
+        # Use tensor.__class__ to keep TensorState. This might 
+        _filter = lambda tensor: tensor.__class__(tensor[filter_mask_dict[str(tensor.device)]])
         _filter_tensor_or_list = lambda tensor_or_list: (
             _filter(tensor_or_list)
             if isinstance(tensor_or_list, torch.Tensor)
@@ -414,9 +416,14 @@ class SceneBatch:
         # Shallow copy
         batch: SceneBatch = replace(self)
 
+        # TODO (pkarkus) support generic format
+        assert batch.agent_hist._format == "x,y,xd,yd,xdd,ydd,s,c"
+        assert batch.agent_fut._format == "x,y,xd,yd,xdd,ydd,s,c"
+        state_class = batch.agent_hist.__class__
+
         # Transforms
-        batch.agent_hist = batch_nd_transform_xyvvaahh_pt(batch.agent_hist.double(), tf).type(dtype)
-        batch.agent_fut = batch_nd_transform_xyvvaahh_pt(batch.agent_fut.double(), tf).type(dtype)
+        batch.agent_hist = state_class(batch_nd_transform_xyvvaahh_pt(batch.agent_hist.double(), tf).type(dtype))
+        batch.agent_fut = state_class(batch_nd_transform_xyvvaahh_pt(batch.agent_fut.double(), tf).type(dtype))
         batch.rasters_from_world_tf = tf.unsqueeze(1) @ batch.rasters_from_world_tf if batch.rasters_from_world_tf is not None else None
         batch.centered_agent_from_world_tf = tf @ batch.centered_agent_from_world_tf
         centered_world_from_agent_tf = torch.linalg.inv(batch.centered_agent_from_world_tf)

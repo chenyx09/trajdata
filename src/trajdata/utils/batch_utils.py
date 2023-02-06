@@ -31,6 +31,7 @@ def convert_to_agent_batch(
     incl_map: bool = False,
     map_params: Optional[Dict[str, Any]] = None,
     max_neighbor_num: Optional[int] = None,
+    state_format: Optional[str] = None,
     standardize_data: bool = True,
     standardize_derivatives: bool = False,
     pad_format: str = "outside",
@@ -60,12 +61,13 @@ def convert_to_agent_batch(
     scene = cache.scene
     dt = scene_batch_element.dt
     ts = scene_batch_element.scene_ts
+    state_format = scene_batch_element.centered_agent_state_np._format
 
     batch_elems: List[AgentBatchElement] = []
     for j, agent_name in enumerate(scene_batch_element.agent_names):
         history_sec = dt * (scene_batch_element.agent_histories[j].shape[0] - 1)
         future_sec = dt * (scene_batch_element.agent_futures[j].shape[0])
-        cache.reset_transforms()
+        cache.reset_obs_frame()
         scene_time_agent: SceneTimeAgent = SceneTimeAgent.from_cache(
             scene,
             ts,
@@ -85,6 +87,7 @@ def convert_to_agent_batch(
                 agent_interaction_distances=agent_interaction_distances,
                 incl_raster_map=incl_map,
                 raster_map_params=map_params,
+                state_format=state_format,
                 standardize_data=standardize_data,
                 standardize_derivatives=standardize_derivatives,
                 max_neighbor_num=max_neighbor_num,
@@ -158,17 +161,17 @@ def get_agents_map_patch(
 def get_raster_maps_for_scene_batch(batch: SceneBatch, cache_path: Path, raster_map_params: Dict):
 
     # Get current states
+    agent_states = batch.agent_hist.as_format('x,y,xd,yd,xdd,ydd,s,c')
     if batch.history_pad_dir == PadDirection.AFTER:
-        agent_states = batch_select(batch.agent_hist, index=batch.agent_hist_len-1, batch_dims=2)  # b, N, t, 8           
+        agent_states = batch_select(agent_states, index=batch.agent_hist_len-1, batch_dims=2)  # b, N, t, 8           
     else:
-        agent_states = batch.agent_hist[:, :, -1]
+        agent_states = agent_states[:, :, -1]
 
     agent_world_states_xyvvaahh = batch_nd_transform_xyvvaahh_pt(
         agent_states.type_as(batch.centered_world_from_agent_tf), 
         batch.centered_world_from_agent_tf
-    ).type_as(batch.agent_hist)
+    )
 
-    assert agent_world_states_xyvvaahh.shape[-1] == 8
     agent_world_states_xyh = torch.concat((
         agent_world_states_xyvvaahh[..., :2], 
         torch.atan2(agent_world_states_xyvvaahh[..., 6:7], agent_world_states_xyvvaahh[..., 7:8])), dim=-1)
