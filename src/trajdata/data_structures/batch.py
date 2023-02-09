@@ -206,7 +206,7 @@ class SceneBatch:
     num_agents: Tensor
     agent_type: Tensor
     centered_agent_state: StateTensor
-    agent_names: List[str]
+    agent_names: List[List[str]]
     agent_hist: StateTensor
     agent_hist_extent: Tensor
     agent_hist_len: Tensor
