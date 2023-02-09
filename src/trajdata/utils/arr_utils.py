@@ -463,3 +463,19 @@ def batch_select(
     x = x_flat.reshape(*batch_shape, *x_flat.shape[1:])
     
     return x
+
+
+def roll_with_tensor(mat: torch.Tensor, shifts: torch.LongTensor, dim: int):
+    if dim < 0:
+        dim = mat.ndim + dim
+    arange1 = torch.arange(mat.shape[dim], device=shifts.device)
+    expanded_shape = [1] * dim + [-1] + [1] * (mat.ndim-dim-1)
+    arange1 = arange1.view(expanded_shape).expand(mat.shape)
+    if shifts.ndim == 1:
+        shifts = shifts.view([1] * (dim-1) + [-1])
+    # TODO(pkarkus) assert that shift dimenesions either match mat or 1
+    shifts = shifts.view(list(shifts.shape) + [1] * (mat.ndim-dim))
+
+    arange2 = (arange1 - shifts) % mat.shape[dim]
+    # print(arange2)
+    return torch.gather(mat, dim, arange2)

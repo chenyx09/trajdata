@@ -9,7 +9,7 @@ from torch import Tensor
 from trajdata.data_structures.agent import AgentType
 from trajdata.data_structures.state import StateTensor
 from trajdata.maps import VectorMap
-from trajdata.utils.arr_utils import PadDirection, batch_nd_transform_xyvvaahh_pt
+from trajdata.utils.arr_utils import PadDirection, batch_nd_transform_xyvvaahh_pt, roll_with_tensor
 
 
 @dataclass
@@ -261,12 +261,30 @@ class SceneBatch:
             if unique_type >= 0
         ]
 
-    def for_agent_type(self, agent_type: AgentType) -> SceneBatch:
-        match_type = self.agent_type == agent_type
-        return self.filter_batch(match_type)
+    def copy(self):
+        # Shallow copy
+        return replace(self)
 
-    def filter_batch(self, filter_mask: torch.tensor) -> SceneBatch:
+    def convert_pad_direction(self, pad_dir: PadDirection) -> SceneBatch:
+        if self.history_pad_dir == pad_dir:
+            return self
+        batch: SceneBatch = self.copy()
+        if self.history_pad_dir == PadDirection.BEFORE:
+            # n, n, -2 , -1, 0 -->  -2, -1, 0, n, n
+            shifts = batch.agent_hist_len  
+        else: 
+            #  -2, -1, 0, n, n --> n, n, -2 , -1, 0
+            shifts = -batch.agent_hist_len  
+        batch.agent_hist = roll_with_tensor(batch.agent_hist, shifts, dim=-2)
+        batch.agent_hist_extent = roll_with_tensor(batch.agent_hist_extent, shifts, dim=-2)
+        batch.history_pad_dir = pad_dir
+        return batch
+
+    def filter_batch(self, filter_mask: torch.Tensor) -> SceneBatch:
         """Build a new batch with elements for which filter_mask[i] == True."""
+
+        if filter_mask.ndim != 1:
+            raise ValueError("Expected 1d filter mask.")
 
         # Some of the tensors might be on different devices, so we define some convenience functions
         # to make sure the filter_mask is always on the same device as the tensor we are indexing.
