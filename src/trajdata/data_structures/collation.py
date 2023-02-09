@@ -924,9 +924,9 @@ def scene_collate_fn(
         agents_future_extents, num_agents, np.nan, max_agent_num
     )
 
-    centered_agent_state_t = torch.tensor(np.stack(centered_agent_state)).as_subclass(
-        AgentStateTensor
-    )
+    centered_agent_state_t = torch.as_tensor(
+        np.stack(centered_agent_state), dtype=torch.float
+    ).as_subclass(AgentStateTensor)
     agents_types_t = torch.as_tensor(np.concatenate(agents_types))
     agents_types_t = split_pad_crop(
         agents_types_t, num_agents, pad_value=-1, desired_size=max_agent_num
