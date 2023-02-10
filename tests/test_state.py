@@ -310,7 +310,9 @@ class TestDataset(unittest.TestCase):
         for batch in dataloader:
             i += 1
 
-            self.assertIsInstance(batch["centered_agent_state"], dataset.torch_state_type)
+            self.assertIsInstance(
+                batch["centered_agent_state"], dataset.torch_state_type
+            )
             self.assertIsInstance(batch["agent_hist"], dataset.torch_obs_type)
             self.assertIsInstance(batch["agent_fut"], dataset.torch_obs_type)
             self.assertIsInstance(batch["robot_fut"], dataset.torch_obs_type)
