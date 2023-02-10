@@ -359,6 +359,9 @@ class StateTensor(State, Tensor):
     def new_empty(cls, *args, **kwargs):
         return torch.empty(*args, **kwargs).as_subclass(cls)
 
+    def clone(self, *args, **kwargs):
+        return super().clone(*args, **kwargs).as_subclass(type(self))
+
     def to(self, *args, **kwargs):
         new_obj = self.__class__()
         tempTensor = super().to(*args, **kwargs)
