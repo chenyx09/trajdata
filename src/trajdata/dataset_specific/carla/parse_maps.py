@@ -33,8 +33,6 @@ def get_lane_id(road_id: str, section_idx: int, lane_id: str):
 def main(args):
     map_files = [Path(p) for p in glob.glob(os.path.join(args.maps_dir, "*.xodr"))]
 
-    fig, ax = plt.subplots()
-
     driving_lane_types: Set[str] = {
         "driving",
         # "bidirectional", # This is kinda wonky when it comes to lane/road connections.
@@ -60,7 +58,6 @@ def main(args):
             road_id = road.road_id
 
             road.generate_reference_line()
-            road.add_offset_to_reference_line()
             road.process_lanes()
 
             # fig, ax = plt.subplots()
@@ -352,18 +349,18 @@ def main(args):
         # ax.grid(None)
         # plt.show()
 
-        fig = InteractiveFigure()
-        fig.add_map(
-            map_from_world_tf=np.eye(4),
-            vec_map=vector_map,
-            bbox=(
-                minimum_bound[0],
-                maximum_bound[0],
-                minimum_bound[1],
-                maximum_bound[1],
-            ),
-        )
-        fig.show()
+        # fig = InteractiveFigure()
+        # fig.add_map(
+        #     map_from_world_tf=np.eye(4),
+        #     vec_map=vector_map,
+        #     bbox=(
+        #         minimum_bound[0],
+        #         maximum_bound[0],
+        #         minimum_bound[1],
+        #         maximum_bound[1],
+        #     ),
+        # )
+        # fig.show()
 
 
 if __name__ == "__main__":
@@ -379,7 +376,7 @@ if __name__ == "__main__":
         type=str,
     )
     parser.add_argument(
-        "-s", "--sampling", type=float, default=0.1, help="sampling length"
+        "-s", "--sampling", type=float, default=0.3, help="sampling length"
     )
     parser.add_argument(
         "--disable_z_axis",
