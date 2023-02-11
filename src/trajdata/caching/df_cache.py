@@ -417,6 +417,7 @@ class DataFrameCache(SceneCache):
             max_history: int = floor(
                 Decimal(str(history_sec[1])) / Decimal(str(self.dt))
             )
+
             first_index_incl = self.index_dict[
                 (
                     agent_info.name,
