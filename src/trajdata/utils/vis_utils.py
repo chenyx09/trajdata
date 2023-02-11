@@ -1,5 +1,5 @@
 from collections import defaultdict
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import geopandas as gpd
 import numpy as np
@@ -401,7 +401,7 @@ def convert_to_gpd(vec_map: VectorMap) -> gpd.GeoDataFrame:
 def get_map_cds(
     map_from_world_tf: np.ndarray,
     vec_map: VectorMap,
-    bbox: Tuple[float, float, float, float],
+    bbox: Optional[Tuple[float, float, float, float]] = None,
 ) -> Tuple[
     ColumnDataSource,
     ColumnDataSource,
@@ -421,7 +421,12 @@ def get_map_cds(
         + map_from_world_tf[:2, -1].flatten().tolist()
     )
     map_gpd["geometry"] = map_gpd["geometry"].affine_transform(affine_tf_params)
-    elems_gdf: gpd.GeoDataFrame = map_gpd.cx[bbox[0] : bbox[1], bbox[2] : bbox[3]]
+
+    elems_gdf: gpd.GeoDataFrame
+    if bbox is not None:
+        elems_gdf = map_gpd.cx[bbox[0] : bbox[1], bbox[2] : bbox[3]]
+    else:
+        elems_gdf = map_gpd
 
     for row_idx, row in elems_gdf.iterrows():
         if row["type"] == MapElementType.PED_CROSSWALK:
@@ -475,7 +480,7 @@ def draw_map_elems(
     fig: Figure,
     vec_map: VectorMap,
     map_from_world_tf: np.ndarray,
-    bbox: Tuple[float, float, float, float],
+    bbox: Optional[Tuple[float, float, float, float]] = None,
     **kwargs
 ) -> Tuple[GlyphRenderer, GlyphRenderer, GlyphRenderer, GlyphRenderer, GlyphRenderer]:
     """_summary_

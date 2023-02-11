@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Optional, Tuple
 
 import bokeh.plotting as plt
 import numpy as np
@@ -12,7 +12,6 @@ from trajdata.data_structures.agent import AgentType
 from trajdata.data_structures.state import StateTensor
 from trajdata.maps import VectorMap
 from trajdata.utils import vis_utils
-from trajdata.utils.arr_utils import transform_coords_2d_np
 
 
 class InteractiveFigure:
@@ -76,7 +75,7 @@ class InteractiveFigure:
         self,
         map_from_world_tf: np.ndarray,
         vec_map: VectorMap,
-        bbox: Tuple[float, float, float, float],
+        bbox: Optional[Tuple[float, float, float, float]] = None,
         **kwargs,
     ) -> Tuple[
         GlyphRenderer, GlyphRenderer, GlyphRenderer, GlyphRenderer, GlyphRenderer
