@@ -19,10 +19,8 @@ import typing
 if typing.TYPE_CHECKING:
     from imap.lib.opendrive.junction import Junction
 
-import math
 from typing import Optional
 
-import imap.global_var as global_var
 from imap.lib.opendrive.common import convert_speed
 from imap.lib.opendrive.lanes import Lanes
 from imap.lib.opendrive.plan_view import PlanView

@@ -35,7 +35,7 @@ def main(args):
 
     driving_lane_types: Set[str] = {
         "driving",
-        # "bidirectional", # This is kinda wonky when it comes to lane/road connections.
+        "bidirectional", # This is kinda wonky when it comes to lane/road connections.
         "exit",
         "entry",
         "onRamp",
@@ -45,7 +45,13 @@ def main(args):
     }
 
     for map_file in map_files:
-        vector_map = VectorMap(map_id=f"carla:{map_file.stem}")
+        map_env: str
+        if map_file.stem.startswith("Town"):
+            map_env = "carla"
+        else:
+            map_env = "drivesim"
+        
+        vector_map = VectorMap(map_id=f"{map_env}:{map_file.stem}")
 
         maximum_bound: np.ndarray = np.full((3,), np.nan)
         minimum_bound: np.ndarray = np.full((3,), np.nan)
@@ -340,8 +346,8 @@ def main(args):
         # )
         # ax.imshow(map_img, alpha=0.5, origin="lower")
         # vector_map.visualize_lane_graph(
-        #     origin_lane=vector_map.get_road_lane(get_lane_id("34", 0, "5")),
-        #     num_hops=2,
+        #     origin_lane=vector_map.get_road_lane(get_lane_id("197", 0, "-5")),
+        #     num_hops=5,
         #     raster_from_world=raster_from_world,
         #     ax=ax
         # )
