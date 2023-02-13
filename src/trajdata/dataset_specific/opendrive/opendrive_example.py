@@ -11,7 +11,7 @@ def main():
     cache_path = Path("~/.unified_data_cache").expanduser()
     map_api = MapAPI(cache_path)
 
-    for carla_town in ["main"]: #[f"Town0{x}" for x in range(1, 8)] + ["Town10", "Town10HD"]:
+    for carla_town in [f"Town0{x}" for x in range(1, 8)] + ["Town10", "Town10HD"]: # ["main"]:
         vec_map = map_api.get_map(
             f"drivesim:main" if carla_town == "main" else f"carla:{carla_town}",
             incl_road_lanes=True,
@@ -20,24 +20,24 @@ def main():
             incl_ped_walkways=True,
         )
 
-        fig, ax = plt.subplots()
-        map_img, raster_from_world = vec_map.rasterize(
-            resolution=2,
-            return_tf_mat=True,
-            incl_centerlines=False,
-            area_color=(255, 255, 255),
-            edge_color=(0, 0, 0),
-        )
-        ax.imshow(map_img, alpha=0.5, origin="lower")
-        vec_map.visualize_lane_graph(
-            origin_lane=vec_map.get_road_lane("314_s0_-2"),
-            num_hops=5,
-            raster_from_world=raster_from_world,
-            ax=ax
-        )
-        ax.axis("equal")
-        ax.grid(None)
-        plt.show()
+        # fig, ax = plt.subplots()
+        # map_img, raster_from_world = vec_map.rasterize(
+        #     resolution=2,
+        #     return_tf_mat=True,
+        #     incl_centerlines=False,
+        #     area_color=(255, 255, 255),
+        #     edge_color=(0, 0, 0),
+        # )
+        # ax.imshow(map_img, alpha=0.5, origin="lower")
+        # vec_map.visualize_lane_graph(
+        #     origin_lane=vec_map.get_road_lane("314_s0_-2"),
+        #     num_hops=5,
+        #     raster_from_world=raster_from_world,
+        #     ax=ax
+        # )
+        # ax.axis("equal")
+        # ax.grid(None)
+        # plt.show()
 
         fig = InteractiveFigure()
         fig.add_map(
