@@ -39,14 +39,14 @@ message Point {
 }
 
 message Polyline {
-  // Position deltas in millimeters. The origin is an arbitrary location.
-  // From https://github.com/woven-planet/l5kit/blob/master/l5kit/l5kit/data/proto/road_network.proto#L446
+  // Position deltas in 10^-5 meters. The origin is an arbitrary location.
+  // Inspired by https://github.com/woven-planet/l5kit/blob/master/l5kit/l5kit/data/proto/road_network.proto#L446
   // The delta for the first point is just its coordinates tuple, i.e. it is a "delta" from
   // the origin. For subsequent points, this field stores the difference between the point's
   // coordinates and the previous point's coordinates. This is for representation efficiency.
-  repeated sint32 dx_mm = 1;
-  repeated sint32 dy_mm = 2;
-  repeated sint32 dz_mm = 3;
+  repeated sint64 dx_mm = 1;
+  repeated sint64 dy_mm = 2;
+  repeated sint64 dz_mm = 3;
   repeated double h_rad = 4;
 }
 

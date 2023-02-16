@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from tqdm import tqdm
-
 if TYPE_CHECKING:
     from trajdata.maps import map_kdtree, vec_map, RasterizedMapMetadata, RasterizedMapPatch
 
@@ -18,11 +16,11 @@ import torch
 import zarr
 from scipy.stats import circmean
 
-import trajdata.maps.vec_map_elements as vec_map_elems
 import trajdata.proto.vectorized_map_pb2 as map_proto
 from trajdata.utils import arr_utils
 
-MM_PER_M: Final[float] = 1000
+NUM_DECIMALS: Final[int] = 5
+COMPRESSION_SCALE: Final[float] = 10**NUM_DECIMALS
 
 
 def pad_map_patch(
@@ -296,11 +294,11 @@ def decompress_values(data: np.ndarray) -> np.ndarray:
     # The delta for the first point is just its coordinates tuple, i.e. it is a "delta" from
     # the origin. For subsequent points, this field stores the difference between the point's
     # coordinates and the previous point's coordinates. This is for representation efficiency.
-    return np.cumsum(data, axis=0, dtype=float) / MM_PER_M
+    return np.cumsum(data, axis=0, dtype=float) / COMPRESSION_SCALE
 
 
 def compress_values(data: np.ndarray) -> np.ndarray:
-    return (np.diff(data, axis=0, prepend=0.0) * MM_PER_M).astype(np.int32)
+    return (np.diff(data, axis=0, prepend=0.0) * COMPRESSION_SCALE).astype(np.int64)
 
 
 def get_polyline_headings(points: np.ndarray) -> np.ndarray:
