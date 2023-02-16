@@ -253,6 +253,28 @@ class SceneBatch:
             else:
                 self.extras[key] = val.to(device, non_blocking=True)
 
+    def astype(self, dtype) -> None:
+        new_obj = replace(self)
+        excl_vals = {
+            "num_agents",
+            "agent_names",
+            "agent_type",
+            "agent_hist_len",
+            "agent_fut_len",
+            "robot_fut_len",
+            "map_names",
+            "vector_maps",
+            "history_pad_dir",
+            "scene_ids",
+            "extras",
+        }
+
+        for val in vars(self).keys():
+            tensor_val = getattr(self, val)
+            if val not in excl_vals and tensor_val is not None:
+                setattr(new_obj, val, tensor_val.type(dtype))
+        return new_obj
+
     def agent_types(self) -> List[AgentType]:
         unique_types: Tensor = torch.unique(self.agent_type)
         return [
