@@ -52,7 +52,7 @@ class VectorMap:
     )
     search_kdtrees: Optional[Dict[MapElementType, MapElementKDTree]] = None
     traffic_light_status: Optional[Dict[Tuple[int, int], TrafficLightStatus]] = None
-    online_metadict: Optional[Dict[Tuple[int, int], Dict]] = None
+    online_metadict: Optional[Dict[Tuple[str, int], Dict]] = None
 
     def __post_init__(self) -> None:
         self.env_name, self.map_name = self.map_id.split(":")
@@ -385,7 +385,7 @@ class VectorMap:
         self, lane_id: str, scene_ts: int = 0
     ) -> Dict:
         return (
-            self.online_metadict[(int(lane_id), scene_ts)]
+            self.online_metadict[(str(lane_id), scene_ts)]
             if self.online_metadict is not None
             else {}
         )
