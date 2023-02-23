@@ -466,9 +466,9 @@ class Lanes:
 
                 if type(geom) is Geometry:
                     # Trying to be a little smart with straight lines
-                    # (no need to sample the middle points).
+                    # (no need to sample straight lines too many times).
                     reference_line_in_section.extend(
-                        geom.linspace(left_s, right_s, 2, elevation_profile)
+                        geom.linspace(left_s, right_s, 50, elevation_profile)
                     )
                 else:
                     reference_line_in_section.extend(
