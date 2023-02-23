@@ -12,6 +12,7 @@ from typing import Any, Callable, Dict, List, Optional
 import cv2
 import numpy as np
 import pandas as pd
+import torch
 from bokeh.application import Application
 from bokeh.application.handlers import FunctionHandler
 from bokeh.document import Document, without_document_lock
@@ -93,9 +94,10 @@ class InteractiveAnimation:
 
 
 def animate_agent_batch_interactive(
-    doc: Document, io_loop: IOLoop, batch: AgentBatch, batch_idx: int, cache_path: Path
+    doc: Document, io_loop: IOLoop, batch: AgentBatch, batch_idx: int, cache_path: Path, planner_output_hist: Optional[List[Dict]],
 ) -> None:
     agent_data_df = vis_utils.extract_full_agent_data_df(batch, batch_idx)
+    plan_data_df = vis_utils.extract_full_plan_data_df(planner_output_hist, batch_idx)
 
     # Figure creation and a few initial settings.
     width: int = 1280
@@ -178,6 +180,10 @@ def animate_agent_batch_interactive(
     agent_cds = ColumnDataSource(agent_data_df)
     curr_time_view = CDSView(
         source=agent_cds, filters=[BooleanFilter(agent_cds.data["t"] == 0)]
+    )
+    plan_cds = ColumnDataSource(plan_data_df)
+    plan_curr_time_view = CDSView(
+        source=plan_cds, filters=[BooleanFilter(plan_cds.data["t"] == 0)]
     )
 
     # Some neighbors can have more history than the agent to be predicted
@@ -270,7 +276,7 @@ def animate_agent_batch_interactive(
         xs="rect_xs",
         ys="rect_ys",
         fill_color="color",
-        line_color="black",
+        line_color="blue",
         # fill_alpha=0.7,
         source=agent_cds,
         view=curr_time_view,
@@ -285,6 +291,26 @@ def animate_agent_batch_interactive(
         source=agent_cds,
         view=curr_time_view,
     )
+
+    # Plans
+    plan_lines = fig.multi_line(
+        xs="plan_xs",
+        ys="plan_ys",
+        line_color="color",
+        line_width=1.,        
+        # fill_alpha=0.7,
+        source=plan_cds,
+        view=plan_curr_time_view,
+    )
+    plan_circles = fig.circle(
+        x="plan_xs_final",
+        y="plan_ys_final",
+        color="color",
+        # alpha=simulation_tile_trajectory_style["fan"]["circle_alpha"],
+        radius=0.1,  # radius is in meters, size is in screen dimensions
+        source=plan_cds,
+        view=plan_curr_time_view,
+    )   
 
     scene_ts: int = batch.scene_ts[batch_idx].item()
 
@@ -302,6 +328,7 @@ def animate_agent_batch_interactive(
     # Ensuring that information gets updated upon a cahnge in the slider value.
     def time_callback(attr, old, new) -> None:
         curr_time_view.filters = [BooleanFilter(agent_cds.data["t"] == new)]
+        plan_curr_time_view.filters = [BooleanFilter(plan_cds.data["t"] == new)]
         history_lines_cds.data = slice_multi_line_data(
             history_line_data_df, slice(None, new + full_H), check_idx=-1
         )
@@ -326,6 +353,16 @@ def animate_agent_batch_interactive(
                 ("Speed", "@speed_mps m/s (@speed_kph km/h)"),
             ],
             renderers=[agent_rects],
+        )
+    )
+    fig.add_tools(
+        HoverTool(
+            tooltips=[
+                ("cost", "@plan_cost"),
+                ("cost_comp", "@plan_cost_comp_str"),
+                ("vel", "@plan_vel_str"),
+            ],
+            renderers=[plan_circles],
         )
     )
 

@@ -1,5 +1,5 @@
 from collections import defaultdict
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict
 
 import geopandas as gpd
 import numpy as np
@@ -378,6 +378,46 @@ def extract_full_agent_data_df(batch: AgentBatch, batch_idx: int) -> pd.DataFram
     return pd.DataFrame(main_data_dict)
 
 
+def extract_full_plan_data_df(plan_hist: List[Dict], batch_idx: int) -> pd.DataFrame:
+    main_data_dict = defaultdict(list)
+
+    if plan_hist is None or len(plan_hist) == 0:
+        return main_data_dict
+
+    for t, plan_dict in enumerate(plan_hist):
+        if "plan_xu" not in plan_dict:
+            continue
+
+        if "candidate_xu" in plan_dict:
+            candidate_xu = plan_dict["candidate_xu"][batch_idx].cpu().numpy()  
+            candidate_cost = plan_dict["candidate_cost"][batch_idx].cpu().numpy()
+            candidate_cost_time_comp = plan_dict["candidate_cost_time_comp"][batch_idx].cpu().numpy() 
+            candidate_cost_comp = candidate_cost_time_comp.sum(1)
+            cost_component_str = [" ".join([f"{v:.3f}" for v in comps]) for comps in candidate_cost_comp]
+            is_plan_output = np.zeros((candidate_xu.shape[0], ), dtype=np.bool8)
+            is_plan_output[candidate_cost.argmin()] = True
+        else:
+            candidate_xu = plan_dict["plan_xu"][batch_idx].cpu().numpy()[None]
+            candidate_cost = plan_dict["plan_cost"][batch_idx].cpu().numpy()[None]
+            cost_component_str = [""]
+            is_plan_output = [True]
+
+        vel_str = [", ".join([f"{v:.1f}" for v in v_vec]) for v_vec in candidate_xu[:, :, 3]]
+        color = np.where(is_plan_output, ["blue"], ["black"])
+
+        main_data_dict["t"].extend([t-len(plan_hist)+1] * candidate_xu.shape[0])
+        main_data_dict["plan_xs"].extend(candidate_xu[:, :, 0])
+        main_data_dict["plan_ys"].extend(candidate_xu[:, :, 1])
+        main_data_dict["plan_xs_final"].extend(candidate_xu[:, -1, 0])
+        main_data_dict["plan_ys_final"].extend(candidate_xu[:, -1, 1])
+        main_data_dict["plan_cost"].extend(candidate_cost)
+        main_data_dict["plan_cost_comp_str"].extend(cost_component_str)
+        main_data_dict["plan_vel_str"].extend(vel_str)
+        main_data_dict["color"].extend(color)
+
+    return pd.DataFrame(main_data_dict)
+
+
 def convert_to_gpd(vec_map: VectorMap) -> gpd.GeoDataFrame:
     geo_data = defaultdict(list)
     for elem in vec_map.iter_elems():
@@ -509,6 +549,8 @@ def draw_map_elems(
         fill_alpha=0.1,
         fill_color=get_map_patch_color(MapElementType.ROAD_AREA),
     )
+
+    # print (len(road_lane_cds.data['xs']))
 
     road_lanes = fig.patches(
         source=road_lane_cds,
