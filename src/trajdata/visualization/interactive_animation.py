@@ -519,7 +519,7 @@ def animate_agent_batch_interactive(
         chrome_options.headless = True
         driver = webdriver.Chrome(chrome_options=chrome_options)
 
-        n_frames = render_range_slider.value[1] - render_range_slider.value[0] + 1
+        n_frames = int(render_range_slider.value[1] - render_range_slider.value[0] + 1)
         for frame_index in trange(n_frames, desc="Rendering Video"):
             # Giving the doc a chance to update the figure.
             time.sleep(0.1)
