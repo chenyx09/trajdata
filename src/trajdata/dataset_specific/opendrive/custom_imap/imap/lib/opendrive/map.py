@@ -111,9 +111,16 @@ class Map:
             junction.parse_from(raw_junction)
             self.junctions[junction.junction_id] = junction
 
-    def load(self, filename):
-        tree = ET.parse(filename)
-        root = tree.getroot()
+    def load(self, filename, rawstring=None):
+        if filename is not None and rawstring is not None:
+            raise ValueError("Only one of filename and rawstring can be specified.")
+        if filename is not None:
+            tree = ET.parse(filename)
+            root = tree.getroot()
+        else:
+            assert rawstring is not None
+            root = ET.fromstring(rawstring)
+
         assert root is not None, "Map XML failed!"
         assert root.tag == "OpenDRIVE"
 
