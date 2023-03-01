@@ -95,6 +95,7 @@ class InteractiveAnimation:
 
 def animate_agent_batch_interactive(
     doc: Document, io_loop: IOLoop, batch: AgentBatch, batch_idx: int, cache_path: Path, planner_output_hist: Optional[List[Dict]],
+    reload_vector_map: bool = True,
 ) -> None:
     agent_data_df = vis_utils.extract_full_agent_data_df(batch, batch_idx)
     plan_data_df = vis_utils.extract_full_plan_data_df(planner_output_hist, batch_idx)
@@ -150,13 +151,16 @@ def animate_agent_batch_interactive(
     if batch.map_names is not None:
         mapAPI = MapAPI(cache_path)
 
-        vec_map = mapAPI.get_map(
-            batch.map_names[batch_idx],
-            incl_road_lanes=True,
-            incl_road_areas=True,
-            incl_ped_crosswalks=True,
-            incl_ped_walkways=True,
-        )
+        if reload_vector_map or batch.vector_maps is None:
+            vec_map = mapAPI.get_map(
+                batch.map_names[batch_idx],
+                incl_road_lanes=True,
+                incl_road_areas=True,
+                incl_ped_crosswalks=True,
+                incl_ped_walkways=True,
+            )
+        else:
+            vec_map = batch.vector_maps[batch_idx]
 
         (
             road_areas,
@@ -321,6 +325,7 @@ def animate_agent_batch_interactive(
         step=1,
         value=0,
         title=f"Current Timestep (scene timestep {scene_ts})",
+        width=600,
     )
 
     dt: float = batch.dt[batch_idx].item()
@@ -337,12 +342,31 @@ def animate_agent_batch_interactive(
         )
 
         if new == 0:
-            time_slider.title = f"Current Timestep (scene timestep {scene_ts})"
+            time_slider.title = f"{new + full_H - 1} | Current Timestep (scene timestep {scene_ts})"
         else:
             n_steps = abs(new)
-            time_slider.title = f"{n_steps} timesteps ({n_steps * dt:.2f} s) into the {'future' if new > 0 else 'past'}"
+            time_slider.title = f"{new + full_H - 1} | {n_steps} timesteps ({n_steps * dt:.2f} s) into the {'future' if new > 0 else 'past'}"
+
+        # # Move figure to track predicted agent
+        # mask = (agent_cds.data["t"] == new) & (agent_cds.data["pred_agent"])
+        # center_x = agent_cds.data["x"][mask][0]
+        # center_y = agent_cds.data["y"][mask][0]
+        # x_radius = fig.x_range.end - fig.x_range.start
+        # y_radius = fig.y_range.end - fig.y_range.start
+        # fig.x_range.start = center_x - x_radius / 2
+        # fig.x_range.end = center_x + x_radius / 2
+        # fig.y_range.start = center_y - y_radius / 2
+        # fig.y_range.end = center_y + y_radius / 2    
 
     time_slider.on_change("value", time_callback)
+
+    def change_slider(delta: int):
+        time_slider.value = min(time_slider.value + delta, time_slider.end)
+
+    minus_button = Button(label="-", width=20)
+    minus_button.on_click(lambda: change_slider(-1))
+    plus_button = Button(label="+", width=20)
+    plus_button.on_click(lambda: change_slider(1))
 
     # Adding tooltips on mouse hover.
     fig.add_tools(
@@ -567,7 +591,7 @@ def animate_agent_batch_interactive(
     doc.add_root(
         column(
             fig,
-            row(play_button, time_slider, exit_button),
+            row(play_button, time_slider, minus_button, plus_button, exit_button),
             row(video_button, render_range_slider, filetype_select),
         )
     )

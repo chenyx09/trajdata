@@ -495,6 +495,14 @@ def get_map_cds(
 
                 road_lane_data["xs"].append(transformed_xy[..., 0])
                 road_lane_data["ys"].append(transformed_xy[..., 1])
+
+                # TODO(pkarkus) hacky way to visualize onroute data, assuming timestep is zero
+                metadict = vec_map.get_online_metadict(row["id"])
+                if "onroute" in metadict and metadict["onroute"]:
+                    road_lane_data["fill_color"].append("gold")
+                else:
+                    road_lane_data["fill_color"].append(get_map_patch_color(MapElementType.ROAD_LANE))
+
         elif row["type"] == MapElementType.ROAD_AREA:
             xy = np.stack(row["geometry"].exterior.xy, axis=1)
             holes_xy: List[np.ndarray] = [
@@ -557,7 +565,7 @@ def draw_map_elems(
         line_color="black",
         line_width=0.3,
         fill_alpha=0.1,
-        fill_color=get_map_patch_color(MapElementType.ROAD_LANE),
+        fill_color="fill_color",
     )
 
     ped_crosswalks = fig.patches(

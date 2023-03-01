@@ -12,7 +12,7 @@ from trajdata.utils.arr_utils import transform_coords_2d_np
 from trajdata.visualization.interactive_figure import InteractiveFigure
 
 
-def plot_agent_batch_interactive(batch: AgentBatch, batch_idx: int, cache_path: Path):
+def plot_agent_batch_interactive(batch: AgentBatch, batch_idx: int, cache_path: Path, reload_vector_map: bool = True):
     fig = InteractiveFigure(
         tooltips=[
             ("Class", "@type"),
@@ -68,15 +68,19 @@ def plot_agent_batch_interactive(batch: AgentBatch, batch_idx: int, cache_path: 
     if batch.map_names is not None:
         map_vis_radius: float = 50.0
         mapAPI = MapAPI(cache_path)
-        fig.add_map(
-            batch.agents_from_world_tf[batch_idx].cpu().numpy(),
-            mapAPI.get_map(
+        if reload_vector_map or batch.vector_maps is None:
+            vec_map = mapAPI.get_map(
                 batch.map_names[batch_idx],
                 incl_road_lanes=True,
                 incl_road_areas=True,
                 incl_ped_crosswalks=True,
                 incl_ped_walkways=True,
-            ),
+            )
+        else:
+            vec_map = batch.vector_maps[batch_idx]
+        fig.add_map(
+            batch.agents_from_world_tf[batch_idx].cpu().numpy(),
+            vec_map,
             # x_min, x_max, y_min, y_max
             bbox=(
                 x - map_vis_radius,
