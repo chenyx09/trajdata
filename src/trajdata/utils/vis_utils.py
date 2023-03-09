@@ -74,10 +74,10 @@ def calculate_figure_sizes(
 
     radius = (x_range / 2 if x_range > y_range else y_range / 2) + data_margin
     return (
-        x_center - radius,
-        x_center + radius,
-        y_center - radius / aspect_ratio,
-        y_center + radius / aspect_ratio,
+        x_center - radius * aspect_ratio,
+        x_center + radius * aspect_ratio,
+        y_center - radius,
+        y_center + radius,
     )
 
 

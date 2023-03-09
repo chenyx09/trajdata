@@ -111,6 +111,12 @@ def animate_agent_batch_interactive(
     y_min = agent_data_df["y"].min()
     y_max = agent_data_df["y"].max()
 
+    # Limit view when x_max >> x_min, for example for dummy agents with (10^6, 10^6)
+    if x_max - x_min > 1000:
+        x_max = x_min + 1000
+    if y_max - y_min > 1000:
+        y_max = y_min + 1000
+
     (
         x_range_min,
         x_range_max,
