@@ -190,6 +190,28 @@ def parse_opendrive_map(map_id: str, map_filename: Optional[str], map_rawstring:
                         [(p.x, p.y, p.z) for p in lane.center_line], axis=0
                     )
 
+                    assert centerline.shape[0] >= 2, f"Invalid centerline for lane_id={lane_id}"
+
+                    # In some cases centerline contains repeated points, which causes issues in map api.
+                    # TODO(pkarkus) we might want to do the same for left and right boundary.
+                    consec_dist = np.linalg.norm(centerline[1:, :2] - centerline[:-1, :2], axis=-1)
+                    consec_dist = np.pad(consec_dist, (1, 0), mode="constant", constant_values=1000.)
+                    keep = [0]
+                    removed_dist = 0.
+                    for i in range(1, len(centerline)):
+                        if consec_dist[i] < 0.01 and removed_dist < 0.1:
+                            continue
+                        else:
+                            keep.append(i)
+                            removed_dist = 0.
+                    # Make sure we are keeping at least 2 points. 
+                    # We could also just drop this lane, but that requires extra logic for connectivity
+                    # afterwards. One workaround is to go through all lanes after building connectivites 
+                    # and remove + reconnect invalid lanes.
+                    if len(keep) == 1:
+                        keep.append(len(centerline)-1)
+                    centerline = centerline[keep]
+
                     # Computing the maximum and minimum map coordinates.
                     maximum_bound = np.fmax(maximum_bound, centerline.max(axis=0))
                     minimum_bound = np.fmin(minimum_bound, centerline.min(axis=0))
