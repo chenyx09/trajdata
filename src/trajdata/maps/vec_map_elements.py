@@ -139,6 +139,11 @@ class Polyline:
         else:
             return proj_points
 
+    def distance_to_point(self, xyz: np.ndarray):
+        assert xyz.ndim == 2
+        xyz_proj = self.project_onto(xyz)
+        return np.linalg.norm(xyz[..., :3] - xyz_proj[..., :3], axis=-1)
+
     def get_length(self):
         # TODO(pkarkus) we could store cummulative distances to speed this up
         dists = np.linalg.norm(self.xyz[1:, :3] - self.xyz[:-1, :3], axis=-1)
