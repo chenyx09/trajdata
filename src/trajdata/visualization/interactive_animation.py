@@ -307,7 +307,7 @@ def animate_agent_batch_interactive(
         xs="plan_xs",
         ys="plan_ys",
         line_color="color",
-        line_width=1.,        
+        line_width="line_width",        
         # fill_alpha=0.7,
         source=plan_cds,
         view=plan_curr_time_view,
@@ -317,7 +317,7 @@ def animate_agent_batch_interactive(
         y="plan_ys_final",
         color="color",
         # alpha=simulation_tile_trajectory_style["fan"]["circle_alpha"],
-        radius=0.1,  # radius is in meters, size is in screen dimensions
+        radius="circle_radius",  # radius is in meters, size is in screen dimensions
         source=plan_cds,
         view=plan_curr_time_view,
     )   

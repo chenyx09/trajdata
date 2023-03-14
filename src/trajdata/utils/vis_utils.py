@@ -404,6 +404,8 @@ def extract_full_plan_data_df(plan_hist: List[Dict], batch_idx: int) -> pd.DataF
 
         vel_str = [", ".join([f"{v:.1f}" for v in v_vec]) for v_vec in candidate_xu[:, :, 3]]
         color = np.where(is_plan_output, ["blue"], ["black"])
+        line_width =  np.where(is_plan_output, 2., 1.)
+        circle_radius =  np.where(is_plan_output, 0.13, 0.1)
 
         main_data_dict["t"].extend([t-len(plan_hist)+1] * candidate_xu.shape[0])
         main_data_dict["plan_xs"].extend(candidate_xu[:, :, 0])
@@ -414,6 +416,8 @@ def extract_full_plan_data_df(plan_hist: List[Dict], batch_idx: int) -> pd.DataF
         main_data_dict["plan_cost_comp_str"].extend(cost_component_str)
         main_data_dict["plan_vel_str"].extend(vel_str)
         main_data_dict["color"].extend(color)
+        main_data_dict["line_width"].extend(line_width)
+        main_data_dict["circle_radius"].extend(circle_radius)
 
     return pd.DataFrame(main_data_dict)
 
