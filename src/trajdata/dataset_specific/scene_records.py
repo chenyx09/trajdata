@@ -16,6 +16,12 @@ class NuscSceneRecord(NamedTuple):
     desc: str
     data_idx: int
 
+class CarlaSceneRecord(NamedTuple):
+    name: str
+    location: str
+    length: str
+    data_idx: int
+
 
 class LyftSceneRecord(NamedTuple):
     name: str
