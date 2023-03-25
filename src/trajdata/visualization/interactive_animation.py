@@ -42,6 +42,7 @@ from trajdata.data_structures.batch import AgentBatch
 from trajdata.data_structures.state import StateArray
 from trajdata.maps.map_api import MapAPI
 from trajdata.utils import vis_utils
+from trajdata.utils.comm_utils import find_open_port, find_open_port_in_range
 
 
 class InteractiveAnimation:
@@ -55,17 +56,15 @@ class InteractiveAnimation:
         self.port = port
         self.kwargs = kwargs
 
-    def get_open_port(self) -> int:
-        with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
-            s.bind(("", 0))
-            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            return s.getsockname()[1]
-
     def show(self) -> None:
         io_loop = IOLoop()
 
         if self.port is None:
-            self.port = self.get_open_port()
+            # self.port = find_open_port()  # find any open port, not always stable
+            # self.port = 40405  # fix
+            self.port = find_open_port_in_range(40405, 40455)  # scans a range, slower but more stable
+            # Add sleep to prevent 'ERROR:asyncio:Task was destroyed but it is pending!'
+            time.sleep(0.5)
 
         def kill_on_tab_close(session_context):
             io_loop.stop()
