@@ -176,9 +176,7 @@ def animate_agent_batch_interactive(
 
     # Preparing agent information for fast slicing with the time_slider.
     agent_cds = ColumnDataSource(agent_data_df)
-    curr_time_view = CDSView(
-        filter=BooleanFilter((agent_cds.data["t"] == 0).tolist())
-    )
+    curr_time_view = CDSView(filter=BooleanFilter((agent_cds.data["t"] == 0).tolist()))
 
     # Some neighbors can have more history than the agent to be predicted
     # (the data-collecting agent has observed the neighbors for longer).
