@@ -143,9 +143,9 @@ def animate_agent_batch_interactive(
     agent_name: str = batch.agent_name[batch_idx]
     agent_type: AgentType = AgentType(batch.agent_type[batch_idx].item())
     current_state: StateArray = batch.curr_agent_state[batch_idx].cpu().numpy()
-    map_id: str = batch.map_names[batch_idx]
+    map_id: str = str(batch.map_names[batch_idx])
     env_name, map_name = map_id.split(":")
-    scene_id: str = batch.scene_ids[batch_idx]
+    scene_id: str = str(batch.scene_ids[batch_idx])
     fig.title = (
         f"Dataset: {env_name}, Location: {map_name}, Scene: {scene_id}"
         + "\n"
