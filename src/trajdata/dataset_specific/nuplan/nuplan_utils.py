@@ -328,12 +328,20 @@ def populate_vector_map(
         # The right boundary of Lane A has Lane A to its left.
         boundary_connectivity_dict[right_boundary_id]["left"].append(lane_id)
 
+        # Find road areas that this lane intersects for faster lane-based lookup later.
+        intersect_filt = nuplan_map._vector_map["drivable_area"].intersects(lane_info["geometry"])
+        isnear_filt = (nuplan_map._vector_map["drivable_area"].distance(lane_info["geometry"]) < 3.)
+        road_area_ids = set(nuplan_map._vector_map["drivable_area"][intersect_filt | isnear_filt]["fid"].values)
+        if not road_area_ids:
+            print (f"Warning: no road lane associated with lane {lane_id}")
+
         # "partial" because we aren't adding lane connectivity until later.
         partial_new_lane = RoadLane(
             id=lane_id,
             center=Polyline(center_pts),
             left_edge=Polyline(left_pts),
             right_edge=Polyline(right_pts),
+            road_area_ids=road_area_ids,
         )
         vector_map.add_map_element(partial_new_lane)
         overall_pbar.update()

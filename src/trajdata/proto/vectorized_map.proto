@@ -74,6 +74,9 @@ message RoadLane {
   // A list of neighbors to the right of this lane. Neighbor lanes
   // include only adjacent lanes going the same direction.
   repeated bytes adjacent_lanes_right = 7;
+
+  // A list of associated road area ids.
+  repeated bytes road_area_ids = 8;
 }
 
 message RoadArea {

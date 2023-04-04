@@ -240,6 +240,7 @@ class RoadLane(MapElement):
     adj_lanes_right: Set[str] = field(default_factory=lambda: set())
     next_lanes: Set[str] = field(default_factory=lambda: set())
     prev_lanes: Set[str] = field(default_factory=lambda: set())
+    road_area_ids: Set[str] = field(default_factory=lambda: set())
     elem_type: MapElementType = MapElementType.ROAD_LANE
 
     def __post_init__(self) -> None:

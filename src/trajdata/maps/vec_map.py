@@ -25,6 +25,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.axes import Axes
 from tqdm import tqdm
+from shapely.geometry import Polygon
 
 import trajdata.proto.vectorized_map_pb2 as map_proto
 from trajdata.maps.map_kdtree import LaneCenterKDTree
@@ -60,6 +61,8 @@ class VectorMap:
         self.lanes: Optional[List[RoadLane]] = None
         if MapElementType.ROAD_LANE in self.elements:
             self.lanes = list(self.elements[MapElementType.ROAD_LANE].values())
+
+        self._road_area_polygons: Dict[str, Polygon] = {}
 
     def add_map_element(self, map_elem: MapElement) -> None:
         self.elements[map_elem.elem_type][map_elem.id] = map_elem
@@ -101,6 +104,9 @@ class VectorMap:
             )
             new_lane.adjacent_lanes_right.extend(
                 [lane_id.encode() for lane_id in road_lane.adj_lanes_right]
+            )
+            new_lane.road_area_ids.extend(
+                [road_area_id.encode() for road_area_id in road_lane.road_area_ids]
             )
 
     def _write_road_areas(
@@ -251,6 +257,9 @@ class VectorMap:
                 prev_lanes: Set[str] = set(
                     [iden.decode() for iden in road_lane_obj.entry_lanes]
                 )
+                road_area_ids: Set[str] = set(
+                    [iden.decode() for iden in road_lane_obj.road_area_ids]
+                )
 
                 # Double-using the connectivity attributes for lane IDs now (will
                 # replace them with Lane objects after all Lane objects have been created).
@@ -263,6 +272,7 @@ class VectorMap:
                     adj_lanes_right,
                     next_lanes,
                     prev_lanes,
+                    road_area_ids=road_area_ids,
                 )
                 map_elem_dict[MapElementType.ROAD_LANE][elem_id] = curr_lane
 
@@ -369,6 +379,20 @@ class VectorMap:
         return [
             self.lanes[idx] for idx in lane_kdtree.polyline_inds_in_range(xyz, dist)
         ]
+
+    
+    def get_road_area_polygon_2d(self, id: str) -> Polygon:
+        if id not in self._road_area_polygons:
+            road_area: RoadArea = self.elements[MapElementType.ROAD_AREA][id]
+            road_area_polygon = Polygon(
+                shell=[(pt[0], pt[1]) for pt in road_area.exterior_polygon.points],
+                holes=[
+                    [(pt[0], pt[1]) for pt in polyline.points]
+                    for polyline in road_area.interior_holes
+                ]
+            )
+            self._road_area_polygons[id] = road_area_polygon
+        return self._road_area_polygons[id]
 
     def get_traffic_light_status(
         self, lane_id: str, scene_ts: int
