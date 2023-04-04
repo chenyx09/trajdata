@@ -28,7 +28,7 @@ from tqdm import tqdm
 from shapely.geometry import Polygon
 
 import trajdata.proto.vectorized_map_pb2 as map_proto
-from trajdata.maps.map_kdtree import LaneCenterKDTree
+from trajdata.maps.map_kdtree import LaneCenterKDTree, RoadAreaKDTree
 from trajdata.maps.traffic_light_status import TrafficLightStatus
 from trajdata.maps.vec_map_elements import (
     MapElement,
@@ -68,7 +68,10 @@ class VectorMap:
         self.elements[map_elem.elem_type][map_elem.id] = map_elem
 
     def compute_search_indices(self) -> None:
-        self.search_kdtrees = {MapElementType.ROAD_LANE: LaneCenterKDTree(self)}
+        self.search_kdtrees = {
+            MapElementType.ROAD_LANE: LaneCenterKDTree(self),
+            MapElementType.ROAD_AREA: RoadAreaKDTree(self),
+        }
 
     def iter_elems(self) -> Iterator[MapElement]:
         for elems_dict in self.elements.values():
@@ -380,6 +383,19 @@ class VectorMap:
             self.lanes[idx] for idx in lane_kdtree.polyline_inds_in_range(xyz, dist)
         ]
 
+    def get_road_areas_within(self, xyz: np.ndarray, dist: float) -> List[RoadArea]:
+        road_area_kdtree: RoadAreaKDTree = self.search_kdtrees[MapElementType.ROAD_AREA]
+        polyline_inds = road_area_kdtree.polyline_inds_in_range(xyz, dist)
+        element_ids = set([
+            road_area_kdtree.metadata["map_elem_id"][ind] for ind in polyline_inds
+        ])
+        if MapElementType.ROAD_AREA not in self.elements:
+            raise ValueError(
+                "Road areas are not loaded. Use map_api.get_map(..., incl_road_areas=True)."
+            )
+        return [
+            self.elements[MapElementType.ROAD_AREA][id] for id in element_ids
+        ]
     
     def get_road_area_polygon_2d(self, id: str) -> Polygon:
         if id not in self._road_area_polygons:
