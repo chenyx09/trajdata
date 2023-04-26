@@ -9,6 +9,12 @@ class EUPedsRecord(NamedTuple):
     data_idx: int
 
 
+class SDDPedsRecord(NamedTuple):
+    name: str
+    length: str
+    data_idx: int
+
+
 class NuscSceneRecord(NamedTuple):
     name: str
     location: str
