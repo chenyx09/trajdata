@@ -84,7 +84,7 @@ For more information on all of the possible `UnifiedDataset` constructor argumen
 ## Supported Datasets
 Currently, the dataloader supports interfacing with the following datasets:
 
-| Dataset | ID | Splits | Add'l Tags | Description | dt | Maps |
+| Dataset | ID | Splits | Locations | Description | dt | Maps |
 |---------|----|--------|------------|-------------|----|------|
 | nuScenes Train/TrainVal/Val | `nusc_trainval` | `train`, `train_val`, `val` | `boston`, `singapore` | nuScenes prediction challenge training/validation/test splits (500/200/150 scenes) | 0.5s (2Hz) | :white_check_mark: |
 | nuScenes Test | `nusc_test` | `test` | `boston`, `singapore` | nuScenes test split, no annotations (150 scenes) | 0.5s (2Hz) | :white_check_mark: |
@@ -102,6 +102,7 @@ Currently, the dataloader supports interfacing with the following datasets:
 | UCY - Univ | `eupeds_univ` | `train`, `val`, `train_loo`, `val_loo`, `test_loo` | `cyprus` | The University scene from the UCY Pedestrians dataset | 0.4s (2.5Hz) | |
 | UCY - Zara1 | `eupeds_zara1` | `train`, `val`, `train_loo`, `val_loo`, `test_loo` | `cyprus` | The Zara1 scene from the UCY Pedestrians dataset | 0.4s (2.5Hz) | |
 | UCY - Zara2 | `eupeds_zara2` | `train`, `val`, `train_loo`, `val_loo`, `test_loo` | `cyprus` | The Zara2 scene from the UCY Pedestrians dataset | 0.4s (2.5Hz) | |
+| Stanford Drone Dataset | `sdd` | `train`, `val`, `test` | `stanford` | Stanford Drone Dataset (60 scenes, randomly split 42/9/9 (70%/15%/15%) for training/validation/test) | 0.0333...s (30Hz) | |
 
 ### Adding New Datasets
 The code that interfaces the original datasets (dealing with their unique formats) can be found in `src/trajdata/dataset_specific`.
