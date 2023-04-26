@@ -111,3 +111,30 @@ It should look like this after downloading:
             ├── students003.txt
             └── uni_examples.txt
 ```
+
+## Stanford Drone Dataset
+The raw data can be found in many places online, the easiest is probably [this space-optimized version](https://www.kaggle.com/datasets/aryashah2k/stanford-drone-dataset) on Kaggle.
+
+It should look like this after downloading:
+```
+/path/to/sdd/
+            ├── bookstore/
+            |   ├── video0
+            |       ├── annotations.txt
+            |       └── reference.jpg
+            |   ├── video1
+            |       ├── annotations.txt
+            |       └── reference.jpg
+            |   └── ...
+            ├── coupa/
+            |   ├── video0
+            |       ├── annotations.txt
+            |       └── reference.jpg
+            |   ├── video1
+            |       ├── annotations.txt
+            |       └── reference.jpg
+            |   └── ...
+            └── ...
+```
+
+**Note**: Only the annotations need to be downloaded (not the videos).

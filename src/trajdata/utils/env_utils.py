@@ -2,6 +2,7 @@ from typing import Dict, List
 
 from trajdata.dataset_specific.eth_ucy_peds import EUPedsDataset
 from trajdata.dataset_specific.raw_dataset import RawDataset
+from trajdata.dataset_specific.sdd_peds import SDDPedsDataset
 
 try:
     from trajdata.dataset_specific.lyft import LyftDataset
@@ -42,6 +43,11 @@ def get_raw_dataset(dataset_name: str, data_dir: str) -> RawDataset:
 
     if "eupeds" in dataset_name:
         return EUPedsDataset(
+            dataset_name, data_dir, parallelizable=True, has_maps=False
+        )
+
+    if "sdd" in dataset_name:
+        return SDDPedsDataset(
             dataset_name, data_dir, parallelizable=True, has_maps=False
         )
 
