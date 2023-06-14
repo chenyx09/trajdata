@@ -15,6 +15,12 @@ class SDDPedsRecord(NamedTuple):
     data_idx: int
 
 
+class InteractionRecord(NamedTuple):
+    name: str
+    length: str
+    data_idx: int
+
+
 class NuscSceneRecord(NamedTuple):
     name: str
     location: str
