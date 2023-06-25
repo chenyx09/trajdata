@@ -10,6 +10,7 @@ from trajdata.data_structures.scene import SceneTime, SceneTimeAgent
 from trajdata.data_structures.state import StateArray
 from trajdata.maps import MapAPI, RasterizedMapPatch, VectorMap
 from trajdata.utils.state_utils import convert_to_frame_state, transform_from_frame
+from trajdata.utils.arr_utils import transform_xyh_np
 
 
 class AgentBatchElement:
@@ -152,6 +153,17 @@ class AgentBatchElement:
                 self.cache if self.cache.is_traffic_light_data_cached() else None,
                 **vector_map_params if vector_map_params is not None else None,
             )
+            if vector_map_params.get("calc_lane_graph", False):
+                # not tested
+                ego_xyh = np.concatenate([self.curr_agent_state_np.position, self.curr_agent_state_np.heading])
+                num_pts = vector_map_params.get("num_lane_pts", 30)
+                max_num_lanes = vector_map_params.get("max_num_lanes",20)
+                self.num_lanes,self.lane_xyh,self.lane_adj = gen_lane_graph(self.vec_map,ego_xyh,self.agent_from_world_tf,num_pts,max_num_lanes)
+                
+            else:
+                self.lane_xyh = None
+                self.lane_adj = None
+                self.num_lanes = 0
 
         self.scene_id = scene_time_agent.scene.name
 
@@ -434,7 +446,21 @@ class SceneBatchElement:
                 self.cache if self.cache.is_traffic_light_data_cached() else None,
                 **vector_map_params if vector_map_params is not None else None,
             )
-
+            if vector_map_params.get("calc_lane_graph", False):
+                # not tested
+                ego_xyh = np.concatenate([self.centered_agent_state_np.position, self.centered_agent_state_np.heading])
+                num_pts = vector_map_params.get("num_lane_pts", 30)
+                max_num_lanes = vector_map_params.get("max_num_lanes",20)
+                self.num_lanes,self.lane_xyh,self.lane_adj = gen_lane_graph(self.vec_map,ego_xyh,self.centered_agent_from_world_tf,num_pts,max_num_lanes)
+                
+            else:
+                self.lane_xyh = None
+                self.lane_adj = None
+                self.num_lanes = 0
+                    
+                    
+                    
+                
         self.scene_id = scene_time.scene.name
 
         ### ROBOT DATA ###
@@ -578,6 +604,44 @@ class SceneBatchElement:
         ).view(self.cache.obs_type)
         return robot_curr_and_fut_np
 
+        
+def gen_lane_graph(vec_map,ego_xyh,agent_from_world,num_pts=30,max_num_lanes=20,radius=100):
+
+    close_lanes=vec_map.get_lanes_within(ego_xyh,dist=radius)
+    close_lanes = close_lanes[:max_num_lanes]
+    num_lanes = len(close_lanes)
+    if num_lanes >0:
+        lane_xyh = list()
+        lane_adj = np.zeros([len(close_lanes), len(close_lanes)],dtype=np.int32)
+        lane_ids = [lane.id for lane in close_lanes]
+        
+        for i,lane in enumerate(close_lanes):
+            center = lane.center.interpolate(num_pts).points[:,[0,1,3]]
+            center_local = transform_xyh_np(center, agent_from_world[None])
+            lane_xyh.append(center_local)
+            # construct lane adjacency matrix
+            for adj_lane_id in lane.next_lanes:
+                if adj_lane_id in lane_ids:
+                    lane_adj[i,lane_ids.index(adj_lane_id)] = 1
+            
+            for adj_lane_id in lane.prev_lanes:
+                if adj_lane_id in lane_ids:
+                    lane_adj[i,lane_ids.index(adj_lane_id)] = 2
+            
+            for adj_lane_id in lane.adj_lanes_left:
+                if adj_lane_id in lane_ids:
+                    lane_adj[i,lane_ids.index(adj_lane_id)] = 3
+                    
+            for adj_lane_id in lane.adj_lanes_right:
+                if adj_lane_id in lane_ids:
+                    lane_adj[i,lane_ids.index(adj_lane_id)] = 4
+        lane_xyh = np.stack(lane_xyh, axis=0)
+        lane_xyh = lane_xyh
+        lane_adj = lane_adj
+    else:
+        lane_xyh = np.zeros([0,num_pts,3])
+        lane_adj = np.zeros([0,0])
+    return num_lanes,lane_xyh,lane_adj
 
 def is_agent_stationary(cache: SceneCache, agent_info: AgentMetadata) -> bool:
     # Agent is considered stationary if it moves less than 1m between the first and last valid timestep.

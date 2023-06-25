@@ -35,6 +35,16 @@ def _collate_data(elems):
     else:
         return torch.as_tensor(np.stack(elems))
 
+def _collate_lane_graph(elems):
+    num_lanes = [elem.num_lanes for elem in elems]
+    bs = len(elems)
+    M = max(num_lanes)
+    lane_xyh = np.zeros([bs,M,*elems[0].lane_xyh.shape[-2:]])
+    lane_adj = -np.ones([bs,M,M],dtype=int)
+    for i,elem in enumerate(elems):
+        lane_xyh[i,:num_lanes[i]] = elem.lane_xyh
+        lane_adj[i,:num_lanes[i],:num_lanes[i]] = elem.lane_adj
+    return torch.as_tensor(lane_xyh),torch.as_tensor(lane_adj)
 
 def raster_map_collate_fn_agent(
     batch_elems: List[AgentBatchElement],
@@ -635,6 +645,10 @@ def agent_collate_fn(
     vector_maps: Optional[List[VectorMap]] = None
     if batch_elems[0].vec_map is not None:
         vector_maps = [batch_elem.vec_map for batch_elem in batch_elems]
+    
+    lane_xyh,lane_adj = None,None
+    if batch_elems[0].lane_xyh is not None:
+        lane_xyh,lane_adj = _collate_lane_graph(batch_elems)
 
     agents_from_world_tf = torch.as_tensor(
         np.stack([batch_elem.agent_from_world_tf for batch_elem in batch_elems]),
@@ -674,6 +688,8 @@ def agent_collate_fn(
         robot_fut_len=robot_future_len,
         map_names=map_names,
         maps=map_patches,
+        lane_xyh=lane_xyh,
+        lane_adj=lane_adj,
         maps_resolution=maps_resolution,
         vector_maps=vector_maps,
         rasters_from_world_tf=rasters_from_world_tf,
@@ -913,6 +929,10 @@ def scene_collate_fn(
     if batch_elems[0].vec_map is not None:
         vector_maps = [batch_elem.vec_map for batch_elem in batch_elems]
 
+    lane_xyh,lane_adj = None,None
+    if batch_elems[0].lane_xyh is not None:
+        lane_xyh,lane_adj = _collate_lane_graph(batch_elems)
+        
     centered_agent_from_world_tf = torch.as_tensor(
         np.stack(
             [batch_elem.centered_agent_from_world_tf for batch_elem in batch_elems]
@@ -962,6 +982,8 @@ def scene_collate_fn(
         robot_fut_len=robot_future_len,
         map_names=map_names,
         maps=map_patches,
+        lane_xyh = lane_xyh,
+        lane_adj = lane_adj,
         maps_resolution=maps_resolution,
         vector_maps=vector_maps,
         rasters_from_world_tf=rasters_from_world_tf,

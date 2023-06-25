@@ -9,7 +9,7 @@ from torch import Tensor
 from trajdata.data_structures.agent import AgentType
 from trajdata.data_structures.state import StateTensor
 from trajdata.maps import VectorMap
-from trajdata.utils.arr_utils import PadDirection, batch_nd_transform_xyvvaahh_pt, roll_with_tensor
+from trajdata.utils.arr_utils import PadDirection, batch_nd_transform_xyvvaahh_pt, roll_with_tensor, transform_xyh_torch
 
 
 @dataclass
@@ -39,6 +39,8 @@ class AgentBatch:
     map_names: Optional[List[str]]
     maps: Optional[Tensor]
     maps_resolution: Optional[Tensor]
+    lane_xyh: Optional[Tensor]
+    lane_adj: Optional[Tensor]
     vector_maps: Optional[List[VectorMap]]
     rasters_from_world_tf: Optional[Tensor]
     agents_from_world_tf: Tensor
@@ -147,6 +149,8 @@ class AgentBatch:
             rasters_from_world_tf=_filter(self.rasters_from_world_tf)
             if self.rasters_from_world_tf is not None
             else None,
+            lane_xyh=_filter(self.lane_xyh) if self.lane_xyh is not None else None,
+            lane_adj=_filter(self.lane_adj) if self.lane_adj is not None else None,
             agents_from_world_tf=_filter(self.agents_from_world_tf),
             scene_ids=_filter_tensor_or_list(self.scene_ids),
             history_pad_dir=self.history_pad_dir,
@@ -219,6 +223,8 @@ class SceneBatch:
     maps: Optional[Tensor]
     maps_resolution: Optional[Tensor]
     vector_maps: Optional[List[VectorMap]]
+    lane_xyh: Optional[Tensor]
+    lane_adj: Optional[Tensor]
     rasters_from_world_tf: Optional[Tensor]
     centered_agent_from_world_tf: Tensor
     centered_world_from_agent_tf: Tensor
@@ -358,6 +364,8 @@ class SceneBatch:
             vector_maps=_filter_tensor_or_list(self.vector_maps)
             if self.vector_maps is not None
             else None,
+            lane_xyh=_filter(self.lane_xyh) if self.lane_xyh is not None else None,
+            lane_adj=_filter(self.lane_adj) if self.lane_adj is not None else None,
             rasters_from_world_tf=_filter(self.rasters_from_world_tf)
             if self.rasters_from_world_tf is not None
             else None,
@@ -467,6 +475,8 @@ class SceneBatch:
         batch.rasters_from_world_tf = tf.unsqueeze(1) @ batch.rasters_from_world_tf if batch.rasters_from_world_tf is not None else None
         batch.centered_agent_from_world_tf = tf @ batch.centered_agent_from_world_tf
         centered_world_from_agent_tf = torch.linalg.inv(batch.centered_agent_from_world_tf)
+        if batch.lane_xyh is not None:
+            batch.lane_xyh = transform_xyh_torch(batch.lane_xyh.double(), tf).type(dtype)
         # sanity check
         assert torch.isclose(batch.centered_world_from_agent_tf @ torch.linalg.inv(tf), centered_world_from_agent_tf, atol=1e-5).all()
         batch.centered_world_from_agent_tf = centered_world_from_agent_tf

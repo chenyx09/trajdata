@@ -249,9 +249,20 @@ def transform_xyh_np(xyh: np.ndarray, tf_mat: np.ndarray) -> np.ndarray:
         tf_mat (np.ndarray): shape [...,3,3]
     """
     transformed_xy = transform_coords_np(xyh[..., :2], tf_mat)
-    transformed_angles = transform_angles_np(xyh[..., 3], tf_mat)
+    transformed_angles = transform_angles_np(xyh[..., 2], tf_mat)
     return np.concatenate([transformed_xy, transformed_angles[..., None]], axis=-1)
 
+def transform_xyh_torch(xyh: torch.Tensor, tf_mat: torch.Tensor) -> torch.Tensor:
+    """
+    Returns transformed set of xyh points
+
+    Args:
+        xyh (torch.Tensor): shape [...,3]
+        tf_mat (torch.Tensor): shape [...,3,3]
+    """
+    transformed_xy = batch_nd_transform_points_pt(xyh[..., :2], tf_mat)
+    transformed_angles = batch_nd_transform_angles_pt(xyh[..., 2], tf_mat)
+    return torch.cat([transformed_xy, transformed_angles[..., None]], dim=-1)
 
 # -------- TODO(pkarkus) redundant transforms, remove them
 
