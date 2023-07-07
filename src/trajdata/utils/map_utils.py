@@ -21,7 +21,17 @@ from trajdata.utils import arr_utils
 
 NUM_DECIMALS: Final[int] = 5
 COMPRESSION_SCALE: Final[float] = 10**NUM_DECIMALS
+import enum
 
+class LaneSegRelation(enum.IntEnum):
+    """
+    Categorical token describing the relationship between an agent and a Lane
+    """
+    NOTCONNECTED = 0
+    NEXT = 1
+    PREV = 2
+    LEFT = 3
+    RIGHT = 4
 
 def pad_map_patch(
     patch: np.ndarray,

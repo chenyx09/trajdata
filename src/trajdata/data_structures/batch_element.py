@@ -12,6 +12,10 @@ from trajdata.maps import MapAPI, RasterizedMapPatch, VectorMap
 from trajdata.utils.state_utils import convert_to_frame_state, transform_from_frame
 from trajdata.utils.arr_utils import transform_xyh_np
 
+from trajdata.utils.map_utils import LaneSegRelation
+
+
+
 
 class AgentBatchElement:
     """A single element of an agent-centric batch."""
@@ -605,7 +609,7 @@ class SceneBatchElement:
         return robot_curr_and_fut_np
 
         
-def gen_lane_graph(vec_map,ego_xyh,agent_from_world,num_pts=30,max_num_lanes=20,radius=100):
+def gen_lane_graph(vec_map,ego_xyh,agent_from_world,num_pts=20,max_num_lanes=15,radius=100):
 
     close_lanes=vec_map.get_lanes_within(ego_xyh,dist=radius)
     close_lanes = close_lanes[:max_num_lanes]
@@ -622,19 +626,19 @@ def gen_lane_graph(vec_map,ego_xyh,agent_from_world,num_pts=30,max_num_lanes=20,
             # construct lane adjacency matrix
             for adj_lane_id in lane.next_lanes:
                 if adj_lane_id in lane_ids:
-                    lane_adj[i,lane_ids.index(adj_lane_id)] = 1
+                    lane_adj[i,lane_ids.index(adj_lane_id)] = LaneSegRelation.NEXT.value
             
             for adj_lane_id in lane.prev_lanes:
                 if adj_lane_id in lane_ids:
-                    lane_adj[i,lane_ids.index(adj_lane_id)] = 2
+                    lane_adj[i,lane_ids.index(adj_lane_id)] = LaneSegRelation.PREV.value
             
             for adj_lane_id in lane.adj_lanes_left:
                 if adj_lane_id in lane_ids:
-                    lane_adj[i,lane_ids.index(adj_lane_id)] = 3
+                    lane_adj[i,lane_ids.index(adj_lane_id)] = LaneSegRelation.LEFT.value
                     
             for adj_lane_id in lane.adj_lanes_right:
                 if adj_lane_id in lane_ids:
-                    lane_adj[i,lane_ids.index(adj_lane_id)] = 4
+                    lane_adj[i,lane_ids.index(adj_lane_id)] = LaneSegRelation.RIGHT.value
         lane_xyh = np.stack(lane_xyh, axis=0)
         lane_xyh = lane_xyh
         lane_adj = lane_adj
