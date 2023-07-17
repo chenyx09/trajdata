@@ -261,6 +261,7 @@ class SceneBatch:
                 self.extras[key] = val.__to__(device, non_blocking=True)
             else:
                 self.extras[key] = val.to(device, non_blocking=True)
+        return self
 
     def astype(self, dtype) -> None:
         new_obj = replace(self)

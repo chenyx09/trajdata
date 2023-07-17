@@ -762,6 +762,7 @@ def scene_collate_fn(
     return_dict: bool,
     pad_format: str,
     batch_augments: Optional[List[BatchAugmentation]] = None,
+    desired_num_agents = None,
 ) -> SceneBatch:
     batch_size: int = len(batch_elems)
     history_pad_dir: arr_utils.PadDirection = (
@@ -781,6 +782,9 @@ def scene_collate_fn(
     AgentObsTensor = TORCH_STATE_TYPES[obs_format]
 
     max_agent_num: int = max(elem.num_agents for elem in batch_elems)
+    if desired_num_agents is not None:
+        max_agent_num = max(max_agent_num,desired_num_agents)
+
 
     centered_agent_state: List[AgentStateTensor] = list()
     agents_types: List[Tensor] = list()
