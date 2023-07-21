@@ -162,11 +162,12 @@ class AgentBatchElement:
                 ego_xyh = np.concatenate([self.curr_agent_state_np.position, self.curr_agent_state_np.heading])
                 num_pts = vector_map_params.get("num_lane_pts", 30)
                 max_num_lanes = vector_map_params.get("max_num_lanes",20)
-                self.num_lanes,self.lane_xyh,self.lane_adj = gen_lane_graph(self.vec_map,ego_xyh,self.agent_from_world_tf,num_pts,max_num_lanes)
+                self.num_lanes,self.lane_xyh,self.lane_adj,self.lane_ids = gen_lane_graph(self.vec_map,ego_xyh,self.agent_from_world_tf,num_pts,max_num_lanes)
                 
             else:
                 self.lane_xyh = None
                 self.lane_adj = None
+                self.lane_ids=list()
                 self.num_lanes = 0
 
         self.scene_id = scene_time_agent.scene.name
@@ -455,11 +456,12 @@ class SceneBatchElement:
                 ego_xyh = np.concatenate([self.centered_agent_state_np.position, self.centered_agent_state_np.heading])
                 num_pts = vector_map_params.get("num_lane_pts", 30)
                 max_num_lanes = vector_map_params.get("max_num_lanes",20)
-                self.num_lanes,self.lane_xyh,self.lane_adj = gen_lane_graph(self.vec_map,ego_xyh,self.centered_agent_from_world_tf,num_pts,max_num_lanes)
+                self.num_lanes,self.lane_xyh,self.lane_adj,self.lane_ids = gen_lane_graph(self.vec_map,ego_xyh,self.centered_agent_from_world_tf,num_pts,max_num_lanes)
                 
             else:
                 self.lane_xyh = None
                 self.lane_adj = None
+                self.lane_ids = list()
                 self.num_lanes = 0
                     
                     
@@ -645,7 +647,8 @@ def gen_lane_graph(vec_map,ego_xyh,agent_from_world,num_pts=20,max_num_lanes=15,
     else:
         lane_xyh = np.zeros([0,num_pts,3])
         lane_adj = np.zeros([0,0])
-    return num_lanes,lane_xyh,lane_adj
+        lane_ids = list()
+    return num_lanes,lane_xyh,lane_adj,lane_ids
 
 def is_agent_stationary(cache: SceneCache, agent_info: AgentMetadata) -> bool:
     # Agent is considered stationary if it moves less than 1m between the first and last valid timestep.

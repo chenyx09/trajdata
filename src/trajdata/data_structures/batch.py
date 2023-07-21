@@ -41,6 +41,7 @@ class AgentBatch:
     maps_resolution: Optional[Tensor]
     lane_xyh: Optional[Tensor]
     lane_adj: Optional[Tensor]
+    lane_ids: Optional[List[List[str]]]
     lane_mask: Optional[Tensor]
     vector_maps: Optional[List[VectorMap]]
     rasters_from_world_tf: Optional[Tensor]
@@ -152,6 +153,7 @@ class AgentBatch:
             else None,
             lane_xyh=_filter(self.lane_xyh) if self.lane_xyh is not None else None,
             lane_adj=_filter(self.lane_adj) if self.lane_adj is not None else None,
+            lane_ids=self.lane_ids,
             lane_mask=_filter(self.lane_mask) if self.lane_mask is not None else None,
             agents_from_world_tf=_filter(self.agents_from_world_tf),
             scene_ids=_filter_tensor_or_list(self.scene_ids),
@@ -227,6 +229,7 @@ class SceneBatch:
     vector_maps: Optional[List[VectorMap]]
     lane_xyh: Optional[Tensor]
     lane_adj: Optional[Tensor]
+    lane_ids: Optional(List[List[str]])
     lane_mask: Optional[Tensor]
     rasters_from_world_tf: Optional[Tensor]
     centered_agent_from_world_tf: Tensor
@@ -248,6 +251,7 @@ class SceneBatch:
             "history_pad_dir",
             "scene_ids",
             "extras",
+            "lane_ids",
         }
 
         for val in vars(self).keys():
@@ -277,6 +281,7 @@ class SceneBatch:
             "history_pad_dir",
             "scene_ids",
             "extras",
+            "lane_ids",
         }
 
         for val in vars(self).keys():
@@ -370,6 +375,7 @@ class SceneBatch:
             else None,
             lane_xyh=_filter(self.lane_xyh) if self.lane_xyh is not None else None,
             lane_adj=_filter(self.lane_adj) if self.lane_adj is not None else None,
+            lane_ids = self.lane_ids,
             lane_mask = _filter(self.lane_mask) if self.lane_mask is not None else None,
             rasters_from_world_tf=_filter(self.rasters_from_world_tf)
             if self.rasters_from_world_tf is not None
