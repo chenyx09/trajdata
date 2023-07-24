@@ -490,3 +490,80 @@ def roll_with_tensor(mat: torch.Tensor, shifts: torch.LongTensor, dim: int):
     arange2 = (arange1 - shifts) % mat.shape[dim]
     # print(arange2)
     return torch.gather(mat, dim, arange2)
+
+def round_2pi(x):
+    return (x + np.pi) % (2 * np.pi) - np.pi
+
+def batch_proj(x, line):
+    # x:[batch,3], line:[batch,N,3]
+    line_length = line.shape[-2]
+    batch_dim = x.ndim - 1
+    if isinstance(x, torch.Tensor):
+        delta = line[..., 0:2] - torch.unsqueeze(x[..., 0:2], dim=-2).repeat(
+            *([1] * batch_dim), line_length, 1
+        )
+        dis = torch.linalg.norm(delta, axis=-1)
+        idx0 = torch.argmin(dis, dim=-1)
+        idx = idx0.view(*line.shape[:-2], 1, 1).repeat(
+            *([1] * (batch_dim + 1)), line.shape[-1]
+        )
+        line_min = torch.squeeze(torch.gather(line, -2, idx), dim=-2)
+        dx = x[..., None, 0] - line[..., 0]
+        dy = x[..., None, 1] - line[..., 1]
+        delta_y = -dx * torch.sin(line_min[..., None, 2]) + dy * torch.cos(
+            line_min[..., None, 2]
+        )
+        delta_x = dx * torch.cos(line_min[..., None, 2]) + dy * torch.sin(
+            line_min[..., None, 2]
+        )
+
+        delta_psi = round_2pi(x[..., 2] - line_min[..., 2])
+
+        return (
+            delta_x,
+            delta_y,
+            torch.unsqueeze(delta_psi, dim=-1),
+        )
+    elif isinstance(x, np.ndarray):
+        delta = line[..., 0:2] - np.repeat(
+            x[..., np.newaxis, 0:2], line_length, axis=-2
+        )
+        dis = np.linalg.norm(delta, axis=-1)
+        idx0 = np.argmin(dis, axis=-1)
+        idx = idx0.reshape(*line.shape[:-2], 1, 1).repeat(line.shape[-1], axis=-1)
+        line_min = np.squeeze(np.take_along_axis(line, idx, axis=-2), axis=-2)
+        dx = x[..., None, 0] - line[..., 0]
+        dy = x[..., None, 1] - line[..., 1]
+        delta_y = -dx * np.sin(line_min[..., None, 2]) + dy * np.cos(
+            line_min[..., None, 2]
+        )
+        delta_x = dx * np.cos(line_min[..., None, 2]) + dy * np.sin(
+            line_min[..., None, 2]
+        )
+
+        delta_psi = round_2pi(x[..., 2] - line_min[..., 2])
+        return (
+            delta_x,
+            delta_y,
+            np.expand_dims(delta_psi, axis=-1),
+        )
+
+def get_close_lanes(radius,ego_xyh,vec_map,num_pts):
+    # obtain close lanes, their distance to the ego
+    close_lanes=vec_map.get_lanes_within(ego_xyh,radius)
+    dis = list()
+    lane_pts = np.stack([lane.center.interpolate(num_pts).points[:,[0,1,3]] for lane in close_lanes],0)
+    dx,dy,dh = batch_proj(ego_xyh[None].repeat(lane_pts.shape[0],0),lane_pts)
+    
+    idx = np.abs(dx).argmin(axis=1)
+    # hausdorff distance to the lane (longitudinal)
+    x_dis = np.take_along_axis(np.abs(dx),idx[:,None],axis=1).squeeze(1)
+    x_dis[(dx.min(1)<0) & (dx.max(1)>0)] = 0
+    
+    y_dis = np.take_along_axis(np.abs(dy),idx[:,None],axis=1).squeeze(1)
+
+    # distance metric to the lane (combining x,y)
+    dis = x_dis+y_dis
+            
+                
+    return close_lanes,dis

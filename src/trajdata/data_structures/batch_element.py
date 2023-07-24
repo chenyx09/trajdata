@@ -10,7 +10,7 @@ from trajdata.data_structures.scene import SceneTime, SceneTimeAgent
 from trajdata.data_structures.state import StateArray
 from trajdata.maps import MapAPI, RasterizedMapPatch, VectorMap
 from trajdata.utils.state_utils import convert_to_frame_state, transform_from_frame
-from trajdata.utils.arr_utils import transform_xyh_np
+from trajdata.utils.arr_utils import transform_xyh_np, get_close_lanes
 
 from trajdata.utils.map_utils import LaneSegRelation
 
@@ -612,10 +612,13 @@ class SceneBatchElement:
 
         
 def gen_lane_graph(vec_map,ego_xyh,agent_from_world,num_pts=20,max_num_lanes=15,radius=100):
-
-    close_lanes=vec_map.get_lanes_within(ego_xyh,dist=radius)
-    close_lanes = close_lanes[:max_num_lanes]
+    close_lanes,dis = get_close_lanes(radius,ego_xyh,vec_map,num_pts)
     num_lanes = len(close_lanes)
+    if num_lanes > max_num_lanes:
+        idx = dis.argsort()[:max_num_lanes]
+        close_lanes = [lane for i,lane in enumerate(close_lanes) if i in idx]
+        num_lanes = max_num_lanes
+    
     if num_lanes >0:
         lane_xyh = list()
         lane_adj = np.zeros([len(close_lanes), len(close_lanes)],dtype=np.int32)
