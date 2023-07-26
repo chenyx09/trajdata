@@ -315,7 +315,7 @@ class UnifiedDataset(Dataset):
 
                 if self.incl_vector_map:
                     for map_name in env.metadata.map_locations:
-                        self._map_api.get_map(f"{env.name}:{map_name}")
+                        self._map_api.get_map(f"{env.name}:{map_name}", **self.vector_map_params)
 
                 all_scenes_list += scenes_list
 
