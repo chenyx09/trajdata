@@ -650,7 +650,7 @@ def agent_collate_fn(
     if batch_elems[0].vec_map is not None:
         vector_maps = [batch_elem.vec_map for batch_elem in batch_elems]
     
-    lane_xyh,lane_adj,lane_mask = None,None,None
+    lane_xyh,lane_adj,lane_mask,lane_ids = None,None,None,None
     if batch_elems[0].lane_xyh is not None:
         lane_xyh,lane_adj,lane_mask, lane_ids = _collate_lane_graph(batch_elems)
 
@@ -939,8 +939,8 @@ def scene_collate_fn(
     if batch_elems[0].vec_map is not None:
         vector_maps = [batch_elem.vec_map for batch_elem in batch_elems]
 
-    lane_xyh,lane_adj,lane_mask = None,None,None
-    if batch_elems[0].lane_xyh is not None:
+    lane_xyh,lane_adj,lane_mask, lane_ids = None,None,None,None
+    if hasattr(batch_elems[0],"lane_xyh") and batch_elems[0].lane_xyh is not None:
         lane_xyh,lane_adj,lane_mask, lane_ids = _collate_lane_graph(batch_elems)
         
     centered_agent_from_world_tf = torch.as_tensor(
