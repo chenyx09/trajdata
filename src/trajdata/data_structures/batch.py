@@ -215,6 +215,7 @@ class SceneBatch:
     agent_type: Tensor
     centered_agent_state: StateTensor
     agent_names: List[List[str]]
+    track_ids:Optional[List[List[str]]]
     agent_hist: StateTensor
     agent_hist_extent: Tensor
     agent_hist_len: Tensor
@@ -242,6 +243,7 @@ class SceneBatch:
         excl_vals = {
             "num_agents",
             "agent_names",
+            "track_ids",
             "agent_type",
             "agent_hist_len",
             "agent_fut_len",
@@ -272,6 +274,7 @@ class SceneBatch:
         excl_vals = {
             "num_agents",
             "agent_names",
+            "track_ids",
             "agent_type",
             "agent_hist_len",
             "agent_fut_len",
@@ -352,6 +355,7 @@ class SceneBatch:
             num_agents=_filter(self.num_agents),
             agent_type=_filter(self.agent_type),
             agent_names=_filter_tensor_or_list(self.agent_names),
+            track_ids=_filter_tensor_or_list(self.track_ids),
             centered_agent_state=_filter(self.centered_agent_state),
             agent_hist=_filter(self.agent_hist),
             agent_hist_extent=_filter(self.agent_hist_extent),
@@ -429,6 +433,7 @@ class SceneBatch:
             scene_ts=self.scene_ts,
             dt=self.dt,
             agent_name=index_agent_list(self.agent_names),
+            track_id=index_agent_list(self.track_ids),
             agent_type=index_agent(self.agent_type),
             curr_agent_state=self.centered_agent_state,  # TODO this is not actually the agent but the `global` coordinate frame
             agent_hist=StateTensor.from_array(index_agent(self.agent_hist), self.agent_hist._format),

@@ -982,6 +982,7 @@ def scene_collate_fn(
         agent_type=agents_types_t,
         centered_agent_state=centered_agent_state_t,
         agent_names=agent_names,
+        track_ids = None,
         agent_hist=agents_histories_t,
         agent_hist_extent=agents_history_extents_t,
         agent_hist_len=agents_history_len,
