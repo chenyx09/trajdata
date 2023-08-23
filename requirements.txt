@@ -9,6 +9,8 @@ torch
 zarr
 kornia
 bokeh
+opencv-python
+geopandas
 
 # nuScenes devkit
 nuscenes-devkit==1.1.9
@@ -21,6 +23,9 @@ l5kit==1.5.0
 tensorflow==2.11.0
 waymo-open-dataset-tf-2-11-0
 intervaltree
+
+# Interaction dataset
+lanelet2==1.2.1
 
 # Development
 black

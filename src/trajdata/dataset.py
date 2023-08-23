@@ -318,7 +318,7 @@ class UnifiedDataset(Dataset):
                         matching_datasets, scene_description_contains, env
                     )
 
-                if self.incl_vector_map:
+                if self.incl_vector_map and env.metadata.map_locations is not None:
                     for map_name in env.metadata.map_locations:
                         self._map_api.get_map(
                             f"{env.name}:{map_name}", **self.vector_map_params
