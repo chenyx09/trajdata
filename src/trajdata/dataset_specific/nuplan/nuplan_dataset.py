@@ -325,7 +325,9 @@ class NuplanDataset(RawDataset):
         agent_ids: np.ndarray = agents_df.index.get_level_values(0).to_numpy()
         if len(agent_ids) > 0:
             agents_df[["ax", "ay"]] = (
-                arr_utils.agent_aware_diff(agents_df[["vx", "vy"]].to_numpy(), agent_ids)
+                arr_utils.agent_aware_diff(
+                    agents_df[["vx", "vy"]].to_numpy(), agent_ids
+                )
                 / nuplan_utils.NUPLAN_DT
             )
         else:

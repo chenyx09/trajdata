@@ -4,7 +4,6 @@ from trajdata.dataset_specific.eth_ucy_peds import EUPedsDataset
 from trajdata.dataset_specific.raw_dataset import RawDataset
 from trajdata.dataset_specific.sdd_peds import SDDPedsDataset
 
-
 try:
     from trajdata.dataset_specific.interaction import InteractionDataset
 except ModuleNotFoundError:
