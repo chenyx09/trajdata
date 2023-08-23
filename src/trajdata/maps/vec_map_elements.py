@@ -259,7 +259,35 @@ class RoadLane(MapElement):
     @property
     def reachable_lanes(self) -> Set[str]:
         return self.adj_lanes_left | self.adj_lanes_right | self.next_lanes
+    
 
+    def combine_next(self, next_lane):
+        assert next_lane.id in self.next_lanes
+        self.next_lanes.remove(next_lane.id)
+        self.next_lanes = self.next_lanes.union(next_lane.next_lanes)
+        self.center = self.center.concatenate_with(next_lane.center)
+        if self.left_edge is not None and next_lane.left_edge is not None:
+            self.left_edge = self.left_edge.concatenate_with(next_lane.left_edge)
+        if self.right_edge is not None and next_lane.right_edge is not None:
+            self.right_edge = self.right_edge.concatenate_with(next_lane.right_edge)
+        self.adj_lanes_right = self.adj_lanes_right.union(next_lane.adj_lanes_right)
+        self.adj_lanes_left = self.adj_lanes_left.union(next_lane.adj_lanes_left)
+        self.road_area_ids = self.road_area_ids.union(next_lane.road_area_ids)
+    
+    def combine_prev(self,prev_lane):
+        assert prev_lane.id in self.prev_lanes
+        self.prev_lanes.remove(prev_lane.id)
+        self.prev_lanes = self.prev_lanes.union(prev_lane.prev_lanes)
+        self.center = prev_lane.center.concatenate_with(self.center)
+        if self.left_edge is not None and prev_lane.left_edge is not None:
+            self.left_edge = prev_lane.left_edge.concatenate_with(self.left_edge)
+        if self.right_edge is not None and prev_lane.right_edge is not None:
+            self.right_edge = prev_lane.right_edge.concatenate_with(self.right_edge)
+        self.adj_lanes_right = self.adj_lanes_right.union(prev_lane.adj_lanes_right)
+        self.adj_lanes_left = self.adj_lanes_left.union(prev_lane.adj_lanes_left)
+        self.road_area_ids = self.road_area_ids.union(prev_lane.road_area_ids)
+        
+        
 
 @dataclass
 class RoadArea(MapElement):

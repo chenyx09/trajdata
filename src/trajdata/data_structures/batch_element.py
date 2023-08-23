@@ -162,7 +162,9 @@ class AgentBatchElement:
                 ego_xyh = np.concatenate([self.curr_agent_state_np.position, self.curr_agent_state_np.heading])
                 num_pts = vector_map_params.get("num_lane_pts", 30)
                 max_num_lanes = vector_map_params.get("max_num_lanes",20)
-                self.num_lanes,self.lane_xyh,self.lane_adj,self.lane_ids = gen_lane_graph(self.vec_map,ego_xyh,self.agent_from_world_tf,num_pts,max_num_lanes)
+                remove_single_successor = vector_map_params.get("remove_single_successor",False)
+                radius = vector_map_params.get("radius", 100)
+                self.num_lanes,self.lane_xyh,self.lane_adj,self.lane_ids = gen_lane_graph(self.vec_map,ego_xyh,self.agent_from_world_tf,num_pts,max_num_lanes,radius,remove_single_successor)
                 
             else:
                 self.lane_xyh = None
@@ -611,8 +613,33 @@ class SceneBatchElement:
         return robot_curr_and_fut_np
 
         
-def gen_lane_graph(vec_map,ego_xyh,agent_from_world,num_pts=20,max_num_lanes=15,radius=100):
+def gen_lane_graph(vec_map,ego_xyh,agent_from_world,num_pts=20,max_num_lanes=15,radius=100,remove_single_successor=True):
     close_lanes,dis = get_close_lanes(radius,ego_xyh,vec_map,num_pts)
+    lanes_by_id = {lane.id:lane for lane in close_lanes}
+    dis_by_id = {lane.id:dis[i] for i,lane in enumerate(close_lanes)}
+    if remove_single_successor:
+        for lane in close_lanes:
+            
+            while len(lane.next_lanes) == 1:
+                # if there are more than one succeeding lanes, then we abort the merging
+                next_id = list(lane.next_lanes)[0]
+                
+                if next_id in lanes_by_id:
+                    next_lane = lanes_by_id[next_id]
+                    shared_next = False
+                    for id in next_lane.prev_lanes:
+                        if id != lane.id and id in lanes_by_id:
+                            shared_next = True
+                            break
+                    if shared_next:
+                        # if the next lane shares two prev lanes in the close_lanes, then we abort the merging
+                        break
+                    lane.combine_next(lanes_by_id[next_id])
+                    lanes_by_id.pop(next_id)
+                else:
+                    break
+        close_lanes = list(lanes_by_id.values())
+        dis = np.array([dis_by_id[lane.id] for lane in close_lanes])
     num_lanes = len(close_lanes)
     if num_lanes > max_num_lanes:
         idx = dis.argsort()[:max_num_lanes]
