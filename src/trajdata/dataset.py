@@ -319,6 +319,9 @@ class UnifiedDataset(Dataset):
                     )
 
                 if self.incl_vector_map and env.metadata.map_locations is not None:
+                    # env.metadata.map_locations can be none for map-containing
+                    # datasets if they have a huge number of maps
+                    # (or map crops, like Waymo).
                     for map_name in env.metadata.map_locations:
                         self._map_api.get_map(
                             f"{env.name}:{map_name}", **self.vector_map_params
