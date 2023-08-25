@@ -651,7 +651,7 @@ def agent_collate_fn(
         vector_maps = [batch_elem.vec_map for batch_elem in batch_elems]
     
     lane_xyh,lane_adj,lane_mask,lane_ids = None,None,None,None
-    if batch_elems[0].lane_xyh is not None:
+    if hasattr(batch_elems[0],"lane_xyh") and batch_elems[0].lane_xyh is not None:
         lane_xyh,lane_adj,lane_mask, lane_ids = _collate_lane_graph(batch_elems)
 
     agents_from_world_tf = torch.as_tensor(
