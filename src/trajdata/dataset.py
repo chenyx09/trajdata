@@ -204,6 +204,11 @@ class UnifiedDataset(Dataset):
                 # Collation can be quite slow if vector maps are included,
                 # so we do not unless the user requests it.
                 "collate": False,
+                # Whether loaded maps should be stored in memory (memoized) for later re-use.
+                # For datasets which provide full maps ahead-of-time (i.e., all except Waymo),
+                # this should be True. However, for Waymo it should be False because maps
+                # are already partitioned geographically and keeping them around significantly grows memory.
+                "keep_in_memory": True,
             }
         )
         if self.desired_dt is not None:
@@ -249,7 +254,7 @@ class UnifiedDataset(Dataset):
 
         self._map_api: Optional[MapAPI] = None
         if self.incl_vector_map:
-            self._map_api = MapAPI(self.cache_path)
+            self._map_api = MapAPI(self.cache_path, keep_in_memory=vector_map_params.get("keep_in_memory", True))
 
         all_scenes_list: Union[List[SceneMetadata], List[Scene]] = list()
         for env in self.envs:
