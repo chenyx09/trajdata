@@ -21,7 +21,7 @@ class MapAPI:
 
         Args:
             unified_cache_path (Path): Path to trajdata's local cache on disk.
-            keep_in_memory (bool, optional): Whether loaded maps should be stored
+            keep_in_memory (bool): Whether loaded maps should be stored
             in memory (memoized) for later re-use. For most cases (e.g., batched dataloading),
             this is a good idea. However, this can cause rapid memory usage growth for some
             datasets (e.g., Waymo) and it can be better to disable this. Defaults to False.
