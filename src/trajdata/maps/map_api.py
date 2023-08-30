@@ -17,6 +17,17 @@ from trajdata.utils import map_utils
 class MapAPI:
     def __init__(self, unified_cache_path: Union[Path, str], data_dirs: Optional[Dict] = None) -> None:
         self.unified_cache_path: Path = Path(unified_cache_path)
+        """A simple interface for loading trajdata's vector maps which does not require
+        instantiation of a `UnifiedDataset` object.
+
+        Args:
+            unified_cache_path (Path): Path to trajdata's local cache on disk.
+            keep_in_memory (bool): Whether loaded maps should be stored
+            in memory (memoized) for later re-use. For most cases (e.g., batched dataloading),
+            this is a good idea. However, this can cause rapid memory usage growth for some
+            datasets (e.g., Waymo) and it can be better to disable this. Defaults to False.
+        """
+        self.unified_cache_path: Path = unified_cache_path
         self.maps: Dict[str, VectorMap] = dict()
         self.data_dirs = data_dirs
 
