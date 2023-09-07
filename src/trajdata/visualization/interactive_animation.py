@@ -12,7 +12,6 @@ from typing import Any, Callable, Dict, List, Optional
 import cv2
 import numpy as np
 import pandas as pd
-import torch
 from bokeh.application import Application
 from bokeh.application.handlers import FunctionHandler
 from bokeh.document import Document, without_document_lock
@@ -30,7 +29,7 @@ from bokeh.models import (
     Select,
     Slider,
 )
-from bokeh.plotting import Figure
+from bokeh.plotting import figure
 from bokeh.server.server import Server
 from selenium import webdriver
 from tornado import gen
@@ -42,7 +41,6 @@ from trajdata.data_structures.batch import AgentBatch
 from trajdata.data_structures.state import StateArray
 from trajdata.maps.map_api import MapAPI
 from trajdata.utils import vis_utils
-from trajdata.utils.comm_utils import find_open_port, find_open_port_in_range
 
 
 class InteractiveAnimation:
@@ -56,15 +54,17 @@ class InteractiveAnimation:
         self.port = port
         self.kwargs = kwargs
 
+    def get_open_port(self) -> int:
+        with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+            s.bind(("", 0))
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            return s.getsockname()[1]
+
     def show(self) -> None:
         io_loop = IOLoop()
 
         if self.port is None:
-            # self.port = find_open_port()  # find any open port, not always stable
-            # self.port = 40405  # fix
-            self.port = find_open_port_in_range(40405, 40455)  # scans a range, slower but more stable
-            # Add sleep to prevent 'ERROR:asyncio:Task was destroyed but it is pending!'
-            time.sleep(0.5)
+            self.port = self.get_open_port()
 
         def kill_on_tab_close(session_context):
             io_loop.stop()
@@ -93,11 +93,9 @@ class InteractiveAnimation:
 
 
 def animate_agent_batch_interactive(
-    doc: Document, io_loop: IOLoop, batch: AgentBatch, batch_idx: int, cache_path: Path, planner_output_hist: Optional[List[Dict]],
-    reload_vector_map: bool = True,
+    doc: Document, io_loop: IOLoop, batch: AgentBatch, batch_idx: int, cache_path: Path
 ) -> None:
     agent_data_df = vis_utils.extract_full_agent_data_df(batch, batch_idx)
-    plan_data_df = vis_utils.extract_full_plan_data_df(planner_output_hist, batch_idx)
 
     # Figure creation and a few initial settings.
     width: int = 1280
@@ -109,12 +107,6 @@ def animate_agent_batch_interactive(
 
     y_min = agent_data_df["y"].min()
     y_max = agent_data_df["y"].max()
-
-    # Limit view when x_max >> x_min, for example for dummy agents with (10^6, 10^6)
-    if x_max - x_min > 1000:
-        x_max = x_min + 1000
-    if y_max - y_min > 1000:
-        y_max = y_min + 1000
 
     (
         x_range_min,
@@ -132,7 +124,7 @@ def animate_agent_batch_interactive(
         "y_range": (y_range_min, y_range_max),
     }
 
-    fig = Figure(
+    fig = figure(
         width=width,
         height=int(width / aspect_ratio),
         output_backend="canvas",
@@ -143,9 +135,9 @@ def animate_agent_batch_interactive(
     agent_name: str = batch.agent_name[batch_idx]
     agent_type: AgentType = AgentType(batch.agent_type[batch_idx].item())
     current_state: StateArray = batch.curr_agent_state[batch_idx].cpu().numpy()
-    map_id: str = str(batch.map_names[batch_idx])
+    map_id: str = batch.map_names[batch_idx]
     env_name, map_name = map_id.split(":")
-    scene_id: str = str(batch.scene_ids[batch_idx])
+    scene_id: str = batch.scene_ids[batch_idx]
     fig.title = (
         f"Dataset: {env_name}, Location: {map_name}, Scene: {scene_id}"
         + "\n"
@@ -156,16 +148,13 @@ def animate_agent_batch_interactive(
     if batch.map_names is not None:
         mapAPI = MapAPI(cache_path)
 
-        if reload_vector_map or batch.vector_maps is None:
-            vec_map = mapAPI.get_map(
-                batch.map_names[batch_idx],
-                incl_road_lanes=True,
-                incl_road_areas=True,
-                incl_ped_crosswalks=True,
-                incl_ped_walkways=True,
-            )
-        else:
-            vec_map = batch.vector_maps[batch_idx]
+        vec_map = mapAPI.get_map(
+            batch.map_names[batch_idx],
+            incl_road_lanes=True,
+            incl_road_areas=True,
+            incl_ped_crosswalks=True,
+            incl_ped_walkways=True,
+        )
 
         (
             road_areas,
@@ -187,13 +176,7 @@ def animate_agent_batch_interactive(
 
     # Preparing agent information for fast slicing with the time_slider.
     agent_cds = ColumnDataSource(agent_data_df)
-    curr_time_view = CDSView(
-        source=agent_cds, filters=[BooleanFilter(agent_cds.data["t"] == 0)]
-    )
-    plan_cds = ColumnDataSource(plan_data_df)
-    plan_curr_time_view = CDSView(
-        source=plan_cds, filters=[BooleanFilter(plan_cds.data["t"] == 0)]
-    )
+    curr_time_view = CDSView(filter=BooleanFilter((agent_cds.data["t"] == 0).tolist()))
 
     # Some neighbors can have more history than the agent to be predicted
     # (the data-collecting agent has observed the neighbors for longer).
@@ -285,7 +268,7 @@ def animate_agent_batch_interactive(
         xs="rect_xs",
         ys="rect_ys",
         fill_color="color",
-        line_color="blue",
+        line_color="black",
         # fill_alpha=0.7,
         source=agent_cds,
         view=curr_time_view,
@@ -301,26 +284,6 @@ def animate_agent_batch_interactive(
         view=curr_time_view,
     )
 
-    # Plans
-    plan_lines = fig.multi_line(
-        xs="plan_xs",
-        ys="plan_ys",
-        line_color="color",
-        line_width="line_width",        
-        # fill_alpha=0.7,
-        source=plan_cds,
-        view=plan_curr_time_view,
-    )
-    plan_circles = fig.circle(
-        x="plan_xs_final",
-        y="plan_ys_final",
-        color="color",
-        # alpha=simulation_tile_trajectory_style["fan"]["circle_alpha"],
-        radius="circle_radius",  # radius is in meters, size is in screen dimensions
-        source=plan_cds,
-        view=plan_curr_time_view,
-    )   
-
     scene_ts: int = batch.scene_ts[batch_idx].item()
 
     # Controlling the timestep shown to users.
@@ -330,15 +293,13 @@ def animate_agent_batch_interactive(
         step=1,
         value=0,
         title=f"Current Timestep (scene timestep {scene_ts})",
-        width=600,
     )
 
     dt: float = batch.dt[batch_idx].item()
 
     # Ensuring that information gets updated upon a cahnge in the slider value.
     def time_callback(attr, old, new) -> None:
-        curr_time_view.filters = [BooleanFilter(agent_cds.data["t"] == new)]
-        plan_curr_time_view.filters = [BooleanFilter(plan_cds.data["t"] == new)]
+        curr_time_view.filter = BooleanFilter((agent_cds.data["t"] == new).tolist())
         history_lines_cds.data = slice_multi_line_data(
             history_line_data_df, slice(None, new + full_H), check_idx=-1
         )
@@ -347,31 +308,12 @@ def animate_agent_batch_interactive(
         )
 
         if new == 0:
-            time_slider.title = f"{new + full_H - 1} | Current Timestep (scene timestep {scene_ts})"
+            time_slider.title = f"Current Timestep (scene timestep {scene_ts})"
         else:
             n_steps = abs(new)
-            time_slider.title = f"{new + full_H - 1} | {n_steps} timesteps ({n_steps * dt:.2f} s) into the {'future' if new > 0 else 'past'}"
-
-        # # Move figure to track predicted agent
-        # mask = (agent_cds.data["t"] == new) & (agent_cds.data["pred_agent"])
-        # center_x = agent_cds.data["x"][mask][0]
-        # center_y = agent_cds.data["y"][mask][0]
-        # x_radius = fig.x_range.end - fig.x_range.start
-        # y_radius = fig.y_range.end - fig.y_range.start
-        # fig.x_range.start = center_x - x_radius / 2
-        # fig.x_range.end = center_x + x_radius / 2
-        # fig.y_range.start = center_y - y_radius / 2
-        # fig.y_range.end = center_y + y_radius / 2    
+            time_slider.title = f"{n_steps} timesteps ({n_steps * dt:.2f} s) into the {'future' if new > 0 else 'past'}"
 
     time_slider.on_change("value", time_callback)
-
-    def change_slider(delta: int):
-        time_slider.value = min(time_slider.value + delta, time_slider.end)
-
-    minus_button = Button(label="-", width=20)
-    minus_button.on_click(lambda: change_slider(-1))
-    plus_button = Button(label="+", width=20)
-    plus_button.on_click(lambda: change_slider(1))
 
     # Adding tooltips on mouse hover.
     fig.add_tools(
@@ -382,16 +324,6 @@ def animate_agent_batch_interactive(
                 ("Speed", "@speed_mps m/s (@speed_kph km/h)"),
             ],
             renderers=[agent_rects],
-        )
-    )
-    fig.add_tools(
-        HoverTool(
-            tooltips=[
-                ("cost", "@plan_cost"),
-                ("cost_comp", "@plan_cost_comp_str"),
-                ("vel", "@plan_vel_str"),
-            ],
-            renderers=[plan_circles],
         )
     )
 
@@ -524,7 +456,7 @@ def animate_agent_batch_interactive(
         chrome_options.headless = True
         driver = webdriver.Chrome(chrome_options=chrome_options)
 
-        n_frames = int(render_range_slider.value[1] - render_range_slider.value[0] + 1)
+        n_frames = render_range_slider.value[1] - render_range_slider.value[0] + 1
         for frame_index in trange(n_frames, desc="Rendering Video"):
             # Giving the doc a chance to update the figure.
             time.sleep(0.1)
@@ -596,7 +528,7 @@ def animate_agent_batch_interactive(
     doc.add_root(
         column(
             fig,
-            row(play_button, time_slider, minus_button, plus_button, exit_button),
+            row(play_button, time_slider, exit_button),
             row(video_button, render_range_slider, filetype_select),
         )
     )

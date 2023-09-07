@@ -9,6 +9,18 @@ class EUPedsRecord(NamedTuple):
     data_idx: int
 
 
+class SDDPedsRecord(NamedTuple):
+    name: str
+    length: str
+    data_idx: int
+
+
+class InteractionRecord(NamedTuple):
+    name: str
+    length: str
+    data_idx: int
+
+
 class NuscSceneRecord(NamedTuple):
     name: str
     location: str
@@ -24,6 +36,12 @@ class CarlaSceneRecord(NamedTuple):
 
 
 class LyftSceneRecord(NamedTuple):
+    name: str
+    length: str
+    data_idx: int
+
+
+class WaymoSceneRecord(NamedTuple):
     name: str
     length: str
     data_idx: int

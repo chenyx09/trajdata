@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from bokeh.models import ColumnDataSource, GlyphRenderer
-from bokeh.plotting import Figure
+from bokeh.plotting import figure
 from shapely.geometry import LineString, Polygon
 
 from trajdata.data_structures.agent import AgentType
@@ -23,7 +23,7 @@ from trajdata.maps.vec_map_elements import (
 from trajdata.utils.arr_utils import transform_coords_2d_np
 
 
-def apply_default_settings(fig: Figure) -> None:
+def apply_default_settings(fig: figure) -> None:
     # Pixel dimensions match data dimensions,
     # a 1x1 area in data space is a square in pixels.
     fig.match_aspect = True
@@ -74,10 +74,10 @@ def calculate_figure_sizes(
 
     radius = (x_range / 2 if x_range > y_range else y_range / 2) + data_margin
     return (
-        x_center - radius * aspect_ratio,
-        x_center + radius * aspect_ratio,
-        y_center - radius,
-        y_center + radius,
+        x_center - radius,
+        x_center + radius,
+        y_center - radius / aspect_ratio,
+        y_center + radius / aspect_ratio,
     )
 
 
@@ -378,50 +378,6 @@ def extract_full_agent_data_df(batch: AgentBatch, batch_idx: int) -> pd.DataFram
     return pd.DataFrame(main_data_dict)
 
 
-def extract_full_plan_data_df(plan_hist: List[Dict], batch_idx: int) -> pd.DataFrame:
-    main_data_dict = defaultdict(list)
-
-    if plan_hist is None or len(plan_hist) == 0:
-        return main_data_dict
-
-    for t, plan_dict in enumerate(plan_hist):
-        if "plan_xu" not in plan_dict:
-            continue
-
-        if "candidate_xu" in plan_dict:
-            candidate_xu = plan_dict["candidate_xu"][batch_idx].cpu().numpy()  
-            candidate_cost = plan_dict["candidate_cost"][batch_idx].cpu().numpy()
-            candidate_cost_time_comp = plan_dict["candidate_cost_time_comp"][batch_idx].cpu().numpy() 
-            candidate_cost_comp = candidate_cost_time_comp.sum(1)
-            cost_component_str = [" ".join([f"{v:.3f}" for v in comps]) for comps in candidate_cost_comp]
-            is_plan_output = np.zeros((candidate_xu.shape[0], ), dtype=np.bool8)
-            is_plan_output[candidate_cost.argmin()] = True
-        else:
-            candidate_xu = plan_dict["plan_xu"][batch_idx].cpu().numpy()[None]
-            candidate_cost = plan_dict["plan_cost"][batch_idx].cpu().numpy()[None]
-            cost_component_str = [""]
-            is_plan_output = [True]
-
-        vel_str = [", ".join([f"{v:.1f}" for v in v_vec]) for v_vec in candidate_xu[:, :, 3]]
-        color = np.where(is_plan_output, ["blue"], ["black"])
-        line_width =  np.where(is_plan_output, 2., 1.)
-        circle_radius =  np.where(is_plan_output, 0.13, 0.1)
-
-        main_data_dict["t"].extend([t-len(plan_hist)+1] * candidate_xu.shape[0])
-        main_data_dict["plan_xs"].extend(candidate_xu[:, :, 0])
-        main_data_dict["plan_ys"].extend(candidate_xu[:, :, 1])
-        main_data_dict["plan_xs_final"].extend(candidate_xu[:, -1, 0])
-        main_data_dict["plan_ys_final"].extend(candidate_xu[:, -1, 1])
-        main_data_dict["plan_cost"].extend(candidate_cost)
-        main_data_dict["plan_cost_comp_str"].extend(cost_component_str)
-        main_data_dict["plan_vel_str"].extend(vel_str)
-        main_data_dict["color"].extend(color)
-        main_data_dict["line_width"].extend(line_width)
-        main_data_dict["circle_radius"].extend(circle_radius)
-
-    return pd.DataFrame(main_data_dict)
-
-
 def convert_to_gpd(vec_map: VectorMap) -> gpd.GeoDataFrame:
     geo_data = defaultdict(list)
     for elem in vec_map.iter_elems():
@@ -499,14 +455,6 @@ def get_map_cds(
 
                 road_lane_data["xs"].append(transformed_xy[..., 0])
                 road_lane_data["ys"].append(transformed_xy[..., 1])
-
-                # TODO(pkarkus) hacky way to visualize onroute data, assuming timestep is zero
-                metadict = vec_map.get_online_metadict(row["id"])
-                if "onroute" in metadict and metadict["onroute"]:
-                    road_lane_data["fill_color"].append("gold")
-                else:
-                    road_lane_data["fill_color"].append(get_map_patch_color(MapElementType.ROAD_LANE))
-
         elif row["type"] == MapElementType.ROAD_AREA:
             xy = np.stack(row["geometry"].exterior.xy, axis=1)
             holes_xy: List[np.ndarray] = [
@@ -529,7 +477,7 @@ def get_map_cds(
 
 
 def draw_map_elems(
-    fig: Figure,
+    fig: figure,
     vec_map: VectorMap,
     map_from_world_tf: np.ndarray,
     bbox: Optional[Tuple[float, float, float, float]] = None,
@@ -562,14 +510,12 @@ def draw_map_elems(
         fill_color=get_map_patch_color(MapElementType.ROAD_AREA),
     )
 
-    # print (len(road_lane_cds.data['xs']))
-
     road_lanes = fig.patches(
         source=road_lane_cds,
         line_color="black",
         line_width=0.3,
         fill_alpha=0.1,
-        fill_color="fill_color",
+        fill_color=get_map_patch_color(MapElementType.ROAD_LANE),
     )
 
     ped_crosswalks = fig.patches(

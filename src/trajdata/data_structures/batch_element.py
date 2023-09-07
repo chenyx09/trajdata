@@ -154,7 +154,13 @@ class AgentBatchElement:
         if map_api is not None:
             self.vec_map = map_api.get_map(
                 map_name,
-                self.cache if self.cache.is_traffic_light_data_cached() else None,
+                self.cache
+                if self.cache.is_traffic_light_data_cached(
+                    # Is the original dt cached? If so, we can continue by
+                    # interpolating time to get whatever the user desires.
+                    self.cache.scene.env_metadata.dt
+                )
+                else None,
                 **vector_map_params if vector_map_params is not None else None,
             )
             if vector_map_params.get("calc_lane_graph", False):
@@ -580,6 +586,7 @@ class SceneBatchElement:
                 offset_xy,
                 heading[i],
                 return_rgb,
+                rot_pad_factor=sqrt(2),
                 no_map_val=no_map_fill_val,
             )
             map_patches.append(

@@ -1,4 +1,5 @@
 import gc
+import random
 import time
 from collections import defaultdict
 from functools import partial
@@ -46,7 +47,6 @@ from trajdata.data_structures import (
     scene_collate_fn,
 )
 from trajdata.dataset_specific import RawDataset
-from trajdata.maps import VectorMap
 from trajdata.maps.map_api import MapAPI
 from trajdata.parallel import ParallelDatasetPreprocessor, scene_paths_collate_fn
 from trajdata.utils import agent_utils, env_utils, scene_utils, string_utils
@@ -183,12 +183,15 @@ class UnifiedDataset(Dataset):
         self.future_sec = future_sec
         self.agent_interaction_distances = agent_interaction_distances
         self.incl_robot_future = incl_robot_future
+
         self.incl_raster_map = incl_raster_map
         self.raster_map_params = (
             raster_map_params
             if raster_map_params is not None
-            else {"px_per_m": DEFAULT_PX_PER_M}
+            # Allowing for parallel map processing in case the user specifies num_workers.
+            else {"px_per_m": DEFAULT_PX_PER_M, "num_workers": num_workers}
         )
+
         self.incl_vector_map = incl_vector_map
         self.vector_map_params = (
             vector_map_params
@@ -201,8 +204,16 @@ class UnifiedDataset(Dataset):
                 # Collation can be quite slow if vector maps are included,
                 # so we do not unless the user requests it.
                 "collate": False,
+                # Whether loaded maps should be stored in memory (memoized) for later re-use.
+                # For datasets which provide full maps ahead-of-time (i.e., all except Waymo),
+                # this should be True. However, for Waymo it should be False because maps
+                # are already partitioned geographically and keeping them around significantly grows memory.
+                "keep_in_memory": True,
             }
         )
+        if self.desired_dt is not None:
+            self.vector_map_params["desired_dt"] = desired_dt
+
         self.only_types = None if only_types is None else set(only_types)
         self.only_predict = None if only_predict is None else set(only_predict)
         self.no_types = None if no_types is None else set(no_types)
@@ -243,7 +254,7 @@ class UnifiedDataset(Dataset):
 
         self._map_api: Optional[MapAPI] = None
         if self.incl_vector_map:
-            self._map_api = MapAPI(self.cache_path)
+            self._map_api = MapAPI(self.cache_path, keep_in_memory=vector_map_params.get("keep_in_memory", True))
 
         all_scenes_list: Union[List[SceneMetadata], List[Scene]] = list()
         for env in self.envs:
@@ -312,9 +323,14 @@ class UnifiedDataset(Dataset):
                         matching_datasets, scene_description_contains, env
                     )
 
-                if self.incl_vector_map:
+                if self.incl_vector_map and env.metadata.map_locations is not None:
+                    # env.metadata.map_locations can be none for map-containing
+                    # datasets if they have a huge number of maps
+                    # (or map crops, like Waymo).
                     for map_name in env.metadata.map_locations:
-                        self._map_api.get_map(f"{env.name}:{map_name}")
+                        self._map_api.get_map(
+                            f"{env.name}:{map_name}", **self.vector_map_params
+                        )
 
                 all_scenes_list += scenes_list
 
@@ -705,7 +721,9 @@ class UnifiedDataset(Dataset):
         env: RawDataset,
     ) -> Union[List[Scene], List[SceneMetadata]]:
         scenes_list: Union[List[Scene], List[SceneMetadata]] = list()
-        for scene_tag in scene_tags:
+        for scene_tag in tqdm(
+            scene_tags, desc=f"Getting Scenes from {env.name}", disable=not self.verbose
+        ):
             if env.name in scene_tag:
                 scenes_list += env.get_matching_scenes(
                     scene_tag,
@@ -743,6 +761,10 @@ class UnifiedDataset(Dataset):
                 for scene_info in scenes_list
                 if self.envs_dict[scene_info.env_name].parallelizable
             ]
+
+            # Fixing the seed for random suffling (for debugging and reproducibility).
+            shuffle_rng = random.Random(123)
+            shuffle_rng.shuffle(parallel_scenes)
         else:
             serial_scenes = scenes_list
             parallel_scenes = list()

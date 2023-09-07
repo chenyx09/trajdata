@@ -15,8 +15,7 @@ from trajdata.utils import map_utils
 
 
 class MapAPI:
-    def __init__(self, unified_cache_path: Union[Path, str], data_dirs: Optional[Dict] = None) -> None:
-        self.unified_cache_path: Path = Path(unified_cache_path)
+    def __init__(self, unified_cache_path: Path, keep_in_memory: bool = False) -> None:
         """A simple interface for loading trajdata's vector maps which does not require
         instantiation of a `UnifiedDataset` object.
 
@@ -29,7 +28,7 @@ class MapAPI:
         """
         self.unified_cache_path: Path = unified_cache_path
         self.maps: Dict[str, VectorMap] = dict()
-        self.data_dirs = data_dirs
+        self._keep_in_memory = keep_in_memory
 
     def get_map(
         self, map_id: str, scene_cache: Optional[SceneCache] = None, **kwargs
@@ -64,11 +63,16 @@ class MapAPI:
                 str, MapElementKDTree
             ] = map_utils.load_kdtrees(env_maps_path / f"{map_name}_kdtrees.dill")
 
-            self.maps[map_id] = vec_map
+            if self._keep_in_memory:
+                self.maps[map_id] = vec_map
+        else:
+            vec_map = self.maps[map_id]
 
         if scene_cache is not None:
-            self.maps[map_id].associate_scene_data(
-                scene_cache.get_traffic_light_status_dict()
+            vec_map.associate_scene_data(
+                scene_cache.get_traffic_light_status_dict(
+                    kwargs.get("desired_dt", None)
+                )
             )
 
-        return self.maps[map_id]
+        return vec_map
