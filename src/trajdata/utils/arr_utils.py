@@ -550,7 +550,10 @@ def batch_proj(x, line):
 
 def get_close_lanes(radius,ego_xyh,vec_map,num_pts):
     # obtain close lanes, their distance to the ego
-    close_lanes=vec_map.get_lanes_within(ego_xyh,radius)
+    close_lanes = []
+    while len(close_lanes)==0:
+        close_lanes=vec_map.get_lanes_within(ego_xyh,radius)
+        radius+=20
     dis = list()
     lane_pts = np.stack([lane.center.interpolate(num_pts).points[:,[0,1,3]] for lane in close_lanes],0)
     dx,dy,dh = batch_proj(ego_xyh[None].repeat(lane_pts.shape[0],0),lane_pts)

@@ -30,6 +30,7 @@ from trajdata.data_structures.scene_metadata import Scene
 from trajdata.data_structures.state import NP_STATE_TYPES, StateArray
 from trajdata.maps.traffic_light_status import TrafficLightStatus
 from trajdata.utils import arr_utils, df_utils, raster_utils, state_utils
+from trajdata.utils.scene_utils import is_integer_robust
 
 STATE_COLS: Final[List[str]] = ["x", "y", "z", "vx", "vy", "ax", "ay"]
 EXTENT_COLS: Final[List[str]] = ["length", "width", "height"]
@@ -320,7 +321,7 @@ class DataFrameCache(SceneCache):
     def _upsample_data(
         self, new_index: pd.MultiIndex, upsample_dt_ratio: float, method: str
     ) -> pd.DataFrame:
-        upsample_dt_factor: int = int(upsample_dt_ratio)
+        upsample_dt_factor: int = int(round(upsample_dt_ratio))
 
         interpolated_df: pd.DataFrame = pd.DataFrame(
             index=new_index, columns=self.scene_data_df.columns
@@ -353,7 +354,7 @@ class DataFrameCache(SceneCache):
     def _downsample_data(
         self, new_index: pd.MultiIndex, downsample_dt_ratio: float
     ) -> pd.DataFrame:
-        downsample_dt_factor: int = int(downsample_dt_ratio)
+        downsample_dt_factor: int = int(round(downsample_dt_ratio))
 
         subsample_index: pd.MultiIndex = new_index.set_levels(
             new_index.levels[1] * downsample_dt_factor, level=1
@@ -368,7 +369,8 @@ class DataFrameCache(SceneCache):
     def interpolate_data(self, desired_dt: float, method: str = "linear") -> None:
         upsample_dt_ratio: float = self.scene.env_metadata.dt / desired_dt
         downsample_dt_ratio: float = desired_dt / self.scene.env_metadata.dt
-        if not upsample_dt_ratio.is_integer() and not downsample_dt_ratio.is_integer():
+        
+        if not is_integer_robust(upsample_dt_ratio) and not is_integer_robust(downsample_dt_ratio):
             raise ValueError(
                 f"{str(self.scene)}'s dt of {self.scene.dt}s "
                 f"is not integer divisible by the desired dt {desired_dt}s."
