@@ -423,7 +423,7 @@ class SceneBatchElement:
         nearby_agents, self.agent_types_np = self.get_nearby_agents(
             scene_time, self.centered_agent, distance_limit
         )
-
+        self.agents = nearby_agents
         self.num_agents = len(nearby_agents)
         self.agent_names = [agent.name for agent in nearby_agents]
         (
@@ -620,7 +620,7 @@ class SceneBatchElement:
         return robot_curr_and_fut_np
 
         
-def gen_lane_graph(vec_map,ego_xyh,agent_from_world,num_pts=20,max_num_lanes=15,radius=100,remove_single_successor=True):
+def gen_lane_graph(vec_map,ego_xyh,agent_from_world,num_pts=20,max_num_lanes=15,radius=150,remove_single_successor=True):
     close_lanes,dis = get_close_lanes(radius,ego_xyh,vec_map,num_pts)
     lanes_by_id = {lane.id:lane for lane in close_lanes}
     dis_by_id = {lane.id:dis[i] for i,lane in enumerate(close_lanes)}

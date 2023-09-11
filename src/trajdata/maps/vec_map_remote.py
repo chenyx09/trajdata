@@ -25,10 +25,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.axes import Axes
 from tqdm import tqdm
-from shapely.geometry import Polygon
 
 import trajdata.proto.vectorized_map_pb2 as map_proto
-from trajdata.maps.map_kdtree import LaneCenterKDTree, RoadAreaKDTree
+from trajdata.maps.map_kdtree import LaneCenterKDTree
 from trajdata.maps.traffic_light_status import TrafficLightStatus
 from trajdata.maps.vec_map_elements import (
     MapElement,
@@ -53,7 +52,6 @@ class VectorMap:
     )
     search_kdtrees: Optional[Dict[MapElementType, MapElementKDTree]] = None
     traffic_light_status: Optional[Dict[Tuple[int, int], TrafficLightStatus]] = None
-    online_metadict: Optional[Dict[Tuple[str, int], Dict]] = None
 
     def __post_init__(self) -> None:
         self.env_name, self.map_name = self.map_id.split(":")
@@ -62,16 +60,11 @@ class VectorMap:
         if MapElementType.ROAD_LANE in self.elements:
             self.lanes = list(self.elements[MapElementType.ROAD_LANE].values())
 
-        # self._road_area_polygons: Dict[str, Polygon] = {}
-
     def add_map_element(self, map_elem: MapElement) -> None:
         self.elements[map_elem.elem_type][map_elem.id] = map_elem
 
     def compute_search_indices(self) -> None:
-        self.search_kdtrees = {
-            MapElementType.ROAD_LANE: LaneCenterKDTree(self),
-            # MapElementType.ROAD_AREA: RoadAreaKDTree(self),
-        }
+        self.search_kdtrees = {MapElementType.ROAD_LANE: LaneCenterKDTree(self)}
 
     def iter_elems(self) -> Iterator[MapElement]:
         for elems_dict in self.elements.values():
@@ -108,9 +101,6 @@ class VectorMap:
             new_lane.adjacent_lanes_right.extend(
                 [lane_id.encode() for lane_id in road_lane.adj_lanes_right]
             )
-            # new_lane.road_area_ids.extend(
-            #     [road_area_id.encode() for road_area_id in road_lane.road_area_ids]
-            # )
 
     def _write_road_areas(
         self, vectorized_map: map_proto.VectorizedMap, shifted_origin: np.ndarray
@@ -260,9 +250,6 @@ class VectorMap:
                 prev_lanes: Set[str] = set(
                     [iden.decode() for iden in road_lane_obj.entry_lanes]
                 )
-                # road_area_ids: Set[str] = set(
-                #     [iden.decode() for iden in road_lane_obj.road_area_ids]
-                # )
 
                 # Double-using the connectivity attributes for lane IDs now (will
                 # replace them with Lane objects after all Lane objects have been created).
@@ -275,7 +262,6 @@ class VectorMap:
                     adj_lanes_right,
                     next_lanes,
                     prev_lanes,
-                    # road_area_ids=road_area_ids,
                 )
                 map_elem_dict[MapElementType.ROAD_LANE][elem_id] = curr_lane
 
@@ -383,33 +369,6 @@ class VectorMap:
             self.lanes[idx] for idx in lane_kdtree.polyline_inds_in_range(xyz, dist)
         ]
 
-    def get_road_areas_within(self, xyz: np.ndarray, dist: float) -> List[RoadArea]:
-        road_area_kdtree: RoadAreaKDTree = self.search_kdtrees[MapElementType.ROAD_AREA]
-        polyline_inds = road_area_kdtree.polyline_inds_in_range(xyz, dist)
-        element_ids = set([
-            road_area_kdtree.metadata["map_elem_id"][ind] for ind in polyline_inds
-        ])
-        if MapElementType.ROAD_AREA not in self.elements:
-            raise ValueError(
-                "Road areas are not loaded. Use map_api.get_map(..., incl_road_areas=True)."
-            )
-        return [
-            self.elements[MapElementType.ROAD_AREA][id] for id in element_ids
-        ]
-    
-    def get_road_area_polygon_2d(self, id: str) -> Polygon:
-        if id not in self._road_area_polygons:
-            road_area: RoadArea = self.elements[MapElementType.ROAD_AREA][id]
-            road_area_polygon = Polygon(
-                shell=[(pt[0], pt[1]) for pt in road_area.exterior_polygon.points],
-                holes=[
-                    [(pt[0], pt[1]) for pt in polyline.points]
-                    for polyline in road_area.interior_holes
-                ]
-            )
-            self._road_area_polygons[id] = road_area_polygon
-        return self._road_area_polygons[id]
-
     def get_traffic_light_status(
         self, lane_id: str, scene_ts: int
     ) -> TrafficLightStatus:
@@ -419,15 +378,6 @@ class VectorMap:
             )
             if self.traffic_light_status is not None
             else TrafficLightStatus.NO_DATA
-        )
-
-    def get_online_metadict(
-        self, lane_id: str, scene_ts: int = 0
-    ) -> Dict:
-        return (
-            self.online_metadict[(str(lane_id), scene_ts)]
-            if self.online_metadict is not None
-            else {}
         )
 
     def rasterize(

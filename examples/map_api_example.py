@@ -4,6 +4,7 @@ from typing import Dict, List, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
+import os
 
 from trajdata import MapAPI, VectorMap
 from trajdata.caching.df_cache import DataFrameCache
@@ -23,7 +24,7 @@ def load_random_scene(cache_path: Path, env_name: str, scene_dt: float) -> Scene
 
 
 def main():
-    cache_path = Path("~/.unified_data_cache").expanduser()
+    cache_path = Path(os.environ["TRAJDATA_CACHE_DIR"]).expanduser()
     map_api = MapAPI(cache_path)
 
     ### Loading random scene and initializing VectorMap.
