@@ -1,6 +1,6 @@
 numpy
 tqdm
-matplotlib
+matplotlib==3.3.4
 dill
 pandas
 seaborn
