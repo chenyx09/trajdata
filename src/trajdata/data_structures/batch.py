@@ -433,7 +433,7 @@ class SceneBatch:
             scene_ts=self.scene_ts,
             dt=self.dt,
             agent_name=index_agent_list(self.agent_names),
-            track_id=index_agent_list(self.track_ids),
+            track_ids=index_agent_list(self.track_ids),
             agent_type=index_agent(self.agent_type),
             curr_agent_state=self.centered_agent_state,  # TODO this is not actually the agent but the `global` coordinate frame
             agent_hist=StateTensor.from_array(index_agent(self.agent_hist), self.agent_hist._format),
