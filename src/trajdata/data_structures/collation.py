@@ -766,6 +766,8 @@ def scene_collate_fn(
     pad_format: str,
     batch_augments: Optional[List[BatchAugmentation]] = None,
     desired_num_agents = None,
+    desired_hist_len=None,
+    desired_fut_len=None,
 ) -> SceneBatch:
     batch_size: int = len(batch_elems)
     history_pad_dir: arr_utils.PadDirection = (
@@ -808,6 +810,10 @@ def scene_collate_fn(
 
     max_history_len: int = max(elem.agent_history_lens_np.max() for elem in batch_elems)
     max_future_len: int = max(elem.agent_future_lens_np.max() for elem in batch_elems)
+    if desired_hist_len is not None:
+        max_history_len = max(max_history_len,desired_hist_len)
+    if desired_fut_len is not None:
+        max_future_len = max(max_future_len,desired_fut_len)
 
     robot_future: List[AgentObsTensor] = list()
     robot_future_len: Tensor = torch.zeros((batch_size,), dtype=torch.long)

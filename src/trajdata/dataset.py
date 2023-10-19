@@ -686,7 +686,9 @@ class UnifiedDataset(Dataset):
                 return_dict=return_dict,
                 pad_format=pad_format,
                 batch_augments=batch_augments,
-                desired_num_agents = self.max_agent_num
+                desired_num_agents = self.max_agent_num,
+                desired_hist_len = int(self.history_sec[1]/self.desired_dt),
+                desired_fut_len = int(self.future_sec[1]/self.desired_dt),
             )
         else:
             raise ValueError(f"{self.centric}-centric data batches are not supported.")
