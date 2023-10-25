@@ -387,7 +387,11 @@ class UnifiedDataset(Dataset):
                 )
 
             self._cache_data_index(data_index)
-
+        if (
+            distributed.is_initialized()
+            and distributed.get_world_size() > 1
+        ):
+            distributed.barrier()
         self._cached_batch_elements = None
 
     def _index_cache_path(
