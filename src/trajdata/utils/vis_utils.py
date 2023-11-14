@@ -1,12 +1,15 @@
 from collections import defaultdict
 from typing import List, Optional, Tuple, Dict
 
+
 import geopandas as gpd
 import numpy as np
 import pandas as pd
 import seaborn as sns
 from bokeh.models import ColumnDataSource, GlyphRenderer
-from bokeh.plotting import figure
+from bokeh.plotting import figure, curdoc
+import bokeh
+from bokeh.io import export_png
 from shapely.geometry import LineString, Polygon
 
 from trajdata.data_structures.agent import AgentType
@@ -20,7 +23,12 @@ from trajdata.maps.vec_map_elements import (
     RoadArea,
     RoadLane,
 )
-from trajdata.utils.arr_utils import transform_coords_2d_np
+from trajdata.utils.arr_utils import (
+    transform_coords_2d_np,
+    batch_nd_transform_points_pt,
+    batch_nd_transform_points_np,
+)
+from PIL import Image
 
 
 def apply_default_settings(fig: figure) -> None:
@@ -481,7 +489,7 @@ def draw_map_elems(
     vec_map: VectorMap,
     map_from_world_tf: np.ndarray,
     bbox: Optional[Tuple[float, float, float, float]] = None,
-    **kwargs
+    **kwargs,
 ) -> Tuple[GlyphRenderer, GlyphRenderer, GlyphRenderer, GlyphRenderer, GlyphRenderer]:
     """_summary_
 
