@@ -5,7 +5,7 @@ import numpy as np
 import torch
 from bokeh.models import ColumnDataSource, Range1d
 from bokeh.models.renderers import GlyphRenderer
-from bokeh.plotting import Figure
+from bokeh.plotting import figure
 from torch import Tensor
 
 from trajdata.data_structures.agent import AgentType
@@ -26,7 +26,7 @@ class InteractiveFigure:
         self.y_min = np.inf
         self.y_max = -np.inf
 
-        self.raw_figure = Figure(width=self.width, height=self.height, **kwargs)
+        self.raw_figure = figure(width=self.width, height=self.height, **kwargs)
         vis_utils.apply_default_settings(self.raw_figure)
 
     def update_mins_maxs(self, x_min, x_max, y_min, y_max) -> None:

@@ -12,6 +12,7 @@ def main():
     map_api = MapAPI(cache_path)
 
     for carla_town in [f"Town0{x}" for x in range(1, 8)] + ["Town10", "Town10HD"]: # ["main"]:
+    # for carla_town in ["main"]:
         vec_map = map_api.get_map(
             f"drivesim:main" if carla_town == "main" else f"carla:{carla_town}",
             incl_road_lanes=True,
