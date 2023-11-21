@@ -54,3 +54,11 @@ class NuPlanSceneRecord(NamedTuple):
     split: str
     # desc: str
     data_idx: int
+
+class DrivesimSceneRecord(NamedTuple):
+    name: str
+    location: str
+    length: str
+    split: str
+    # desc: str
+    data_idx: int
