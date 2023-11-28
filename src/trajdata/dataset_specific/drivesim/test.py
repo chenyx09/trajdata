@@ -1,12 +1,12 @@
 import numpy as np
 from typing import Dict
-import nvmap_utils as nvutils
+import trajdata.dataset_specific.drivesim.nvmap_utils as nvutils
 
 # This is from the <geoReference> tag from the .xodr file for Endeavor.
 LATLONALT_ORIGIN_ENDEAVOR = np.array([[37.37852062996696, -121.9596180846297, 0.0]])
 
 
-def convert_to_DS(poses: np.ndarray):
+def convert_to_DS(poses: np.ndarray, track_ids:list,fps:float):
     """_summary_
 
     Args:
@@ -21,7 +21,6 @@ def convert_to_DS(poses: np.ndarray):
         np.array([[0]])
     )
     
-    fps = 30
     N, T = poses.shape[:2]
     x = poses[..., 0]
     y = poses[..., 1]
@@ -39,13 +38,13 @@ def convert_to_DS(poses: np.ndarray):
     # TODO: Some height for ray-casting down to road?
     # T_mat[..., 2, 3] = 0
 
-    ecef_traj_poses = np.matmul(world_from_map_ft[np.newaxis, np.newaxis], T_mat)
+    ecef_traj_poses = np.matmul(world_from_map_ft[:, np.newaxis], T_mat)
     gps_traj_poses = nvutils.ecef_2_lat_lng_alt(ecef_traj_poses.reshape((N*T, 4, 4)), earth_model='WGS84')
     lat_lng_alt, orientation_axis, orientation_angle = gps_traj_poses
-
+    breakpoint()
     out_dict = {
-        'timestamps' : np.linspace(0, T/fps, 315),
-        'track_ids' : np.array(["ego", "769"]),
+        'timestamps' : np.linspace(0, T/fps, T),
+        'track_ids' : np.array(track_ids),
         # 'bbox_lwh' : np.array([[4.387, 1.907, 1.656], [4.387, 1.907, 1.656]]),
         # 'ecef_poses' : ecef_traj_poses,
         'pose_valid' : np.ones((ecef_traj_poses.shape[0], ecef_traj_poses.shape[1]), dtype=bool),
@@ -63,12 +62,13 @@ def main():
     poses[0, :, 1] = np.linspace(-1019, -866, 315)
     poses[0, :, 2] = np.linspace(np.pi/2, 5*np.pi/8, 315)
 
-    out_dict = convert_to_DS(poses)
+    fps = 30
+    out_dict = convert_to_DS(poses,["ego","769"],fps)
 
-    with np.load("/home/bivanovic/projects/drivesim-ov/source/extensions/omni.drivesim.dl_traffic_model/data/example_trajectories.npz") as data:
-        out_dict["gps_lat_lng_alt"][1] = data["gps_lat_lng_alt"][1]
-        out_dict["gps_orientation_axis"][1] = data["gps_orientation_axis"][1]
-        out_dict["gps_orientation_angle_degrees"][1] = data["gps_orientation_angle_degrees"][1]
+    # with np.load("/home/bivanovic/projects/drivesim-ov/source/extensions/omni.drivesim.dl_traffic_model/data/example_trajectories.npz") as data:
+    #     out_dict["gps_lat_lng_alt"][1] = data["gps_lat_lng_alt"][1]
+    #     out_dict["gps_orientation_axis"][1] = data["gps_orientation_axis"][1]
+    #     out_dict["gps_orientation_angle_degrees"][1] = data["gps_orientation_angle_degrees"][1]
 
     np.savez(
         "/home/bivanovic/projects/drivesim-ov/source/extensions/omni.drivesim.dl_traffic_model/data/test.npz",
